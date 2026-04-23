@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Đăng nhập - Chi Phí Ads Dashboard</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <style>
         .login-shell {
@@ -70,6 +71,45 @@
             color: #fff;
             background: linear-gradient(135deg, #3498db, #2980b9);
             cursor: pointer;
+        }
+
+        .password-wrap {
+            position: relative;
+            margin-bottom: 12px;
+        }
+        .password-wrap .login-field {
+            margin-bottom: 0;
+            padding-right: 44px;
+        }
+        .eye-btn {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: #9ca3af;
+            font-size: 1rem;
+            padding: 0 2px;
+            line-height: 1;
+        }
+        .eye-btn:hover { color: #3498db; }
+
+        .shared-pass-note {
+            text-align: center;
+            font-size: 0.8rem;
+            color: #9ca3af;
+            margin-top: -4px;
+            margin-bottom: 12px;
+        }
+        .shared-pass-note span {
+            background: #f3f4f6;
+            border-radius: 6px;
+            padding: 2px 8px;
+            font-family: monospace;
+            color: #374151;
+            font-size: 0.85rem;
         }
 
         .login-error {
@@ -139,8 +179,16 @@
                 <div class="login-sub">Nhập tài khoản để mở Chi Phí Ads Dashboard</div>
 
                 <form method="post" action="{{ url_for('login') }}">
-                    <input class="login-field" type="text" name="username" placeholder="Tên đăng nhập" required>
-                    <input class="login-field" type="password" name="password" placeholder="Mật khẩu" required>
+                    <input class="login-field" type="text" name="username" placeholder="Tên đăng nhập" required autocomplete="username">
+                    <div class="password-wrap">
+                        <input class="login-field" type="password" id="passwordInput" name="password" placeholder="Mật khẩu" required autocomplete="current-password">
+                        <button type="button" class="eye-btn" id="eyeBtn" onclick="togglePassword()" title="Hiện/ẩn mật khẩu">
+                            <i class="fas fa-eye" id="eyeIcon"></i>
+                        </button>
+                    </div>
+                    <p class="shared-pass-note">Nhân viên dùng chung mật khẩu: <span id="sharedPassHint" style="display:none;">Emp@123456</span>
+                        <button type="button" onclick="toggleSharedPass()" style="background:none;border:none;color:#3498db;cursor:pointer;font-size:0.78rem;padding:0 4px;">xem</button>
+                    </p>
                     <button class="login-btn" type="submit">Đăng nhập</button>
                 </form>
 
@@ -159,5 +207,29 @@
             </div>
         </footer>
     </div>
+    <script>
+        function togglePassword() {
+            const inp = document.getElementById('passwordInput');
+            const icon = document.getElementById('eyeIcon');
+            if (inp.type === 'password') {
+                inp.type = 'text';
+                icon.className = 'fas fa-eye-slash';
+            } else {
+                inp.type = 'password';
+                icon.className = 'fas fa-eye';
+            }
+        }
+        function toggleSharedPass() {
+            const el = document.getElementById('sharedPassHint');
+            const btn = event.target;
+            if (el.style.display === 'none') {
+                el.style.display = 'inline';
+                btn.textContent = 'ẩn';
+            } else {
+                el.style.display = 'none';
+                btn.textContent = 'xem';
+            }
+        }
+    </script>
 </body>
 </html>
