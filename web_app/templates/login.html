@@ -23,11 +23,20 @@
 
         .login-card {
             width: 100%;
-            max-width: 420px;
-            background: rgba(255,255,255,0.95);
-            border-radius: 16px;
-            box-shadow: 0 20px 45px rgba(0, 0, 0, 0.18);
-            padding: 28px;
+            max-width: 460px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.97), rgba(248,250,252,0.94));
+            border-radius: 24px;
+            border: 1px solid rgba(255,255,255,0.42);
+            box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+            padding: 30px;
+        }
+
+        .login-accent {
+            width: 64px;
+            height: 6px;
+            border-radius: 999px;
+            margin: 0 auto 18px;
+            background: linear-gradient(90deg, #38bdf8, #2563eb);
         }
 
         .login-title {
@@ -52,6 +61,30 @@
             font-size: 0.88rem;
             font-weight: 700;
             letter-spacing: 0.2px;
+        }
+
+        .login-helper {
+            margin-top: 16px;
+            padding: 14px 16px;
+            border-radius: 14px;
+            background: rgba(241, 245, 249, 0.95);
+            border: 1px solid rgba(148, 163, 184, 0.24);
+        }
+
+        .login-helper-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.86rem;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 6px;
+        }
+
+        .login-helper-text {
+            color: #475569;
+            font-size: 0.9rem;
+            line-height: 1.5;
         }
 
         .login-field {
@@ -173,6 +206,7 @@
                     <i class="fas fa-arrow-left"></i> Quay lại dashboard
                 </a>
                 {% endif %}
+                <div class="login-accent"></div>
                 <div class="login-title">{{ title or 'Đăng nhập hệ thống' }}</div>
                 <div style="text-align:center;">
                     <div class="login-board">
@@ -197,6 +231,16 @@
 
                 {% if error %}
                 <div class="login-error">{{ error }}</div>
+                {% endif %}
+
+                {% if helper_text %}
+                <div class="login-helper">
+                    <div class="login-helper-title">
+                        <i class="fas fa-circle-info"></i>
+                        {{ helper_title or 'Hướng dẫn' }}
+                    </div>
+                    <div class="login-helper-text">{{ helper_text }}</div>
+                </div>
                 {% endif %}
             </div>
         </div>

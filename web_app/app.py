@@ -19,7 +19,6 @@ USERS_FILE_PATH = Path(os.getenv("USERS_FILE_PATH", str(Path(__file__).parent.pa
 
 ROLE_LEVELS = {"admin": 3, "lead": 2, "employee": 1}
 TEAM_CODES = ["TEAM_1", "TEAM_2", "TEAM_3", "TEAM_4", "TEAM_5"]
-SHARED_LOGIN_USERNAME = os.getenv("SHARED_LOGIN_USERNAME", "fbads.gdt")
 LOGIN_BOARD_NAME = os.getenv("LOGIN_BOARD_NAME", "Bang Chi Phi Ads")
 
 # ─────────────────── USER CONFIG ───────────────────
@@ -71,11 +70,6 @@ def build_auto_users_from_sheet_urls() -> dict:
             "password": os.getenv("DEFAULT_ADMIN_PASSWORD", "Admin@Hexi2026!"),
             "role": "admin",
             "display_name": "System Admin",
-        },
-        "fbads.gdt": {
-            "password": os.getenv("DEFAULT_EMPLOYEE_PASSWORD", "123"),
-            "role": "employee",
-            "display_name": "Nhân viên",
         }
     }
 
@@ -150,10 +144,6 @@ def get_user(username: str) -> Optional[dict]:
     return load_users_config().get(username)
 
 
-def get_shared_login_user() -> Optional[dict]:
-    return get_user(SHARED_LOGIN_USERNAME)
-
-
 def set_session_user(username: str, user: dict, *, elevated: bool = False) -> None:
     session["logged_in"] = True
     session["username"] = username
@@ -199,19 +189,6 @@ def get_accessible_sheets_for_user(username: str) -> list:
     sheet_url = user.get("sheet_url", "")
     if sheet_url:
         return [{"name": user.get("display_name", username), "url": sheet_url, "team": team, "username": username}]
-
-    # Shared employee account: can only open individual employee sheets, not aggregated views.
-    if role == "employee":
-        return [
-            {
-                "name": udata.get("display_name", uname),
-                "url": udata["sheet_url"],
-                "team": udata.get("team", ""),
-                "username": uname,
-            }
-            for uname, udata in users.items()
-            if udata.get("role") == "employee" and udata.get("sheet_url")
-        ]
     return []
 
 
@@ -425,7 +402,6 @@ def index():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    shared_user = get_shared_login_user()
     if request.method == "GET":
         if is_logged_in():
             return redirect(url_for("index"))
@@ -434,6 +410,8 @@ def login():
             error="",
             title="Đăng nhập hệ thống",
             board_name=LOGIN_BOARD_NAME,
+            helper_title="Chưa có tài khoản?",
+            helper_text="Vui lòng đăng ký bên ngoài hệ thống hoặc liên hệ admin để được cấp tài khoản nhân viên.",
             form_action=url_for("login"),
             submit_label="Vào hệ thống",
             show_back_link=False,
@@ -441,17 +419,29 @@ def login():
 
     username = request.form.get("username", "").strip()
     password = request.form.get("password", "")
+    user = get_user(username)
 
-    if shared_user and username == SHARED_LOGIN_USERNAME and shared_user.get("password") == password:
-        set_session_user(SHARED_LOGIN_USERNAME, shared_user, elevated=False)
+    if user and user.get("password") == password and user.get("role") == "employee":
+        set_session_user(username, user, elevated=False)
         next_url = request.args.get("next") or url_for("index")
         return redirect(next_url)
 
+    error_message = "Sai tài khoản hoặc mật khẩu"
+    helper_text = "Vui lòng đăng ký bên ngoài hệ thống hoặc liên hệ admin để được cấp tài khoản nhân viên."
+
+    if not user:
+        error_message = "Tài khoản chưa tồn tại trong hệ thống"
+    elif user.get("role") != "employee":
+        error_message = "Bước 1 chỉ dùng tài khoản nhân viên"
+        helper_text = "Nếu bạn có quyền leader hoặc admin, hãy đăng nhập bằng tài khoản nhân viên trước rồi nâng quyền ở bước 2."
+
     return render_template(
         "login.html",
-        error="Sai tài khoản hoặc mật khẩu",
+        error=error_message,
         title="Đăng nhập hệ thống",
         board_name=LOGIN_BOARD_NAME,
+        helper_title="Đăng ký bên ngoài",
+        helper_text=helper_text,
         form_action=url_for("login"),
         submit_label="Vào hệ thống",
         show_back_link=False,
@@ -470,6 +460,8 @@ def privileged_login():
             error="",
             title="Đăng nhập Leader / Admin",
             board_name=LOGIN_BOARD_NAME,
+            helper_title="Bước 2 nâng quyền",
+            helper_text="Chỉ leader hoặc admin mới cần đăng nhập thêm để mở quyền xem tổng và quản trị.",
             form_action=url_for("privileged_login"),
             submit_label="Mở quyền xem tổng",
             show_back_link=True,
@@ -488,6 +480,8 @@ def privileged_login():
         error="Chỉ tài khoản leader hoặc admin mới dùng được bước 2",
         title="Đăng nhập Leader / Admin",
         board_name=LOGIN_BOARD_NAME,
+        helper_title="Bước 2 nâng quyền",
+        helper_text="Dùng đúng tài khoản leader hoặc admin để mở thêm quyền sau khi đã vào hệ thống.",
         form_action=url_for("privileged_login"),
         submit_label="Mở quyền xem tổng",
         show_back_link=True,
@@ -671,6 +665,8 @@ def api_admin_create_user():
         return jsonify({"success": False, "error": "Vai trò không hợp lệ."}), 400
     if role in ("lead", "employee") and team not in TEAM_CODES:
         return jsonify({"success": False, "error": "Vui lòng chọn team hợp lệ."}), 400
+    if role == "employee" and not sheet_url:
+        return jsonify({"success": False, "error": "Nhân viên bắt buộc phải có link Google Sheet."}), 400
 
     users = load_users_config()
     if username in users:
@@ -700,8 +696,6 @@ def api_admin_update_user(username):
         return jsonify({"success": False, "error": "Người dùng không tồn tại."}), 404
 
     role = data.get("role", users[username].get("role", "employee")).strip()
-    if username == SHARED_LOGIN_USERNAME and role != "employee":
-        return jsonify({"success": False, "error": "Tài khoản đăng nhập chung phải giữ vai trò employee."}), 400
     team = data.get("team", users[username].get("team", "")).strip()
     display_name = data.get("display_name", users[username].get("display_name", username)).strip()
     sheet_url = data.get("sheet_url", users[username].get("sheet_url", "")).strip()
@@ -711,6 +705,8 @@ def api_admin_update_user(username):
         return jsonify({"success": False, "error": "Vai trò không hợp lệ."}), 400
     if role in ("lead", "employee") and team not in TEAM_CODES:
         return jsonify({"success": False, "error": "Vui lòng chọn team hợp lệ."}), 400
+    if role == "employee" and not sheet_url:
+        return jsonify({"success": False, "error": "Nhân viên bắt buộc phải có link Google Sheet."}), 400
 
     # Prevent removing the last admin
     if users[username].get("role") == "admin" and role != "admin":
@@ -742,9 +738,6 @@ def api_admin_delete_user(username):
 
     if username not in users:
         return jsonify({"success": False, "error": "Người dùng không tồn tại."}), 404
-
-    if username == SHARED_LOGIN_USERNAME:
-        return jsonify({"success": False, "error": "Không thể xoá tài khoản đăng nhập chung."}), 400
 
     # Prevent deleting last admin
     if users[username].get("role") == "admin":

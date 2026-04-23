@@ -86,6 +86,7 @@
         .form-hint { font-size: 0.78rem; color: #64748b; margin-top: 5px; }
         .form-row { display: flex; gap: 12px; }
         .form-row .form-group { flex: 1; }
+        .field-disabled { opacity: 0.58; }
 
         .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
 
@@ -208,9 +209,9 @@
         </div>
 
         <div class="form-group" id="fSheetGroup">
-            <label>Sheet URL</label>
+            <label id="fSheetLabel">Sheet URL</label>
             <input type="text" id="fSheetUrl" class="form-control" placeholder="https://docs.google.com/spreadsheets/d/...">
-            <p class="form-hint">Chỉ bắt buộc cho vai trò Employee.</p>
+            <p class="form-hint" id="fSheetHint">Bắt buộc cho vai trò Employee để hệ thống tải đúng dữ liệu cá nhân.</p>
         </div>
 
         <div class="modal-actions">
@@ -282,7 +283,22 @@
     function onRoleChange() {
         const role = document.getElementById('fRole').value;
         document.getElementById('fTeamGroup').style.display = role === 'admin' ? 'none' : '';
-        document.getElementById('fSheetGroup').style.display = role === 'employee' ? '' : 'none';
+        const sheetGroup = document.getElementById('fSheetGroup');
+        const sheetInput = document.getElementById('fSheetUrl');
+        const sheetLabel = document.getElementById('fSheetLabel');
+        const sheetHint = document.getElementById('fSheetHint');
+
+        if (role === 'employee') {
+            sheetGroup.classList.remove('field-disabled');
+            sheetInput.disabled = false;
+            sheetLabel.innerHTML = 'Sheet URL <span class="req">*</span>';
+            sheetHint.textContent = 'Bắt buộc cho vai trò Employee để hệ thống tải đúng dữ liệu cá nhân.';
+        } else {
+            sheetGroup.classList.add('field-disabled');
+            sheetInput.disabled = true;
+            sheetLabel.textContent = 'Sheet URL';
+            sheetHint.textContent = 'Chỉ dùng cho tài khoản Employee. Lead/Admin không cần nhập link này.';
+        }
     }
 
     function openCreateModal() {

@@ -7,67 +7,143 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <style>
-        /* ── Role Level Indicator (fixed top-right) ── */
-        .role-level-indicator {
-            position: fixed;
-            top: 14px;
-            right: 16px;
-            z-index: 1000;
-            background: rgba(15, 23, 42, 0.92);
-            border: 1px solid #334155;
-            border-radius: 14px;
-            padding: 10px 14px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.45);
-            backdrop-filter: blur(8px);
+        .access-toolbar {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 18px;
+            flex-wrap: wrap;
+            margin-bottom: 18px;
+        }
+
+        .session-card {
             display: flex;
             flex-direction: column;
-            align-items: flex-end;
-            gap: 7px;
-            min-width: 190px;
+            gap: 10px;
+            padding: 16px 18px;
+            border-radius: 18px;
+            background: linear-gradient(135deg, rgba(255,255,255,0.16), rgba(255,255,255,0.06));
+            border: 1px solid rgba(255,255,255,0.18);
+            min-width: 280px;
+            backdrop-filter: blur(10px);
         }
-        .rli-user {
-            display: flex;
-            align-items: center;
-            gap: 7px;
-            font-size: 0.82rem;
+
+        .session-kicker {
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.22em;
+            color: rgba(226, 232, 240, 0.72);
             font-weight: 700;
-            color: #e2e8f0;
         }
-        .rli-user .avatar {
-            width: 28px; height: 28px;
-            border-radius: 50%;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 0.75rem; font-weight: 800;
-        }
-        .avatar-admin    { background: rgba(139,92,246,0.25); color: #a78bfa; border: 1.5px solid #7c3aed66; }
-        .avatar-lead     { background: rgba(59,130,246,0.25); color: #60a5fa; border: 1.5px solid #3b82f666; }
-        .avatar-employee { background: rgba(34,197,94,0.25);  color: #86efac; border: 1.5px solid #22c55e66; }
 
-        .rli-label { font-size: 0.68rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
-
-        .rli-steps {
+        .session-main {
             display: flex;
             align-items: center;
-            gap: 4px;
+            gap: 12px;
+            color: #fff;
         }
-        .rli-step {
-            font-size: 0.7rem;
-            padding: 3px 9px;
-            border-radius: 20px;
-            background: rgba(255,255,255,0.04);
-            color: #475569;
-            border: 1px solid #1e293b;
-            white-space: nowrap;
-            transition: all 0.2s;
+
+        .session-avatar {
+            width: 42px;
+            height: 42px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            background: rgba(255,255,255,0.16);
+            border: 1px solid rgba(255,255,255,0.22);
         }
-        .rli-step.active-admin    { background: rgba(139,92,246,0.2); color: #a78bfa; border-color: #7c3aed66; font-weight: 700; }
-        .rli-step.active-lead     { background: rgba(59,130,246,0.2); color: #60a5fa; border-color: #3b82f666; font-weight: 700; }
-        .rli-step.active-employee { background: rgba(34,197,94,0.2);  color: #86efac; border-color: #22c55e66; font-weight: 700; }
 
-        .rli-arrow { color: #1e293b; font-size: 0.6rem; }
+        .session-name {
+            font-size: 1rem;
+            font-weight: 700;
+        }
 
-        @media (max-width: 600px) {
-            .role-level-indicator { top: auto; bottom: 16px; right: 12px; min-width: 160px; }
+        .session-subtext {
+            font-size: 0.84rem;
+            color: rgba(226, 232, 240, 0.72);
+            margin-top: 2px;
+        }
+
+        .session-meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .session-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 12px;
+            border-radius: 999px;
+            font-size: 0.8rem;
+            font-weight: 700;
+        }
+
+        .session-pill.employee { background: rgba(34,197,94,0.18); color: #dcfce7; border: 1px solid rgba(34,197,94,0.34); }
+        .session-pill.lead { background: rgba(14,165,233,0.18); color: #e0f2fe; border: 1px solid rgba(56,189,248,0.34); }
+        .session-pill.admin { background: rgba(139,92,246,0.18); color: #ede9fe; border: 1px solid rgba(167,139,250,0.34); }
+
+        .session-chip {
+            padding: 7px 12px;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            color: rgba(226, 232, 240, 0.88);
+            background: rgba(15,23,42,0.22);
+            border: 1px solid rgba(255,255,255,0.14);
+        }
+
+        .quick-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .action-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 16px;
+            border-radius: 999px;
+            text-decoration: none;
+            font-size: 0.86rem;
+            font-weight: 700;
+            transition: transform 0.18s ease, opacity 0.18s ease;
+        }
+
+        .action-link:hover {
+            transform: translateY(-1px);
+            opacity: 0.96;
+        }
+
+        .action-link.elevate { background: linear-gradient(135deg, #0ea5e9, #2563eb); color: #fff; }
+        .action-link.manage { background: rgba(139,92,246,0.16); color: #ede9fe; border: 1px solid rgba(167,139,250,0.28); }
+        .action-link.logout { background: rgba(239,68,68,0.92); color: #fff; }
+
+        @media (max-width: 720px) {
+            .access-toolbar {
+                flex-direction: column;
+            }
+
+            .session-card {
+                width: 100%;
+                min-width: 0;
+            }
+
+            .quick-actions {
+                width: 100%;
+                justify-content: stretch;
+            }
+
+            .action-link {
+                flex: 1;
+                justify-content: center;
+            }
         }
     </style>
 </head>
@@ -81,60 +157,50 @@
         window.APP_SHEETS    = {{ accessible_sheets_json | safe }};
     </script>
 
-    <!-- ── Role Level Indicator (fixed corner) ── -->
-    <div class="role-level-indicator">
-        <div class="rli-user">
-            <div class="avatar avatar-{{ role }}">
-                {% if role == 'admin' %}<i class="fas fa-shield-alt"></i>
-                {% elif role == 'lead' %}<i class="fas fa-users"></i>
-                {% else %}<i class="fas fa-user"></i>{% endif %}
-            </div>
-            <span>{{ display_name }}{% if team %} · {{ team }}{% endif %}</span>
-        </div>
-        <span class="rli-label">Cấp quyền hiện tại</span>
-        <div class="rli-steps">
-            <span class="rli-step {% if role == 'employee' %}active-employee{% endif %}">
-                <i class="fas fa-user"></i> Nhân viên
-            </span>
-            <span class="rli-arrow"><i class="fas fa-angle-right"></i></span>
-            <span class="rli-step {% if role == 'lead' %}active-lead{% endif %}">
-                <i class="fas fa-users"></i> Leader
-            </span>
-            <span class="rli-arrow"><i class="fas fa-angle-right"></i></span>
-            <span class="rli-step {% if role == 'admin' %}active-admin{% endif %}">
-                <i class="fas fa-shield-alt"></i> Admin
-            </span>
-        </div>
-    </div>
-
     <div class="container">
         <!-- Header -->
         <header class="header">
             <div class="header-content">
-                <div class="header-top-bar">
-                    <div class="user-info-bar">
-                        <span class="role-badge role-{{ role }}">
-                            {% if role == 'admin' %}
-                                <i class="fas fa-shield-alt"></i> Admin
-                            {% elif role == 'lead' %}
-                                <i class="fas fa-users"></i> Lead — {{ team }}
-                            {% else %}
-                                <i class="fas fa-user"></i> {{ display_name }}{% if team %} · {{ team }}{% endif %}
+                <div class="access-toolbar">
+                    <div class="session-card">
+                        <span class="session-kicker">Phiên làm việc</span>
+                        <div class="session-main">
+                            <div class="session-avatar">
+                                {% if role == 'admin' %}<i class="fas fa-shield-alt"></i>
+                                {% elif role == 'lead' %}<i class="fas fa-users"></i>
+                                {% else %}<i class="fas fa-user"></i>{% endif %}
+                            </div>
+                            <div>
+                                <div class="session-name">{{ display_name }}</div>
+                                <div class="session-subtext">{{ team if team else 'Tài khoản cá nhân' }}</div>
+                            </div>
+                        </div>
+                        <div class="session-meta">
+                            <span class="session-pill {{ role }}">
+                                {% if role == 'admin' %}<i class="fas fa-shield-alt"></i> Admin
+                                {% elif role == 'lead' %}<i class="fas fa-users"></i> Leader
+                                {% else %}<i class="fas fa-user"></i> Nhân viên{% endif %}
+                            </span>
+                            {% if role == 'employee' and sheet_url %}
+                            <span class="session-chip"><i class="fas fa-link"></i> Đã gán Google Sheet</span>
+                            {% elif role == 'employee' %}
+                            <span class="session-chip"><i class="fas fa-triangle-exclamation"></i> Chưa gán Google Sheet</span>
                             {% endif %}
-                        </span>
+                        </div>
                     </div>
-                    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+
+                    <div class="quick-actions">
                         {% if role == 'employee' %}
-                        <a href="{{ url_for('privileged_login') }}" class="logout-link" style="background:rgba(37,99,235,0.16);color:#bfdbfe;border-color:#3b82f655;">
-                            <i class="fas fa-lock-open"></i> Login Leader / Admin
+                        <a href="{{ url_for('privileged_login') }}" class="action-link elevate">
+                            <i class="fas fa-lock-open"></i> Nâng quyền Leader / Admin
                         </a>
                         {% endif %}
                         {% if role == 'admin' %}
-                        <a href="{{ url_for('admin_users_page') }}" class="logout-link" style="background:rgba(139,92,246,0.18);color:#a78bfa;border-color:#7c3aed44;">
+                        <a href="{{ url_for('admin_users_page') }}" class="action-link manage">
                             <i class="fas fa-users-cog"></i> Quản lý Users
                         </a>
                         {% endif %}
-                        <a href="{{ url_for('logout') }}" class="logout-link"><i class="fas fa-sign-out-alt"></i> Đăng xuất</a>
+                        <a href="{{ url_for('logout') }}" class="action-link logout"><i class="fas fa-sign-out-alt"></i> Đăng xuất</a>
                     </div>
                 </div>
                 <p class="company-name">GDT Group</p>
@@ -145,18 +211,6 @@
 
         <!-- Main Content -->
         <main class="main-content">
-
-            {% if role == 'employee' %}
-            <section class="action-bar-section">
-                <div class="card action-bar" style="justify-content:space-between;gap:16px;flex-wrap:wrap;">
-                    <div>
-                        <strong style="display:block;color:#e2e8f0;margin-bottom:4px;">Đang ở quyền nhân viên</strong>
-                        <span style="color:#94a3b8;font-size:0.92rem;">Nhân viên dừng ở màn hình này. Nếu cần xem tổng, leader/admin bấm nút login thêm ở trên.</span>
-                    </div>
-                </div>
-            </section>
-            {% endif %}
-
             <!-- ── Input Section (hidden for employee) ── -->
             {% if role != 'employee' %}
             <section class="input-section">
