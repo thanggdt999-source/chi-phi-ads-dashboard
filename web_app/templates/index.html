@@ -5,21 +5,132 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chi Phí Ads - Dashboard</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        /* ── Role Level Indicator (fixed top-right) ── */
+        .role-level-indicator {
+            position: fixed;
+            top: 14px;
+            right: 16px;
+            z-index: 1000;
+            background: rgba(15, 23, 42, 0.92);
+            border: 1px solid #334155;
+            border-radius: 14px;
+            padding: 10px 14px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+            backdrop-filter: blur(8px);
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 7px;
+            min-width: 190px;
+        }
+        .rli-user {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: #e2e8f0;
+        }
+        .rli-user .avatar {
+            width: 28px; height: 28px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.75rem; font-weight: 800;
+        }
+        .avatar-admin    { background: rgba(139,92,246,0.25); color: #a78bfa; border: 1.5px solid #7c3aed66; }
+        .avatar-lead     { background: rgba(59,130,246,0.25); color: #60a5fa; border: 1.5px solid #3b82f666; }
+        .avatar-employee { background: rgba(34,197,94,0.25);  color: #86efac; border: 1.5px solid #22c55e66; }
+
+        .rli-label { font-size: 0.68rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
+
+        .rli-steps {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .rli-step {
+            font-size: 0.7rem;
+            padding: 3px 9px;
+            border-radius: 20px;
+            background: rgba(255,255,255,0.04);
+            color: #475569;
+            border: 1px solid #1e293b;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+        .rli-step.active-admin    { background: rgba(139,92,246,0.2); color: #a78bfa; border-color: #7c3aed66; font-weight: 700; }
+        .rli-step.active-lead     { background: rgba(59,130,246,0.2); color: #60a5fa; border-color: #3b82f666; font-weight: 700; }
+        .rli-step.active-employee { background: rgba(34,197,94,0.2);  color: #86efac; border-color: #22c55e66; font-weight: 700; }
+
+        .rli-arrow { color: #1e293b; font-size: 0.6rem; }
+
+        @media (max-width: 600px) {
+            .role-level-indicator { top: auto; bottom: 16px; right: 12px; min-width: 160px; }
+        }
+    </style>
 </head>
 <body>
+    <!-- Inject server-side context for JavaScript -->
+    <script>
+        window.APP_ROLE      = {{ role | tojson }};
+        window.APP_TEAM      = {{ team | tojson }};
+        window.APP_DISPLAY   = {{ display_name | tojson }};
+        window.APP_SHEET_URL = {{ sheet_url | tojson }};
+        window.APP_SHEETS    = {{ accessible_sheets_json | safe }};
+    </script>
+
+    <!-- ── Role Level Indicator (fixed corner) ── -->
+    <div class="role-level-indicator">
+        <div class="rli-user">
+            <div class="avatar avatar-{{ role }}">
+                {% if role == 'admin' %}<i class="fas fa-shield-alt"></i>
+                {% elif role == 'lead' %}<i class="fas fa-users"></i>
+                {% else %}<i class="fas fa-user"></i>{% endif %}
+            </div>
+            <span>{{ display_name }}{% if team %} · {{ team }}{% endif %}</span>
+        </div>
+        <span class="rli-label">Cấp quyền hiện tại</span>
+        <div class="rli-steps">
+            <span class="rli-step {% if role == 'employee' %}active-employee{% endif %}">
+                <i class="fas fa-user"></i> Nhân viên
+            </span>
+            <span class="rli-arrow"><i class="fas fa-angle-right"></i></span>
+            <span class="rli-step {% if role == 'lead' %}active-lead{% endif %}">
+                <i class="fas fa-users"></i> Leader
+            </span>
+            <span class="rli-arrow"><i class="fas fa-angle-right"></i></span>
+            <span class="rli-step {% if role == 'admin' %}active-admin{% endif %}">
+                <i class="fas fa-shield-alt"></i> Admin
+            </span>
+        </div>
+    </div>
+
     <div class="container">
         <!-- Header -->
         <header class="header">
             <div class="header-content">
-                <div style="display:flex;gap:12px;justify-content:flex-end;flex-wrap:wrap;">
-                    {% if role == 'admin' %}
-                    <a href="{{ url_for('admin_users_page') }}" class="logout-link" style="background:rgba(139,92,246,0.18);color:#a78bfa;border-color:#7c3aed44;">
-                        <i class="fas fa-users-cog"></i> Quản lý Users
-                    </a>
-                    {% endif %}
-                    <a href="{{ url_for('logout') }}" class="logout-link">Đăng xuất</a>
+                <div class="header-top-bar">
+                    <div class="user-info-bar">
+                        <span class="role-badge role-{{ role }}">
+                            {% if role == 'admin' %}
+                                <i class="fas fa-shield-alt"></i> Admin
+                            {% elif role == 'lead' %}
+                                <i class="fas fa-users"></i> Lead — {{ team }}
+                            {% else %}
+                                <i class="fas fa-user"></i> {{ display_name }}{% if team %} · {{ team }}{% endif %}
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div style="display:flex;gap:10px;align-items:center;">
+                        {% if role == 'admin' %}
+                        <a href="{{ url_for('admin_users_page') }}" class="logout-link" style="background:rgba(139,92,246,0.18);color:#a78bfa;border-color:#7c3aed44;">
+                            <i class="fas fa-users-cog"></i> Quản lý Users
+                        </a>
+                        {% endif %}
+                        <a href="{{ url_for('logout') }}" class="logout-link"><i class="fas fa-sign-out-alt"></i> Đăng xuất</a>
+                    </div>
                 </div>
                 <p class="company-name">GDT Group</p>
                 <h1><i class="fas fa-chart-line"></i> Chi Phí Ads Dashboard</h1>
@@ -29,258 +140,173 @@
 
         <!-- Main Content -->
         <main class="main-content">
-            <!-- Input Section -->
+
+            <!-- ── Input Section (hidden for employee) ── -->
+            {% if role != 'employee' %}
             <section class="input-section">
                 <div class="card">
                     <div class="input-header-row">
                         <h2><i class="fas fa-link"></i> Nhập Sheet URL</h2>
-                        <button type="button" id="autoFillToggleBtn" class="auto-toggle-btn auto-on">
-                            Auto Fill: ON
-                        </button>
+                        <button type="button" id="autoFillToggleBtn" class="auto-toggle-btn auto-on">Auto Fill: ON</button>
                     </div>
                     <form id="urlForm" onsubmit="handleSubmit(event)">
                         <div class="input-wrap">
                             <div class="input-group">
-                                <input 
-                                    type="text" 
-                                    id="sheetUrl" 
-                                    placeholder="Dán link Google Sheet của bạn tại đây..." 
-                                    autocomplete="off"
-                                    required>
-                                <button type="submit" class="btn btn-primary">
-                                    <i class="fas fa-search"></i> Tải Dữ Liệu
-                                </button>
+                                <input type="text" id="sheetUrl" placeholder="Dán link Google Sheet tại đây..." autocomplete="off" required>
+                                <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Tải Dữ Liệu</button>
                             </div>
                             <div id="sheetSuggestions" class="sheet-suggestions" style="display:none;"></div>
                         </div>
-                        <small>Ví dụ: https://docs.google.com/spreadsheets/d/1LTWiNI7QgkHBDqWHCxccx5W9b7A_xiRK91WAyOztmDg/edit</small>
+                        <small>Ví dụ: https://docs.google.com/spreadsheets/d/…/edit</small>
                     </form>
                     <div id="loadingSpinner" class="loading-spinner" style="display: none;">
                         <i class="fas fa-spinner"></i> Đang tải dữ liệu...
                     </div>
                 </div>
             </section>
+            {% else %}
+            <!-- Employee: hidden spinner (auto-load) -->
+            <div id="loadingSpinner" class="loading-spinner" style="display: none;">
+                <i class="fas fa-spinner"></i> Đang tải dữ liệu của bạn...
+            </div>
+            {% endif %}
 
-            <!-- Error Message -->
+            <!-- ── Lead / Admin: action bar ── -->
+            {% if role in ['lead', 'admin'] %}
+            <section class="action-bar-section">
+                <div class="card action-bar">
+                    <button id="btnLoadAll" class="btn btn-primary" onclick="loadAllData()">
+                        <i class="fas fa-layer-group"></i>
+                        {% if role == 'admin' %}Tải tất cả báo cáo{% else %}Tải báo cáo tổng team{% endif %}
+                    </button>
+                    <div class="member-selector-wrap">
+                        <label for="memberSelect"><i class="fas fa-user-circle"></i> Xem theo thành viên:</label>
+                        <select id="memberSelect" class="member-select" onchange="loadMemberSheet(this.value)">
+                            <option value="">-- Chọn thành viên --</option>
+                        </select>
+                    </div>
+                </div>
+            </section>
+            {% endif %}
+
+            <!-- ── Error Message ── -->
             <div id="errorMessage" class="alert alert-error" style="display: none;"></div>
 
-            <!-- Stats Section -->
+            <!-- ── Stats Section ── -->
             <section id="statsSection" class="stats-section" style="display: none;">
                 <div class="stats-grid">
                     <div class="stat-card">
                         <div class="stat-label">Tổng Chi Phí</div>
-                        <!DOCTYPE html>
-                        <html lang="vi">
-                        <head>
-                            <meta charset="UTF-8">
-                            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                            <title>Chi Phí Ads - Dashboard</title>
-                            <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-                            <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-                        </head>
-                        <body>
-                            <!-- Inject server-side context for JavaScript -->
-                            <script>
-                                window.APP_ROLE      = {{ role | tojson }};
-                                window.APP_TEAM      = {{ team | tojson }};
-                                window.APP_DISPLAY   = {{ display_name | tojson }};
-                                window.APP_SHEET_URL = {{ sheet_url | tojson }};
-                                window.APP_SHEETS    = {{ accessible_sheets_json | safe }};
-                            </script>
+                        <div class="stat-value" id="totalSpend">0</div>
+                        <div class="stat-unit">VND</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Tổng Kết Quả</div>
+                        <div class="stat-value" id="totalResults">0</div>
+                        <div class="stat-unit">data</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Chi Phí / Kết Quả</div>
+                        <div class="stat-value" id="costPerResult">0</div>
+                        <div class="stat-unit">VND</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">% Ads</div>
+                        <div class="stat-value" id="adsPercent">0</div>
+                        <div class="stat-unit">%</div>
+                    </div>
+                </div>
+            </section>
 
-                            <div class="container">
-                                <!-- Header -->
-                                <header class="header">
-                                    <div class="header-content">
-                                        <div class="header-top-bar">
-                                            <div class="user-info-bar">
-                                                <span class="role-badge role-{{ role }}">
-                                                    {% if role == 'admin' %}
-                                                        <i class="fas fa-shield-alt"></i> Admin
-                                                    {% elif role == 'lead' %}
-                                                        <i class="fas fa-users"></i> Lead — {{ team }}
-                                                    {% else %}
-                                                        <i class="fas fa-user"></i> {{ display_name }}{% if team %} · {{ team }}{% endif %}
-                                                    {% endif %}
-                                                </span>
-                                            </div>
-                                            <a href="{{ url_for('logout') }}" class="logout-link"><i class="fas fa-sign-out-alt"></i> Đăng xuất</a>
-                                        </div>
-                                        <p class="company-name">GDT Group</p>
-                                        <h1><i class="fas fa-chart-line"></i> Chi Phí Ads Dashboard</h1>
-                                        <p>Quản lý chi phí quảng cáo một cách dễ dàng</p>
-                                    </div>
-                                </header>
+            <!-- ── Rankings Section (lead / admin only) ── -->
+            {% if role in ['lead', 'admin'] %}
+            <section id="rankingsSection" class="rankings-section" style="display: none;">
+                <div class="card">
+                    <h2><i class="fas fa-trophy"></i> Bảng Xếp Hạng</h2>
+                    <div class="table-wrapper">
+                        <table class="data-table rankings-table">
+                            <thead>
+                                <tr>
+                                    <th>Hạng</th>
+                                    {% if role == 'admin' %}<th>Team</th>{% endif %}
+                                    <th>Thành Viên</th>
+                                    <th>Tổng Chi Phí</th>
+                                    <th>Tổng Data</th>
+                                    <th>Chi Phí / Data</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rankingsBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+            {% endif %}
 
-                                <!-- Main Content -->
-                                <main class="main-content">
+            <!-- ── Charts Section ── -->
+            <section id="chartsSection" class="charts-section" style="display: none;">
+                <div class="charts-grid">
+                    <div class="card">
+                        <h3><i class="fas fa-chart-bar"></i> Chi Phí Theo Ngày</h3>
+                        <canvas id="spendByDateChart"></canvas>
+                    </div>
+                    <div class="card">
+                        <h3><i class="fas fa-chart-pie"></i> Chi Phí Theo Sản Phẩm</h3>
+                        <canvas id="spendByProductChart"></canvas>
+                    </div>
+                </div>
+            </section>
 
-                                    <!-- ── Input Section (hidden for employee) ── -->
-                                    {% if role != 'employee' %}
-                                    <section class="input-section">
-                                        <div class="card">
-                                            <div class="input-header-row">
-                                                <h2><i class="fas fa-link"></i> Nhập Sheet URL</h2>
-                                                <button type="button" id="autoFillToggleBtn" class="auto-toggle-btn auto-on">Auto Fill: ON</button>
-                                            </div>
-                                            <form id="urlForm" onsubmit="handleSubmit(event)">
-                                                <div class="input-wrap">
-                                                    <div class="input-group">
-                                                        <input type="text" id="sheetUrl" placeholder="Dán link Google Sheet tại đây..." autocomplete="off" required>
-                                                        <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Tải Dữ Liệu</button>
-                                                    </div>
-                                                    <div id="sheetSuggestions" class="sheet-suggestions" style="display:none;"></div>
-                                                </div>
-                                                <small>Ví dụ: https://docs.google.com/spreadsheets/d/…/edit</small>
-                                            </form>
-                                            <div id="loadingSpinner" class="loading-spinner" style="display: none;">
-                                                <i class="fas fa-spinner"></i> Đang tải dữ liệu...
-                                            </div>
-                                        </div>
-                                    </section>
-                                    {% else %}
-                                    <!-- Employee: hidden spinner (auto-load) -->
-                                    <div id="loadingSpinner" class="loading-spinner" style="display: none;">
-                                        <i class="fas fa-spinner"></i> Đang tải dữ liệu của bạn...
-                                    </div>
-                                    {% endif %}
+            <!-- ── Date Filter + Data Table ── -->
+            <section id="tableSection" class="table-section" style="display: none;">
+                <div class="card">
+                    <div class="table-header-row">
+                        <h2><i class="fas fa-table"></i> Chi Tiết Dữ Liệu</h2>
+                        <div class="date-filter-bar">
+                            <label><i class="fas fa-calendar-alt"></i> Từ ngày</label>
+                            <input type="date" id="dateFrom" class="date-input">
+                            <label>Đến ngày</label>
+                            <input type="date" id="dateTo" class="date-input">
+                            <button class="btn btn-filter" onclick="applyDateFilter()"><i class="fas fa-filter"></i> Lọc</button>
+                            <button class="btn btn-reset" onclick="resetDateFilter()"><i class="fas fa-times"></i> Xóa lọc</button>
+                        </div>
+                    </div>
+                    <div id="filterInfo" class="filter-info" style="display:none;"></div>
+                    <div class="table-meta-row">
+                        <div id="tableCountInfo" class="table-count-info">0 dòng dữ liệu</div>
+                        <div class="table-page-size-wrap">
+                            <label for="pageSizeSelect">Hiển thị</label>
+                            <select id="pageSizeSelect" onchange="changePageSize(this.value)">
+                                <option value="25">25</option>
+                                <option value="50" selected>50</option>
+                                <option value="100">100</option>
+                            </select>
+                            <span>dòng / trang</span>
+                        </div>
+                    </div>
+                    <div class="table-wrapper">
+                        <table id="dataTable" class="data-table">
+                            <thead><tr id="tableHeader"></tr></thead>
+                            <tbody id="tableBody"></tbody>
+                        </table>
+                    </div>
+                    <div class="pagination-bar">
+                        <button class="btn btn-reset" id="prevPageBtn" onclick="prevPage()"><i class="fas fa-angle-left"></i> Trang trước</button>
+                        <span id="pageInfo" class="page-info">Trang 1/1</span>
+                        <button class="btn btn-filter" id="nextPageBtn" onclick="nextPage()">Trang sau <i class="fas fa-angle-right"></i></button>
+                    </div>
+                </div>
+            </section>
 
-                                    <!-- ── Lead / Admin: action bar ── -->
-                                    {% if role in ['lead', 'admin'] %}
-                                    <section class="action-bar-section">
-                                        <div class="card action-bar">
-                                            <button id="btnLoadAll" class="btn btn-primary" onclick="loadAllData()">
-                                                <i class="fas fa-layer-group"></i>
-                                                {% if role == 'admin' %}Tải tất cả báo cáo{% else %}Tải báo cáo tổng team{% endif %}
-                                            </button>
-                                            <div class="member-selector-wrap">
-                                                <label for="memberSelect"><i class="fas fa-user-circle"></i> Xem theo thành viên:</label>
-                                                <select id="memberSelect" class="member-select" onchange="loadMemberSheet(this.value)">
-                                                    <option value="">-- Chọn thành viên --</option>
-                                                </select>
-                                            </div>
-                                        </div>
-                                    </section>
-                                    {% endif %}
+        </main>
 
-                                    <!-- ── Error Message ── -->
-                                    <div id="errorMessage" class="alert alert-error" style="display: none;"></div>
+        <!-- Footer -->
+        <footer class="footer">
+            <p>&copy; 2026 <strong>GDT Group</strong> | Chi Phí Ads Dashboard</p>
+            <p style="font-size: 12px; margin-top: 4px; opacity: 0.7;">Phát triển phần mềm: Nguyễn Bá Thắng</p>
+        </footer>
+    </div>
 
-                                    <!-- ── Stats Section ── -->
-                                    <section id="statsSection" class="stats-section" style="display: none;">
-                                        <div class="stats-grid">
-                                            <div class="stat-card">
-                                                <div class="stat-label">Tổng Chi Phí</div>
-                                                <div class="stat-value" id="totalSpend">0</div>
-                                                <div class="stat-unit">VND</div>
-                                            </div>
-                                            <div class="stat-card">
-                                                <div class="stat-label">Tổng Kết Quả</div>
-                                                <div class="stat-value" id="totalResults">0</div>
-                                                <div class="stat-unit">data</div>
-                                            </div>
-                                            <div class="stat-card">
-                                                <div class="stat-label">Chi Phí / Kết Quả</div>
-                                                <div class="stat-value" id="costPerResult">0</div>
-                                                <div class="stat-unit">VND</div>
-                                            </div>
-                                            <div class="stat-card">
-                                                <div class="stat-label">% Ads</div>
-                                                <div class="stat-value" id="adsPercent">0</div>
-                                                <div class="stat-unit">%</div>
-                                            </div>
-                                        </div>
-                                    </section>
-
-                                    <!-- ── Rankings Section (lead / admin only) ── -->
-                                    {% if role in ['lead', 'admin'] %}
-                                    <section id="rankingsSection" class="rankings-section" style="display: none;">
-                                        <div class="card">
-                                            <h2><i class="fas fa-trophy"></i> Bảng Xếp Hạng</h2>
-                                            <div class="table-wrapper">
-                                                <table class="data-table rankings-table">
-                                                    <thead>
-                                                        <tr>
-                                                            <th>Hạng</th>
-                                                            {% if role == 'admin' %}<th>Team</th>{% endif %}
-                                                            <th>Thành Viên</th>
-                                                            <th>Tổng Chi Phí</th>
-                                                            <th>Tổng Data</th>
-                                                            <th>Chi Phí / Data</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody id="rankingsBody"></tbody>
-                                                </table>
-                                            </div>
-                                        </div>
-                                    </section>
-                                    {% endif %}
-
-                                    <!-- ── Charts Section ── -->
-                                    <section id="chartsSection" class="charts-section" style="display: none;">
-                                        <div class="charts-grid">
-                                            <div class="card">
-                                                <h3><i class="fas fa-chart-bar"></i> Chi Phí Theo Ngày</h3>
-                                                <canvas id="spendByDateChart"></canvas>
-                                            </div>
-                                            <div class="card">
-                                                <h3><i class="fas fa-chart-pie"></i> Chi Phí Theo Sản Phẩm</h3>
-                                                <canvas id="spendByProductChart"></canvas>
-                                            </div>
-                                        </div>
-                                    </section>
-
-                                    <!-- ── Date Filter + Data Table ── -->
-                                    <section id="tableSection" class="table-section" style="display: none;">
-                                        <div class="card">
-                                            <div class="table-header-row">
-                                                <h2><i class="fas fa-table"></i> Chi Tiết Dữ Liệu</h2>
-                                                <!-- Date filter -->
-                                                <div class="date-filter-bar">
-                                                    <label><i class="fas fa-calendar-alt"></i> Từ ngày</label>
-                                                    <input type="date" id="dateFrom" class="date-input">
-                                                    <label>Đến ngày</label>
-                                                    <input type="date" id="dateTo" class="date-input">
-                                                    <button class="btn btn-filter" onclick="applyDateFilter()"><i class="fas fa-filter"></i> Lọc</button>
-                                                    <button class="btn btn-reset" onclick="resetDateFilter()"><i class="fas fa-times"></i> Xóa lọc</button>
-                                                </div>
-                                            </div>
-                                            <div id="filterInfo" class="filter-info" style="display:none;"></div>
-                                            <div class="table-meta-row">
-                                                <div id="tableCountInfo" class="table-count-info">0 dòng dữ liệu</div>
-                                                <div class="table-page-size-wrap">
-                                                    <label for="pageSizeSelect">Hiển thị</label>
-                                                    <select id="pageSizeSelect" onchange="changePageSize(this.value)">
-                                                        <option value="25">25</option>
-                                                        <option value="50" selected>50</option>
-                                                        <option value="100">100</option>
-                                                    </select>
-                                                    <span>dòng / trang</span>
-                                                </div>
-                                            </div>
-                                            <div class="table-wrapper">
-                                                <table id="dataTable" class="data-table">
-                                                    <thead><tr id="tableHeader"></tr></thead>
-                                                    <tbody id="tableBody"></tbody>
-                                                </table>
-                                            </div>
-                                            <div class="pagination-bar">
-                                                <button class="btn btn-reset" id="prevPageBtn" onclick="prevPage()"><i class="fas fa-angle-left"></i> Trang trước</button>
-                                                <span id="pageInfo" class="page-info">Trang 1/1</span>
-                                                <button class="btn btn-filter" id="nextPageBtn" onclick="nextPage()">Trang sau <i class="fas fa-angle-right"></i></button>
-                                            </div>
-                                        </div>
-                                    </section>
-                                </main>
-
-                                <!-- Footer -->
-                                <footer class="footer">
-                                    <p>&copy; 2026 <strong>GDT Group</strong> | Chi Phí Ads Dashboard</p>
-                                    <p style="font-size: 12px; margin-top: 4px; opacity: 0.7;">Phát triển phần mềm: Nguyễn Bá Thắng</p>
-                                </footer>
-                            </div>
-
-                            <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
-                            <script src="{{ url_for('static', filename='script.js') }}"></script>
-                        </body>
-                        </html>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
