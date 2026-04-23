@@ -62,65 +62,201 @@
                 <div class="stats-grid">
                     <div class="stat-card">
                         <div class="stat-label">Tổng Chi Phí</div>
-                        <div class="stat-value" id="totalSpend">0</div>
-                        <div class="stat-unit">VND</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Tổng Kết Quả</div>
-                        <div class="stat-value" id="totalResults">0</div>
-                        <div class="stat-unit">conversions</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Chi Phí/Kết Quả</div>
-                        <div class="stat-value" id="costPerResult">0</div>
-                        <div class="stat-unit">VND</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">% Ads</div>
-                        <div class="stat-value" id="adsPercent">0</div>
-                        <div class="stat-unit">%</div>
-                    </div>
-                </div>
-            </section>
+                        <!DOCTYPE html>
+                        <html lang="vi">
+                        <head>
+                            <meta charset="UTF-8">
+                            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                            <title>Chi Phí Ads - Dashboard</title>
+                            <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+                            <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+                        </head>
+                        <body>
+                            <!-- Inject server-side context for JavaScript -->
+                            <script>
+                                window.APP_ROLE      = {{ role | tojson }};
+                                window.APP_TEAM      = {{ team | tojson }};
+                                window.APP_DISPLAY   = {{ display_name | tojson }};
+                                window.APP_SHEET_URL = {{ sheet_url | tojson }};
+                                window.APP_SHEETS    = {{ accessible_sheets_json | safe }};
+                            </script>
 
-            <!-- Charts Section -->
-            <section id="chartsSection" class="charts-section" style="display: none;">
-                <div class="charts-grid">
-                    <div class="card">
-                        <h3><i class="fas fa-chart-bar"></i> Chi Phí Theo Ngày</h3>
-                        <canvas id="spendByDateChart"></canvas>
-                    </div>
-                    <div class="card">
-                        <h3><i class="fas fa-chart-pie"></i> Chi Phí Theo Sản Phẩm</h3>
-                        <canvas id="spendByProductChart"></canvas>
-                    </div>
-                </div>
-            </section>
+                            <div class="container">
+                                <!-- Header -->
+                                <header class="header">
+                                    <div class="header-content">
+                                        <div class="header-top-bar">
+                                            <div class="user-info-bar">
+                                                <span class="role-badge role-{{ role }}">
+                                                    {% if role == 'admin' %}
+                                                        <i class="fas fa-shield-alt"></i> Admin
+                                                    {% elif role == 'lead' %}
+                                                        <i class="fas fa-users"></i> Lead — {{ team }}
+                                                    {% else %}
+                                                        <i class="fas fa-user"></i> {{ display_name }}{% if team %} · {{ team }}{% endif %}
+                                                    {% endif %}
+                                                </span>
+                                            </div>
+                                            <a href="{{ url_for('logout') }}" class="logout-link"><i class="fas fa-sign-out-alt"></i> Đăng xuất</a>
+                                        </div>
+                                        <p class="company-name">GDT Group</p>
+                                        <h1><i class="fas fa-chart-line"></i> Chi Phí Ads Dashboard</h1>
+                                        <p>Quản lý chi phí quảng cáo một cách dễ dàng</p>
+                                    </div>
+                                </header>
 
-            <!-- Data Table Section -->
-            <section id="tableSection" class="table-section" style="display: none;">
-                <div class="card">
-                    <h2><i class="fas fa-table"></i> Chi Tiết Dữ Liệu</h2>
-                    <div class="table-wrapper">
-                        <table id="dataTable" class="data-table">
-                            <thead>
-                                <tr id="tableHeader"></tr>
-                            </thead>
-                            <tbody id="tableBody"></tbody>
-                        </table>
-                    </div>
-                </div>
-            </section>
-        </main>
+                                <!-- Main Content -->
+                                <main class="main-content">
 
-        <!-- Footer -->
-        <footer class="footer">
-            <p>&copy; 2026 <strong>GDT Group</strong> | Chi Phí Ads Dashboard</p>
-            <p style="font-size: 12px; margin-top: 4px; opacity: 0.7;">Phát triển phần mềm: Nguyễn Bá Thắng</p>
-        </footer>
-    </div>
+                                    <!-- ── Input Section (hidden for employee) ── -->
+                                    {% if role != 'employee' %}
+                                    <section class="input-section">
+                                        <div class="card">
+                                            <div class="input-header-row">
+                                                <h2><i class="fas fa-link"></i> Nhập Sheet URL</h2>
+                                                <button type="button" id="autoFillToggleBtn" class="auto-toggle-btn auto-on">Auto Fill: ON</button>
+                                            </div>
+                                            <form id="urlForm" onsubmit="handleSubmit(event)">
+                                                <div class="input-wrap">
+                                                    <div class="input-group">
+                                                        <input type="text" id="sheetUrl" placeholder="Dán link Google Sheet tại đây..." autocomplete="off" required>
+                                                        <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Tải Dữ Liệu</button>
+                                                    </div>
+                                                    <div id="sheetSuggestions" class="sheet-suggestions" style="display:none;"></div>
+                                                </div>
+                                                <small>Ví dụ: https://docs.google.com/spreadsheets/d/…/edit</small>
+                                            </form>
+                                            <div id="loadingSpinner" class="loading-spinner" style="display: none;">
+                                                <i class="fas fa-spinner"></i> Đang tải dữ liệu...
+                                            </div>
+                                        </div>
+                                    </section>
+                                    {% else %}
+                                    <!-- Employee: hidden spinner (auto-load) -->
+                                    <div id="loadingSpinner" class="loading-spinner" style="display: none;">
+                                        <i class="fas fa-spinner"></i> Đang tải dữ liệu của bạn...
+                                    </div>
+                                    {% endif %}
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
-</body>
-</html>
+                                    <!-- ── Lead / Admin: action bar ── -->
+                                    {% if role in ['lead', 'admin'] %}
+                                    <section class="action-bar-section">
+                                        <div class="card action-bar">
+                                            <button id="btnLoadAll" class="btn btn-primary" onclick="loadAllData()">
+                                                <i class="fas fa-layer-group"></i>
+                                                {% if role == 'admin' %}Tải tất cả báo cáo{% else %}Tải báo cáo tổng team{% endif %}
+                                            </button>
+                                            <div class="member-selector-wrap">
+                                                <label for="memberSelect"><i class="fas fa-user-circle"></i> Xem theo thành viên:</label>
+                                                <select id="memberSelect" class="member-select" onchange="loadMemberSheet(this.value)">
+                                                    <option value="">-- Chọn thành viên --</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </section>
+                                    {% endif %}
+
+                                    <!-- ── Error Message ── -->
+                                    <div id="errorMessage" class="alert alert-error" style="display: none;"></div>
+
+                                    <!-- ── Stats Section ── -->
+                                    <section id="statsSection" class="stats-section" style="display: none;">
+                                        <div class="stats-grid">
+                                            <div class="stat-card">
+                                                <div class="stat-label">Tổng Chi Phí</div>
+                                                <div class="stat-value" id="totalSpend">0</div>
+                                                <div class="stat-unit">VND</div>
+                                            </div>
+                                            <div class="stat-card">
+                                                <div class="stat-label">Tổng Kết Quả</div>
+                                                <div class="stat-value" id="totalResults">0</div>
+                                                <div class="stat-unit">data</div>
+                                            </div>
+                                            <div class="stat-card">
+                                                <div class="stat-label">Chi Phí / Kết Quả</div>
+                                                <div class="stat-value" id="costPerResult">0</div>
+                                                <div class="stat-unit">VND</div>
+                                            </div>
+                                            <div class="stat-card">
+                                                <div class="stat-label">% Ads</div>
+                                                <div class="stat-value" id="adsPercent">0</div>
+                                                <div class="stat-unit">%</div>
+                                            </div>
+                                        </div>
+                                    </section>
+
+                                    <!-- ── Rankings Section (lead / admin only) ── -->
+                                    {% if role in ['lead', 'admin'] %}
+                                    <section id="rankingsSection" class="rankings-section" style="display: none;">
+                                        <div class="card">
+                                            <h2><i class="fas fa-trophy"></i> Bảng Xếp Hạng</h2>
+                                            <div class="table-wrapper">
+                                                <table class="data-table rankings-table">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Hạng</th>
+                                                            {% if role == 'admin' %}<th>Team</th>{% endif %}
+                                                            <th>Thành Viên</th>
+                                                            <th>Tổng Chi Phí</th>
+                                                            <th>Tổng Data</th>
+                                                            <th>Chi Phí / Data</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody id="rankingsBody"></tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </section>
+                                    {% endif %}
+
+                                    <!-- ── Charts Section ── -->
+                                    <section id="chartsSection" class="charts-section" style="display: none;">
+                                        <div class="charts-grid">
+                                            <div class="card">
+                                                <h3><i class="fas fa-chart-bar"></i> Chi Phí Theo Ngày</h3>
+                                                <canvas id="spendByDateChart"></canvas>
+                                            </div>
+                                            <div class="card">
+                                                <h3><i class="fas fa-chart-pie"></i> Chi Phí Theo Sản Phẩm</h3>
+                                                <canvas id="spendByProductChart"></canvas>
+                                            </div>
+                                        </div>
+                                    </section>
+
+                                    <!-- ── Date Filter + Data Table ── -->
+                                    <section id="tableSection" class="table-section" style="display: none;">
+                                        <div class="card">
+                                            <div class="table-header-row">
+                                                <h2><i class="fas fa-table"></i> Chi Tiết Dữ Liệu</h2>
+                                                <!-- Date filter -->
+                                                <div class="date-filter-bar">
+                                                    <label><i class="fas fa-calendar-alt"></i> Từ ngày</label>
+                                                    <input type="date" id="dateFrom" class="date-input">
+                                                    <label>Đến ngày</label>
+                                                    <input type="date" id="dateTo" class="date-input">
+                                                    <button class="btn btn-filter" onclick="applyDateFilter()"><i class="fas fa-filter"></i> Lọc</button>
+                                                    <button class="btn btn-reset" onclick="resetDateFilter()"><i class="fas fa-times"></i> Xóa lọc</button>
+                                                </div>
+                                            </div>
+                                            <div id="filterInfo" class="filter-info" style="display:none;"></div>
+                                            <div class="table-wrapper">
+                                                <table id="dataTable" class="data-table">
+                                                    <thead><tr id="tableHeader"></tr></thead>
+                                                    <tbody id="tableBody"></tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </section>
+                                </main>
+
+                                <!-- Footer -->
+                                <footer class="footer">
+                                    <p>&copy; 2026 <strong>GDT Group</strong> | Chi Phí Ads Dashboard</p>
+                                    <p style="font-size: 12px; margin-top: 4px; opacity: 0.7;">Phát triển phần mềm: Nguyễn Bá Thắng</p>
+                                </footer>
+                            </div>
+
+                            <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+                            <script src="{{ url_for('static', filename='script.js') }}"></script>
+                        </body>
+                        </html>

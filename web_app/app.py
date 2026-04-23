@@ -3,7 +3,6 @@ from google.oauth2.service_account import Credentials
 import gspread
 import re
 import os
-import csv
 from pathlib import Path
 from functools import wraps
 from datetime import datetime
@@ -12,13 +11,73 @@ import json
 app = Flask(__name__)
 app.secret_key = os.getenv("WEB_APP_SECRET_KEY", "change-this-secret-in-production")
 
-APP_USERNAME = os.getenv("WEB_APP_USERNAME", "admin")
-APP_PASSWORD = os.getenv("WEB_APP_PASSWORD", "admin123")
-
 SERVICE_ACCOUNT_PATH = Path(__file__).parent.parent / "storage" / "credentials" / "service_account.json"
 SHEET_URLS_PATH = Path(os.getenv("SHEET_URLS_PATH", str(Path(__file__).parent.parent / "storage" / "sheet_urls.csv")))
 AUTO_STATE_PATH = Path(os.getenv("AUTO_STATE_PATH", str(Path(__file__).parent.parent / "storage" / "config" / "auto_fill_state.json")))
 
+ROLE_LEVELS = {"admin": 3, "lead": 2, "employee": 1}
+
+# ─────────────────── USER CONFIG ───────────────────
+
+def load_users_config() -> dict:
+    """Load user config from USERS_CONFIG env var; fall back to legacy single-user env vars."""
+    config_json = os.getenv("USERS_CONFIG", "").strip()
+    if config_json:
+        try:
+            return json.loads(config_json)
+        except Exception:
+            pass
+    # Legacy fallback
+    username = os.getenv("WEB_APP_USERNAME", "admin")
+    password = os.getenv("WEB_APP_PASSWORD", "admin123")
+    return {
+        username: {"password": password, "role": "admin", "display_name": "Administrator"}
+    }
+
+
+def get_user(username: str) -> dict | None:
+    return load_users_config().get(username)
+
+
+def get_accessible_sheets_for_user(username: str) -> list:
+    """Return [{name, url, team, username}] accessible to this user."""
+    users = load_users_config()
+    user = users.get(username, {})
+    role = user.get("role", "employee")
+    team = user.get("team", "")
+
+    if role == "admin":
+        return [
+            {
+                "name": udata.get("display_name", uname),
+                "url": udata["sheet_url"],
+                "team": udata.get("team", ""),
+                "username": uname,
+            }
+            for uname, udata in users.items()
+            if udata.get("role") == "employee" and udata.get("sheet_url")
+        ]
+
+    if role == "lead":
+        return [
+            {
+                "name": udata.get("display_name", uname),
+                "url": udata["sheet_url"],
+                "team": team,
+                "username": uname,
+            }
+            for uname, udata in users.items()
+            if udata.get("role") == "employee" and udata.get("team") == team and udata.get("sheet_url")
+        ]
+
+    # employee
+    sheet_url = user.get("sheet_url", "")
+    if sheet_url:
+        return [{"name": user.get("display_name", username), "url": sheet_url, "team": team, "username": username}]
+    return []
+
+
+# ─────────────────── AUTH HELPERS ───────────────────
 
 def is_logged_in():
     return session.get("logged_in") is True
@@ -30,7 +89,6 @@ def login_required(view_func):
         if not is_logged_in():
             return redirect(url_for("login", next=request.path))
         return view_func(*args, **kwargs)
-
     return wrapper
 
 
@@ -40,8 +98,23 @@ def api_login_required(view_func):
         if not is_logged_in():
             return jsonify({"success": False, "error": "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."}), 401
         return view_func(*args, **kwargs)
-
     return wrapper
+
+
+def api_role_required(min_role: str):
+    """Decorator: require minimum role level for an API endpoint."""
+    def decorator(view_func):
+        @wraps(view_func)
+        def wrapper(*args, **kwargs):
+            if not is_logged_in():
+                return jsonify({"success": False, "error": "Chưa đăng nhập."}), 401
+            user_level = ROLE_LEVELS.get(session.get("role", "employee"), 0)
+            required_level = ROLE_LEVELS.get(min_role, 99)
+            if user_level < required_level:
+                return jsonify({"success": False, "error": "Bạn không có quyền truy cập tính năng này."}), 403
+            return view_func(*args, **kwargs)
+        return wrapper
+    return decorator
 
 
 def load_auto_fill_enabled() -> bool:
@@ -98,6 +171,21 @@ def extract_sheet_id(url):
     """Extract sheet ID from Google Sheets URL."""
     match = re.search(r'/spreadsheets/d/([a-zA-Z0-9_-]+)', url)
     return match.group(1) if match else None
+
+
+def parse_spend(val: str) -> float:
+    """Parse Vietnamese-format currency string to float."""
+    cleaned = val.replace(".", "").replace(",", ".")
+    cleaned = re.sub(r"[^\d.]", "", cleaned)
+    try:
+        return float(cleaned)
+    except ValueError:
+        return 0.0
+
+
+def parse_int(val: str) -> int:
+    cleaned = re.sub(r"[^\d]", "", val)
+    return int(cleaned) if cleaned else 0
 
 DISPLAY_COLUMNS = ["Ngày", "Tên tài khoản", "Tên sản phẩm - VN", "Số Data", "Số tiền chi tiêu - VND"]
 
@@ -180,7 +268,20 @@ def fetch_chi_phi_ads_data(sheet_id):
 @app.route("/")
 @login_required
 def index():
-    return render_template("index.html")
+    username = session.get("username", "")
+    role = session.get("role", "employee")
+    display_name = session.get("display_name", username)
+    team = session.get("team", "")
+    sheet_url = session.get("sheet_url", "")
+    accessible_sheets = get_accessible_sheets_for_user(username)
+    return render_template(
+        "index.html",
+        role=role,
+        display_name=display_name,
+        team=team,
+        sheet_url=sheet_url,
+        accessible_sheets_json=json.dumps(accessible_sheets, ensure_ascii=False),
+    )
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -193,8 +294,14 @@ def login():
     username = request.form.get("username", "").strip()
     password = request.form.get("password", "")
 
-    if username == APP_USERNAME and password == APP_PASSWORD:
+    user = get_user(username)
+    if user and user.get("password") == password:
         session["logged_in"] = True
+        session["username"] = username
+        session["role"] = user.get("role", "employee")
+        session["team"] = user.get("team", "")
+        session["display_name"] = user.get("display_name", username)
+        session["sheet_url"] = user.get("sheet_url", "")
         next_url = request.args.get("next") or url_for("index")
         return redirect(next_url)
 
@@ -210,7 +317,7 @@ def logout():
 @api_login_required
 def fetch_data():
     data = request.get_json()
-    sheet_url = data.get("sheet_url", "").strip()
+    sheet_url = (data.get("sheet_url") or "").strip()
     
     if not sheet_url:
         return jsonify({"success": False, "error": "Vui lòng nhập URL sheet"}), 400
@@ -219,8 +326,69 @@ def fetch_data():
     if not sheet_id:
         return jsonify({"success": False, "error": "URL sheet không hợp lệ"}), 400
     
+    role = session.get("role", "employee")
+    username = session.get("username", "")
+
+    # Access control
+    if role == "employee":
+        own_id = extract_sheet_id(session.get("sheet_url", ""))
+        if not own_id or sheet_id != own_id:
+            return jsonify({"success": False, "error": "Bạn không có quyền xem sheet này."}), 403
+    elif role == "lead":
+        accessible_ids = {extract_sheet_id(s["url"]) for s in get_accessible_sheets_for_user(username)}
+        if sheet_id not in accessible_ids:
+            return jsonify({"success": False, "error": "Sheet này không thuộc team của bạn."}), 403
+
     result = fetch_chi_phi_ads_data(sheet_id)
     return jsonify(result)
+
+
+@app.route("/api/fetch-all-data", methods=["POST"])
+@api_role_required("lead")
+def fetch_all_data():
+    """Fetch & aggregate data from all sheets accessible to the current user."""
+    username = session.get("username", "")
+    sheets = get_accessible_sheets_for_user(username)
+    if not sheets:
+        return jsonify({"success": False, "error": "Không tìm thấy sheet nào cho tài khoản này."}), 404
+
+    all_rows = []
+    member_summaries = []
+    errors = []
+
+    for sheet in sheets:
+        sheet_id = extract_sheet_id(sheet["url"])
+        if not sheet_id:
+            continue
+        result = fetch_chi_phi_ads_data(sheet_id)
+        if result.get("success"):
+            member_rows = result.get("data", [])
+            all_rows.extend(member_rows)
+            total_spend = sum(parse_spend(r.get("Số tiền chi tiêu - VND", "")) for r in member_rows)
+            total_data = sum(parse_int(r.get("Số Data", "")) for r in member_rows)
+            member_summaries.append({
+                "name": sheet["name"],
+                "team": sheet.get("team", ""),
+                "total_spend": total_spend,
+                "total_data": total_data,
+                "cost_per_data": round(total_spend / total_data) if total_data > 0 else 0,
+                "sheet_url": sheet["url"],
+            })
+        else:
+            errors.append({"name": sheet["name"], "error": result.get("error", "Lỗi không xác định")})
+
+    # Sort rankings by total_spend desc
+    member_summaries.sort(key=lambda x: x["total_spend"], reverse=True)
+    for i, m in enumerate(member_summaries):
+        m["rank"] = i + 1
+
+    return jsonify({
+        "success": True,
+        "data": all_rows,
+        "headers": DISPLAY_COLUMNS,
+        "member_summaries": member_summaries,
+        "errors": errors,
+    })
 
 
 @app.route("/api/auto-fill-status", methods=["GET"])
@@ -240,22 +408,20 @@ def update_auto_fill_status():
 @app.route("/api/list-sheets", methods=["GET"])
 @api_login_required
 def list_sheets():
-    """Trả về danh sách sheet đã lưu dạng [{name, url}]."""
-    sheets = []
-    if SHEET_URLS_PATH.exists():
-        with open(SHEET_URLS_PATH, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                if "," in line:
-                    # Format mới: name,url
-                    name, url = line.split(",", 1)
-                    sheets.append({"name": name.strip(), "url": url.strip()})
-                else:
-                    # Format cũ: chỉ url → dùng sheet_id làm name tạm
-                    sheet_id = extract_sheet_id(line)
-                    sheets.append({"name": sheet_id or line, "url": line})
+    """Return sheets accessible to current user (role-filtered)."""
+    username = session.get("username", "")
+    role = session.get("role", "employee")
+
+    # For employee: only their own sheet (no dropdown needed)
+    if role == "employee":
+        sheet_url = session.get("sheet_url", "")
+        name = session.get("display_name", username)
+        sheets = [{"name": name, "url": sheet_url}] if sheet_url else []
+        return jsonify({"success": True, "sheets": sheets})
+
+    # For lead/admin: sheets from user config
+    accessible = get_accessible_sheets_for_user(username)
+    sheets = [{"name": s["name"], "url": s["url"], "team": s.get("team", "")} for s in accessible]
     return jsonify({"success": True, "sheets": sheets})
 
 @app.route("/api/save-sheet", methods=["POST"])

@@ -494,5 +494,243 @@ small {
 }
 
 .mb-20 {
+
+    /* ─── Role Badge & Header Top Bar ─────────────────── */
+    .header {
+        position: relative;
+    }
+
+    .header-top-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .user-info-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .role-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.82rem;
+        font-weight: 700;
+        padding: 6px 14px;
+        border-radius: 999px;
+        letter-spacing: 0.3px;
+    }
+
+    .role-admin {
+        background: linear-gradient(135deg, #7c3aed, #4f46e5);
+        color: #fff;
+    }
+
+    .role-lead {
+        background: linear-gradient(135deg, #0284c7, #0ea5e9);
+        color: #fff;
+    }
+
+    .role-employee {
+        background: linear-gradient(135deg, #059669, #10b981);
+        color: #fff;
+    }
+
+    .logout-link {
+        position: static !important;
+        text-decoration: none;
+        color: #ffffff;
+        background: #ef4444;
+        font-size: 0.82rem;
+        font-weight: 600;
+        padding: 6px 14px;
+        border-radius: 999px;
+    }
+
+    .logout-link:hover {
+        background: #dc2626;
+    }
+
+    /* ─── Action Bar (lead/admin) ─────────────────────── */
+    .action-bar-section {
+        display: block;
+    }
+
+    .action-bar {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        flex-wrap: wrap;
+        padding: 16px 20px;
+    }
+
+    .member-selector-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .member-selector-wrap label {
+        font-size: 0.9rem;
+        color: var(--gray-dark);
+        font-weight: 600;
+    }
+
+    .member-select {
+        padding: 8px 12px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        font-size: 0.9rem;
+        min-width: 200px;
+        background: white;
+        cursor: pointer;
+    }
+
+    .member-select:focus {
+        outline: none;
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.15);
+    }
+
+    /* ─── Date Filter ─────────────────────────────────── */
+    .table-header-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+
+    .date-filter-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .date-filter-bar label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #4b5563;
+        white-space: nowrap;
+    }
+
+    .date-input {
+        padding: 7px 10px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        font-size: 0.85rem;
+        background: white;
+        cursor: pointer;
+    }
+
+    .date-input:focus {
+        outline: none;
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.15);
+    }
+
+    .btn-filter {
+        background: var(--primary);
+        color: white;
+        border: none;
+        padding: 7px 14px;
+        border-radius: 8px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    .btn-filter:hover { background: var(--primary-dark); }
+
+    .btn-reset {
+        background: #6b7280;
+        color: white;
+        border: none;
+        padding: 7px 14px;
+        border-radius: 8px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    .btn-reset:hover { background: #4b5563; }
+
+    .filter-info {
+        font-size: 0.85rem;
+        color: #0284c7;
+        background: #e0f2fe;
+        border: 1px solid #bae6fd;
+        border-radius: 6px;
+        padding: 6px 12px;
+        margin-bottom: 12px;
+    }
+
+    /* ─── Rankings ────────────────────────────────────── */
+    .rankings-section {
+        display: block;
+    }
+
+    .rankings-table th {
+        background: #f3f4f6;
+        font-size: 0.85rem;
+        color: #374151;
+        padding: 10px 14px;
+    }
+
+    .rankings-table td {
+        padding: 10px 14px;
+        font-size: 0.9rem;
+        vertical-align: middle;
+    }
+
+    .rank-cell {
+        font-size: 1.2rem;
+        text-align: center;
+        min-width: 52px;
+    }
+
+    .spend-cell {
+        font-weight: 700;
+        color: var(--primary-dark);
+    }
+
+    .rank-top td {
+        background: #fefce8;
+    }
+
+    .rank-top:first-child td {
+        background: #fff7ed;
+    }
+
+    @media (max-width: 768px) {
+        .table-header-row {
+            flex-direction: column;
+        }
+        .date-filter-bar {
+            width: 100%;
+        }
+        .action-bar {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        .header-top-bar {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+    }
     margin-bottom: 20px;
 }
