@@ -448,7 +448,7 @@ def login():
 
     return render_template(
         "login.html",
-        error="Sai tài khoản hoặc mật khẩu dùng chung",
+        error="Sai tài khoản hoặc mật khẩu",
         title="Đăng nhập hệ thống",
         subtitle="Bước 1: Tất cả mọi người dùng chung tài khoản để vào hệ thống",
         form_action=url_for("login"),
