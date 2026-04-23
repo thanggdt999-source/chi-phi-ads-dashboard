@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: chi-phi-ads-dashboard
+    runtime: python
+    rootDir: web_app
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    envVars:
+      - key: WEB_APP_SECRET_KEY
+        generateValue: true
+      - key: WEB_APP_USERNAME
+        value: admin
+      - key: WEB_APP_PASSWORD
+        sync: false
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON
+        sync: false

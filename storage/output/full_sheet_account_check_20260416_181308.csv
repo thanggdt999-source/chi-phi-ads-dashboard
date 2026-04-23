@@ -1,0 +1,6 @@
+﻿"owner_name","sheet_id","account_id","status","spend_today","error"
+"Duy Linh","1LTWiNI7QgkHBDqWHCxccx5W9b7A_xiRK91WAyOztmDg","1405818800844826","ok","306990",""
+"Duy Linh","1LTWiNI7QgkHBDqWHCxccx5W9b7A_xiRK91WAyOztmDg","1529748470808306","error","","The remote server returned an error: (403) Forbidden."
+"Duy Linh","1LTWiNI7QgkHBDqWHCxccx5W9b7A_xiRK91WAyOztmDg","4304052119881906","error","","{""error"":{""message"":""(#200) Ad account owner has NOT grant ads_management or ads_read permission, refer to https:\/\/developers.facebook.com\/docs\/marketing-api\/get-started\/authorization\/#permissions-and-features for details."",""type"":""OAuthException"",""code"":200,""fbtrace_id"":""AWGa3I7SIHFjNLYGLmhn38G""}}"
+"Huế","1vh84oH_HxYIJHuKeId8naaMOcW8PG1DcBFPvkqQ3X3k","1529748470808306","error","","{""error"":{""message"":""(#200) Ad account owner has NOT grant ads_management or ads_read permission, refer to https:\/\/developers.facebook.com\/docs\/marketing-api\/get-started\/authorization\/#permissions-and-features for details."",""type"":""OAuthException"",""code"":200,""fbtrace_id"":""AZHg8IDvx40G2GESGoJTrQX""}}"
+"Huế","1vh84oH_HxYIJHuKeId8naaMOcW8PG1DcBFPvkqQ3X3k","745204308086518","ok","14265554",""

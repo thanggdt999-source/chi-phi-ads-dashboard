@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chi Phí Ads - Dashboard</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <a href="{{ url_for('logout') }}" class="logout-link">Đăng xuất</a>
+                <p class="company-name">GDT Group</p>
+                <h1><i class="fas fa-chart-line"></i> Chi Phí Ads Dashboard</h1>
+                <p>Quản lý chi phí quảng cáo một cách dễ dàng</p>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Input Section -->
+            <section class="input-section">
+                <div class="card">
+                    <div class="input-header-row">
+                        <h2><i class="fas fa-link"></i> Nhập Sheet URL</h2>
+                        <button type="button" id="autoFillToggleBtn" class="auto-toggle-btn auto-on">
+                            Auto Fill: ON
+                        </button>
+                    </div>
+                    <form id="urlForm" onsubmit="handleSubmit(event)">
+                        <div class="input-wrap">
+                            <div class="input-group">
+                                <input 
+                                    type="text" 
+                                    id="sheetUrl" 
+                                    placeholder="Dán link Google Sheet của bạn tại đây..." 
+                                    autocomplete="off"
+                                    required>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-search"></i> Tải Dữ Liệu
+                                </button>
+                            </div>
+                            <div id="sheetSuggestions" class="sheet-suggestions" style="display:none;"></div>
+                        </div>
+                        <small>Ví dụ: https://docs.google.com/spreadsheets/d/1LTWiNI7QgkHBDqWHCxccx5W9b7A_xiRK91WAyOztmDg/edit</small>
+                    </form>
+                    <div id="loadingSpinner" class="loading-spinner" style="display: none;">
+                        <i class="fas fa-spinner"></i> Đang tải dữ liệu...
+                    </div>
+                </div>
+            </section>
+
+            <!-- Error Message -->
+            <div id="errorMessage" class="alert alert-error" style="display: none;"></div>
+
+            <!-- Stats Section -->
+            <section id="statsSection" class="stats-section" style="display: none;">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">Tổng Chi Phí</div>
+                        <div class="stat-value" id="totalSpend">0</div>
+                        <div class="stat-unit">VND</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Tổng Kết Quả</div>
+                        <div class="stat-value" id="totalResults">0</div>
+                        <div class="stat-unit">conversions</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Chi Phí/Kết Quả</div>
+                        <div class="stat-value" id="costPerResult">0</div>
+                        <div class="stat-unit">VND</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">% Ads</div>
+                        <div class="stat-value" id="adsPercent">0</div>
+                        <div class="stat-unit">%</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Charts Section -->
+            <section id="chartsSection" class="charts-section" style="display: none;">
+                <div class="charts-grid">
+                    <div class="card">
+                        <h3><i class="fas fa-chart-bar"></i> Chi Phí Theo Ngày</h3>
+                        <canvas id="spendByDateChart"></canvas>
+                    </div>
+                    <div class="card">
+                        <h3><i class="fas fa-chart-pie"></i> Chi Phí Theo Sản Phẩm</h3>
+                        <canvas id="spendByProductChart"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Data Table Section -->
+            <section id="tableSection" class="table-section" style="display: none;">
+                <div class="card">
+                    <h2><i class="fas fa-table"></i> Chi Tiết Dữ Liệu</h2>
+                    <div class="table-wrapper">
+                        <table id="dataTable" class="data-table">
+                            <thead>
+                                <tr id="tableHeader"></tr>
+                            </thead>
+                            <tbody id="tableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>&copy; 2026 <strong>GDT Group</strong> | Chi Phí Ads Dashboard</p>
+            <p style="font-size: 12px; margin-top: 4px; opacity: 0.7;">Phát triển phần mềm: Nguyễn Bá Thắng</p>
+        </footer>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

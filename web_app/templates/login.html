@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Đăng nhập - Chi Phí Ads Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .login-shell {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .login-page {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        .login-card {
+            width: 100%;
+            max-width: 420px;
+            background: rgba(255,255,255,0.95);
+            border-radius: 16px;
+            box-shadow: 0 20px 45px rgba(0, 0, 0, 0.18);
+            padding: 28px;
+        }
+
+        .login-title {
+            font-size: 1.6rem;
+            color: #3498db;
+            font-weight: 700;
+            margin-bottom: 8px;
+            text-align: center;
+        }
+
+        .login-sub {
+            text-align: center;
+            color: #6b7280;
+            margin-bottom: 20px;
+            font-size: 0.95rem;
+        }
+
+        .login-field {
+            display: block;
+            width: 100%;
+            margin-bottom: 12px;
+            padding: 12px 14px;
+            border: 1px solid #d1d5db;
+            border-radius: 10px;
+            font-size: 0.95rem;
+        }
+
+        .login-field:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.15);
+        }
+
+        .login-btn {
+            width: 100%;
+            border: none;
+            border-radius: 10px;
+            padding: 12px;
+            font-size: 1rem;
+            font-weight: 700;
+            color: #fff;
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            cursor: pointer;
+        }
+
+        .login-error {
+            margin-top: 14px;
+            background: #fef2f2;
+            color: #b91c1c;
+            border: 1px solid #fecaca;
+            border-radius: 10px;
+            padding: 10px 12px;
+            font-size: 0.9rem;
+        }
+
+        .login-footer {
+            margin: 0 auto 24px;
+            width: 100%;
+            max-width: 760px;
+            padding: 6px 16px;
+            text-align: center;
+            color: #eef2ff;
+        }
+
+        .login-footer-brand {
+            font-weight: 700;
+            font-size: 0.98rem;
+            margin-bottom: 4px;
+            letter-spacing: 0.3px;
+        }
+
+        .login-footer-meta {
+            font-size: 0.82rem;
+            opacity: 0.9;
+            margin-bottom: 10px;
+        }
+
+        .login-footer-badges {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .login-badge {
+            font-size: 0.73rem;
+            font-weight: 700;
+            padding: 5px 10px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            color: #ffffff;
+            letter-spacing: 0.2px;
+        }
+
+        @media (max-width: 640px) {
+            .login-footer {
+                width: calc(100% - 24px);
+                margin-bottom: 12px;
+                padding: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="login-shell">
+        <div class="login-page">
+            <div class="login-card">
+                <div class="login-title">Đăng nhập hệ thống</div>
+                <div class="login-sub">Nhập tài khoản để mở Chi Phí Ads Dashboard</div>
+
+                <form method="post" action="{{ url_for('login') }}">
+                    <input class="login-field" type="text" name="username" placeholder="Tên đăng nhập" required>
+                    <input class="login-field" type="password" name="password" placeholder="Mật khẩu" required>
+                    <button class="login-btn" type="submit">Đăng nhập</button>
+                </form>
+
+                {% if error %}
+                <div class="login-error">{{ error }}</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <footer class="login-footer">
+            <div class="login-footer-brand">GDT Group | Chi Phi Ads Dashboard</div>
+            <div class="login-footer-meta">Phat trien phan mem: Nguyen Ba Thang | Version 1.0.0</div>
+            <div class="login-footer-badges">
+                <span class="login-badge">Internal Use</span>
+                <span class="login-badge">Secure Access</span>
+            </div>
+        </footer>
+    </div>
+</body>
+</html>
