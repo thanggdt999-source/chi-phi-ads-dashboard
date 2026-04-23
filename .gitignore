@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .env
 web_app/.env
+web_app/render.env
 storage/credentials/service_account.json
 storage/logs/
 storage/credentials/*.json
