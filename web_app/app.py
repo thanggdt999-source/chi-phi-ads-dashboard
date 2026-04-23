@@ -7,6 +7,7 @@ from pathlib import Path
 from functools import wraps
 from datetime import datetime
 import json
+from typing import Optional
 
 app = Flask(__name__)
 app.secret_key = os.getenv("WEB_APP_SECRET_KEY", "change-this-secret-in-production")
@@ -14,19 +15,122 @@ app.secret_key = os.getenv("WEB_APP_SECRET_KEY", "change-this-secret-in-producti
 SERVICE_ACCOUNT_PATH = Path(__file__).parent.parent / "storage" / "credentials" / "service_account.json"
 SHEET_URLS_PATH = Path(os.getenv("SHEET_URLS_PATH", str(Path(__file__).parent.parent / "storage" / "sheet_urls.csv")))
 AUTO_STATE_PATH = Path(os.getenv("AUTO_STATE_PATH", str(Path(__file__).parent.parent / "storage" / "config" / "auto_fill_state.json")))
+USERS_FILE_PATH = Path(os.getenv("USERS_FILE_PATH", str(Path(__file__).parent.parent / "storage" / "config" / "users.json")))
 
 ROLE_LEVELS = {"admin": 3, "lead": 2, "employee": 1}
+TEAM_CODES = ["TEAM_1", "TEAM_2", "TEAM_3", "TEAM_4", "TEAM_5"]
 
 # ─────────────────── USER CONFIG ───────────────────
 
+def extract_display_name(sheet_name: str) -> str:
+    if "-" in sheet_name:
+        parts = [p.strip() for p in sheet_name.split("-") if p.strip()]
+        if parts:
+            return parts[-1]
+    return sheet_name.strip() or "Nhân viên"
+
+
+def slugify_username(text: str) -> str:
+    lowered = text.lower()
+    replaced = re.sub(r"[^a-z0-9]+", "_", lowered)
+    compact = re.sub(r"_+", "_", replaced).strip("_")
+    return compact or "user"
+
+
+def infer_team_from_sheet_name(sheet_name: str, index: int) -> str:
+    lower = sheet_name.lower()
+    for i in range(1, 6):
+        if f"team {i}" in lower or f"team{i}" in lower or f"_t{i}" in lower or f"-t{i}" in lower:
+            return f"TEAM_{i}"
+    return TEAM_CODES[index % len(TEAM_CODES)]
+
+
+def parse_sheet_registry() -> list:
+    sheets = []
+    if not SHEET_URLS_PATH.exists():
+        return sheets
+    with SHEET_URLS_PATH.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            if "," in line:
+                name, url = line.split(",", 1)
+                sheets.append({"name": name.strip(), "url": url.strip()})
+            else:
+                sheets.append({"name": line.strip(), "url": line.strip()})
+    return sheets
+
+
+def build_auto_users_from_sheet_urls() -> dict:
+    sheets = parse_sheet_registry()
+    users = {
+        "admin_root": {
+            "password": os.getenv("DEFAULT_ADMIN_PASSWORD", "Admin@Hexi2026!"),
+            "role": "admin",
+            "display_name": "System Admin",
+        }
+    }
+
+    for i, team_code in enumerate(TEAM_CODES, start=1):
+        users[f"lead_team_{i}"] = {
+            "password": os.getenv(f"LEAD_TEAM_{i}_PASSWORD", f"LeadTeam{i}@2026"),
+            "role": "lead",
+            "team": team_code,
+            "display_name": f"Lead {team_code}",
+        }
+
+    username_count = {}
+    for idx, sheet in enumerate(sheets):
+        raw_name = sheet.get("name", "")
+        display_name = extract_display_name(raw_name)
+        team_code = infer_team_from_sheet_name(raw_name, idx)
+        base = slugify_username(f"emp_{display_name}")
+        username_count[base] = username_count.get(base, 0) + 1
+        suffix = username_count[base]
+        uname = base if suffix == 1 else f"{base}_{suffix}"
+        users[uname] = {
+            "password": os.getenv("DEFAULT_EMPLOYEE_PASSWORD", "Emp@123456"),
+            "role": "employee",
+            "team": team_code,
+            "display_name": display_name,
+            "sheet_url": sheet.get("url", ""),
+        }
+    return users
+
+
+def write_default_users_file(users: dict) -> None:
+    USERS_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with USERS_FILE_PATH.open("w", encoding="utf-8") as f:
+        json.dump(users, f, ensure_ascii=False, indent=2)
+
+
 def load_users_config() -> dict:
-    """Load user config from USERS_CONFIG env var; fall back to legacy single-user env vars."""
+    """Load user config from env, file, or auto-generated defaults."""
     config_json = os.getenv("USERS_CONFIG", "").strip()
     if config_json:
         try:
             return json.loads(config_json)
         except Exception:
             pass
+
+    if USERS_FILE_PATH.exists():
+        try:
+            with USERS_FILE_PATH.open("r", encoding="utf-8") as f:
+                payload = json.load(f)
+            if isinstance(payload, dict) and payload:
+                return payload
+        except Exception:
+            pass
+
+    auto_users = build_auto_users_from_sheet_urls()
+    if auto_users:
+        try:
+            write_default_users_file(auto_users)
+        except Exception:
+            pass
+        return auto_users
+
     # Legacy fallback
     username = os.getenv("WEB_APP_USERNAME", "admin")
     password = os.getenv("WEB_APP_PASSWORD", "admin123")
@@ -35,7 +139,7 @@ def load_users_config() -> dict:
     }
 
 
-def get_user(username: str) -> dict | None:
+def get_user(username: str) -> Optional[dict]:
     return load_users_config().get(username)
 
 

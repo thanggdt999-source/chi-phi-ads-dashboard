@@ -239,11 +239,28 @@
                                                 </div>
                                             </div>
                                             <div id="filterInfo" class="filter-info" style="display:none;"></div>
+                                            <div class="table-meta-row">
+                                                <div id="tableCountInfo" class="table-count-info">0 dòng dữ liệu</div>
+                                                <div class="table-page-size-wrap">
+                                                    <label for="pageSizeSelect">Hiển thị</label>
+                                                    <select id="pageSizeSelect" onchange="changePageSize(this.value)">
+                                                        <option value="25">25</option>
+                                                        <option value="50" selected>50</option>
+                                                        <option value="100">100</option>
+                                                    </select>
+                                                    <span>dòng / trang</span>
+                                                </div>
+                                            </div>
                                             <div class="table-wrapper">
                                                 <table id="dataTable" class="data-table">
                                                     <thead><tr id="tableHeader"></tr></thead>
                                                     <tbody id="tableBody"></tbody>
                                                 </table>
+                                            </div>
+                                            <div class="pagination-bar">
+                                                <button class="btn btn-reset" id="prevPageBtn" onclick="prevPage()"><i class="fas fa-angle-left"></i> Trang trước</button>
+                                                <span id="pageInfo" class="page-info">Trang 1/1</span>
+                                                <button class="btn btn-filter" id="nextPageBtn" onclick="nextPage()">Trang sau <i class="fas fa-angle-right"></i></button>
                                             </div>
                                         </div>
                                     </section>

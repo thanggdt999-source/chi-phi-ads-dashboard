@@ -14,6 +14,8 @@ let currentData  = { rows: [], headers: [], ads_percent: "", memberSummaries: []
 let filteredRows = [];
 let autoFillEnabled = true;
 let charts = { spendByDate: null, spendByProduct: null };
+let currentPage = 1;
+let pageSize = 50;
 
 // ─── Init ─────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", async () => {
@@ -144,6 +146,7 @@ function applyDateFilter() {
         info.textContent = `Đang lọc: ${fromVal || "—"} → ${toVal || "—"} | ${filteredRows.length} dòng`;
         info.style.display = "block";
     }
+    currentPage = 1;
     renderStats(filteredRows);
     renderTable(filteredRows);
     renderCharts(filteredRows);
@@ -151,6 +154,7 @@ function applyDateFilter() {
 
 function resetDateFilter() {
     filteredRows = [...currentData.rows];
+    currentPage = 1;
     resetDateInputs();
     const info = document.getElementById("filterInfo");
     if (info) info.style.display = "none";
@@ -172,6 +176,7 @@ function resetDateInputs() {
 function renderData() {
     if (!currentData.rows || currentData.rows.length === 0) { showError("Không có dữ liệu trong sheet"); return; }
     filteredRows = [...currentData.rows];
+    currentPage = 1;
     renderStats(filteredRows);
     renderRankings();
     renderTable(filteredRows);
@@ -219,10 +224,55 @@ function renderRankings() {
 
 function renderTable(rows) {
     const headers = currentData.headers;
+    const totalRows = rows.length;
+    const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+    if (currentPage > totalPages) currentPage = totalPages;
+    const start = (currentPage - 1) * pageSize;
+    const end = start + pageSize;
+    const pageRows = rows.slice(start, end);
+
     document.getElementById("tableHeader").innerHTML = headers.map(h => `<th>${h}</th>`).join("");
-    document.getElementById("tableBody").innerHTML   = rows.map(row =>
+    document.getElementById("tableBody").innerHTML   = pageRows.map(row =>
         "<tr>" + headers.map(h => `<td>${row[h] || "-"}</td>`).join("") + "</tr>"
     ).join("");
+
+    updatePagination(totalRows, totalPages, start, pageRows.length);
+}
+
+function updatePagination(totalRows, totalPages, startIndex, currentCount) {
+    const pageInfo = document.getElementById("pageInfo");
+    const prevBtn = document.getElementById("prevPageBtn");
+    const nextBtn = document.getElementById("nextPageBtn");
+    const countInfo = document.getElementById("tableCountInfo");
+
+    if (pageInfo) pageInfo.textContent = `Trang ${currentPage}/${totalPages}`;
+    if (prevBtn) prevBtn.disabled = currentPage <= 1;
+    if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
+    if (countInfo) {
+        const from = totalRows === 0 ? 0 : startIndex + 1;
+        const to = startIndex + currentCount;
+        countInfo.textContent = `${from}-${to} / ${totalRows} dòng`;
+    }
+}
+
+function prevPage() {
+    if (currentPage <= 1) return;
+    currentPage -= 1;
+    renderTable(filteredRows);
+}
+
+function nextPage() {
+    const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+    if (currentPage >= totalPages) return;
+    currentPage += 1;
+    renderTable(filteredRows);
+}
+
+function changePageSize(value) {
+    const parsed = parseInt(value, 10);
+    pageSize = Number.isFinite(parsed) && parsed > 0 ? parsed : 50;
+    currentPage = 1;
+    renderTable(filteredRows);
 }
 
 function renderCharts(rows) {
