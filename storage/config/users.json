@@ -1,0 +1,58 @@
+{
+  "admin_root": {
+    "password": "Admin@Hexi2026!",
+    "role": "admin",
+    "display_name": "System Admin"
+  },
+  "lead_team_1": {
+    "password": "LeadTeam1@2026",
+    "role": "lead",
+    "team": "TEAM_1",
+    "display_name": "Lead TEAM_1"
+  },
+  "lead_team_2": {
+    "password": "LeadTeam2@2026",
+    "role": "lead",
+    "team": "TEAM_2",
+    "display_name": "Lead TEAM_2"
+  },
+  "lead_team_3": {
+    "password": "LeadTeam3@2026",
+    "role": "lead",
+    "team": "TEAM_3",
+    "display_name": "Lead TEAM_3"
+  },
+  "lead_team_4": {
+    "password": "LeadTeam4@2026",
+    "role": "lead",
+    "team": "TEAM_4",
+    "display_name": "Lead TEAM_4"
+  },
+  "lead_team_5": {
+    "password": "LeadTeam5@2026",
+    "role": "lead",
+    "team": "TEAM_5",
+    "display_name": "Lead TEAM_5"
+  },
+  "emp_duy_linh": {
+    "password": "Emp@123456",
+    "role": "employee",
+    "team": "TEAM_1",
+    "display_name": "Duy Linh",
+    "sheet_url": "https://docs.google.com/spreadsheets/d/1LTWiNI7QgkHBDqWHCxccx5W9b7A_xiRK91WAyOztmDg/edit"
+  },
+  "emp_dinh_hue": {
+    "password": "Emp@123456",
+    "role": "employee",
+    "team": "TEAM_2",
+    "display_name": "Đinh Huế",
+    "sheet_url": "https://docs.google.com/spreadsheets/d/1vh84oH_HxYIJHuKeId8naaMOcW8PG1DcBFPvkqQ3X3k/edit"
+  },
+  "emp_thang": {
+    "password": "Emp@123456",
+    "role": "employee",
+    "team": "TEAM_3",
+    "display_name": "Thắng",
+    "sheet_url": "https://docs.google.com/spreadsheets/d/1NHlo1Aw9-fMVujMJSTkYOu1G6ItjkfVk1DX-iwfuZBE/edit"
+  }
+}
