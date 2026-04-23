@@ -34,7 +34,7 @@
     "team": "TEAM_5",
     "display_name": "Lead TEAM_5"
   },
-  "FBADS.GDT": {
+  "fbads.gdt": {
     "password": "123",
     "role": "employee",
     "display_name": "Nhân viên"

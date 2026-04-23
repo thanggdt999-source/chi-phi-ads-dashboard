@@ -19,7 +19,7 @@ USERS_FILE_PATH = Path(os.getenv("USERS_FILE_PATH", str(Path(__file__).parent.pa
 
 ROLE_LEVELS = {"admin": 3, "lead": 2, "employee": 1}
 TEAM_CODES = ["TEAM_1", "TEAM_2", "TEAM_3", "TEAM_4", "TEAM_5"]
-SHARED_LOGIN_USERNAME = os.getenv("SHARED_LOGIN_USERNAME", "FBADS.GDT")
+SHARED_LOGIN_USERNAME = os.getenv("SHARED_LOGIN_USERNAME", "fbads.gdt")
 
 # ─────────────────── USER CONFIG ───────────────────
 
@@ -71,7 +71,7 @@ def build_auto_users_from_sheet_urls() -> dict:
             "role": "admin",
             "display_name": "System Admin",
         },
-        "FBADS.GDT": {
+        "fbads.gdt": {
             "password": os.getenv("DEFAULT_EMPLOYEE_PASSWORD", "123"),
             "role": "employee",
             "display_name": "Nhân viên",
