@@ -34,8 +34,8 @@
     "team": "TEAM_5",
     "display_name": "Lead TEAM_5"
   },
-  "employee_shared": {
-    "password": "Emp@123456",
+  "FBADS.GDT": {
+    "password": "123",
     "role": "employee",
     "display_name": "Nhân viên"
   },
