@@ -19,7 +19,7 @@ USERS_FILE_PATH = Path(os.getenv("USERS_FILE_PATH", str(Path(__file__).parent.pa
 
 ROLE_LEVELS = {"admin": 3, "lead": 2, "employee": 1}
 TEAM_CODES = ["TEAM_1", "TEAM_2", "TEAM_3", "TEAM_4", "TEAM_5"]
-LOGIN_BOARD_NAME = os.getenv("LOGIN_BOARD_NAME", "Bang Chi Phi Ads")
+LOGIN_BOARD_NAME = os.getenv("LOGIN_BOARD_NAME", "Chi Phí Ads Realtime | GDT GROUP")
 
 # ─────────────────── USER CONFIG ───────────────────
 
