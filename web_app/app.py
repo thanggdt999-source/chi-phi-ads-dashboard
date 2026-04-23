@@ -144,6 +144,10 @@ def get_user(username: str) -> Optional[dict]:
     return load_users_config().get(username)
 
 
+def is_valid_sheet_url(sheet_url: str) -> bool:
+    return bool(sheet_url) and bool(extract_sheet_id(sheet_url))
+
+
 def set_session_user(username: str, user: dict, *, elevated: bool = False) -> None:
     session["logged_in"] = True
     session["username"] = username
@@ -405,15 +409,24 @@ def login():
     if request.method == "GET":
         if is_logged_in():
             return redirect(url_for("index"))
+        success_message = ""
+        registered = request.args.get("registered", "").strip()
+        registered_username = request.args.get("username", "").strip()
+        if registered == "1":
+            success_message = (
+                f'Đăng ký thành công cho tài khoản "{registered_username}". Vui lòng đăng nhập để vào hệ thống.'
+                if registered_username
+                else "Đăng ký thành công. Vui lòng đăng nhập để vào hệ thống."
+            )
         return render_template(
             "login.html",
             error="",
+            success=success_message,
             title="Đăng nhập hệ thống",
             board_name=LOGIN_BOARD_NAME,
-            helper_title="Chưa có tài khoản?",
-            helper_text="Vui lòng đăng ký bên ngoài hệ thống hoặc liên hệ admin để được cấp tài khoản nhân viên.",
             form_action=url_for("login"),
             submit_label="Vào hệ thống",
+            show_register_link=True,
             show_back_link=False,
         )
 
@@ -427,23 +440,21 @@ def login():
         return redirect(next_url)
 
     error_message = "Sai tài khoản hoặc mật khẩu"
-    helper_text = "Vui lòng đăng ký bên ngoài hệ thống hoặc liên hệ admin để được cấp tài khoản nhân viên."
 
     if not user:
         error_message = "Tài khoản chưa tồn tại trong hệ thống"
     elif user.get("role") != "employee":
         error_message = "Bước 1 chỉ dùng tài khoản nhân viên"
-        helper_text = "Nếu bạn có quyền leader hoặc admin, hãy đăng nhập bằng tài khoản nhân viên trước rồi nâng quyền ở bước 2."
 
     return render_template(
         "login.html",
         error=error_message,
+        success="",
         title="Đăng nhập hệ thống",
         board_name=LOGIN_BOARD_NAME,
-        helper_title="Đăng ký bên ngoài",
-        helper_text=helper_text,
         form_action=url_for("login"),
         submit_label="Vào hệ thống",
+        show_register_link=True,
         show_back_link=False,
     )
 
@@ -458,12 +469,12 @@ def privileged_login():
         return render_template(
             "login.html",
             error="",
+            success="",
             title="Đăng nhập Leader / Admin",
             board_name=LOGIN_BOARD_NAME,
-            helper_title="Bước 2 nâng quyền",
-            helper_text="Chỉ leader hoặc admin mới cần đăng nhập thêm để mở quyền xem tổng và quản trị.",
             form_action=url_for("privileged_login"),
             submit_label="Mở quyền xem tổng",
+            show_register_link=False,
             show_back_link=True,
         )
 
@@ -478,14 +489,107 @@ def privileged_login():
     return render_template(
         "login.html",
         error="Chỉ tài khoản leader hoặc admin mới dùng được bước 2",
+        success="",
         title="Đăng nhập Leader / Admin",
         board_name=LOGIN_BOARD_NAME,
-        helper_title="Bước 2 nâng quyền",
-        helper_text="Dùng đúng tài khoản leader hoặc admin để mở thêm quyền sau khi đã vào hệ thống.",
         form_action=url_for("privileged_login"),
         submit_label="Mở quyền xem tổng",
+        show_register_link=False,
         show_back_link=True,
     )
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register_employee():
+    if is_logged_in():
+        return redirect(url_for("index"))
+
+    form_values = {
+        "username": "",
+        "display_name": "",
+        "team": "",
+        "sheet_url": "",
+    }
+
+    if request.method == "GET":
+        return render_template(
+            "register.html",
+            error="",
+            board_name=LOGIN_BOARD_NAME,
+            team_codes=TEAM_CODES,
+            form_values=form_values,
+        )
+
+    username = request.form.get("username", "").strip()
+    display_name = request.form.get("display_name", "").strip()
+    team = request.form.get("team", "").strip()
+    sheet_url = request.form.get("sheet_url", "").strip()
+    password = request.form.get("password", "")
+    confirm_password = request.form.get("confirm_password", "")
+
+    form_values = {
+        "username": username,
+        "display_name": display_name,
+        "team": team,
+        "sheet_url": sheet_url,
+    }
+
+    if not username or not display_name or not password or not confirm_password or not team or not sheet_url:
+        return render_template(
+            "register.html",
+            error="Vui lòng nhập đầy đủ thông tin đăng ký.",
+            board_name=LOGIN_BOARD_NAME,
+            team_codes=TEAM_CODES,
+            form_values=form_values,
+        )
+
+    if password != confirm_password:
+        return render_template(
+            "register.html",
+            error="Mật khẩu xác nhận không khớp.",
+            board_name=LOGIN_BOARD_NAME,
+            team_codes=TEAM_CODES,
+            form_values=form_values,
+        )
+
+    if team not in TEAM_CODES:
+        return render_template(
+            "register.html",
+            error="Vui lòng chọn team hợp lệ.",
+            board_name=LOGIN_BOARD_NAME,
+            team_codes=TEAM_CODES,
+            form_values=form_values,
+        )
+
+    if not is_valid_sheet_url(sheet_url):
+        return render_template(
+            "register.html",
+            error="Link Google Sheet không hợp lệ.",
+            board_name=LOGIN_BOARD_NAME,
+            team_codes=TEAM_CODES,
+            form_values=form_values,
+        )
+
+    users = load_users_config()
+    if username in users:
+        return render_template(
+            "register.html",
+            error=f'Tên đăng nhập "{username}" đã tồn tại.',
+            board_name=LOGIN_BOARD_NAME,
+            team_codes=TEAM_CODES,
+            form_values=form_values,
+        )
+
+    users[username] = {
+        "password": password,
+        "role": "employee",
+        "team": team,
+        "display_name": display_name,
+        "sheet_url": sheet_url,
+    }
+    save_users_config(users)
+
+    return redirect(url_for("login", registered="1", username=username))
 
 
 @app.route("/logout", methods=["GET"])
