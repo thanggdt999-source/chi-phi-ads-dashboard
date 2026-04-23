@@ -19,6 +19,7 @@ USERS_FILE_PATH = Path(os.getenv("USERS_FILE_PATH", str(Path(__file__).parent.pa
 
 ROLE_LEVELS = {"admin": 3, "lead": 2, "employee": 1}
 TEAM_CODES = ["TEAM_1", "TEAM_2", "TEAM_3", "TEAM_4", "TEAM_5"]
+SHARED_LOGIN_USERNAME = os.getenv("SHARED_LOGIN_USERNAME", "employee_shared")
 
 # ─────────────────── USER CONFIG ───────────────────
 
@@ -146,6 +147,20 @@ def load_users_config() -> dict:
 
 def get_user(username: str) -> Optional[dict]:
     return load_users_config().get(username)
+
+
+def get_shared_login_user() -> Optional[dict]:
+    return get_user(SHARED_LOGIN_USERNAME)
+
+
+def set_session_user(username: str, user: dict, *, elevated: bool = False) -> None:
+    session["logged_in"] = True
+    session["username"] = username
+    session["role"] = user.get("role", "employee")
+    session["team"] = user.get("team", "")
+    session["display_name"] = user.get("display_name", username)
+    session["sheet_url"] = user.get("sheet_url", "")
+    session["is_elevated"] = elevated
 
 
 def get_accessible_sheets_for_user(username: str) -> list:
@@ -409,26 +424,73 @@ def index():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    shared_user = get_shared_login_user()
     if request.method == "GET":
         if is_logged_in():
             return redirect(url_for("index"))
-        return render_template("login.html", error="")
+        return render_template(
+            "login.html",
+            error="",
+            title="Đăng nhập hệ thống",
+            subtitle="Bước 1: Tất cả mọi người dùng chung tài khoản để vào hệ thống",
+            form_action=url_for("login"),
+            submit_label="Vào hệ thống",
+            show_back_link=False,
+        )
 
     username = request.form.get("username", "").strip()
     password = request.form.get("password", "")
 
-    user = get_user(username)
-    if user and user.get("password") == password:
-        session["logged_in"] = True
-        session["username"] = username
-        session["role"] = user.get("role", "employee")
-        session["team"] = user.get("team", "")
-        session["display_name"] = user.get("display_name", username)
-        session["sheet_url"] = user.get("sheet_url", "")
+    if shared_user and username == SHARED_LOGIN_USERNAME and shared_user.get("password") == password:
+        set_session_user(SHARED_LOGIN_USERNAME, shared_user, elevated=False)
         next_url = request.args.get("next") or url_for("index")
         return redirect(next_url)
 
-    return render_template("login.html", error="Sai tài khoản hoặc mật khẩu")
+    return render_template(
+        "login.html",
+        error="Sai tài khoản hoặc mật khẩu dùng chung",
+        title="Đăng nhập hệ thống",
+        subtitle="Bước 1: Tất cả mọi người dùng chung tài khoản để vào hệ thống",
+        form_action=url_for("login"),
+        submit_label="Vào hệ thống",
+        show_back_link=False,
+    )
+
+
+@app.route("/privileged-login", methods=["GET", "POST"])
+@login_required
+def privileged_login():
+    if ROLE_LEVELS.get(session.get("role", "employee"), 0) >= ROLE_LEVELS["lead"]:
+        return redirect(url_for("index"))
+
+    if request.method == "GET":
+        return render_template(
+            "login.html",
+            error="",
+            title="Đăng nhập Leader / Admin",
+            subtitle="Bước 2: Chỉ leader hoặc admin mới cần đăng nhập thêm để xem báo cáo tổng",
+            form_action=url_for("privileged_login"),
+            submit_label="Mở quyền xem tổng",
+            show_back_link=True,
+        )
+
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+    user = get_user(username)
+
+    if user and user.get("password") == password and user.get("role") in {"lead", "admin"}:
+        set_session_user(username, user, elevated=True)
+        return redirect(url_for("index"))
+
+    return render_template(
+        "login.html",
+        error="Chỉ tài khoản leader hoặc admin mới dùng được bước 2",
+        title="Đăng nhập Leader / Admin",
+        subtitle="Bước 2: Chỉ leader hoặc admin mới cần đăng nhập thêm để xem báo cáo tổng",
+        form_action=url_for("privileged_login"),
+        submit_label="Mở quyền xem tổng",
+        show_back_link=True,
+    )
 
 
 @app.route("/logout", methods=["GET"])
@@ -533,16 +595,6 @@ def update_auto_fill_status():
 def list_sheets():
     """Return sheets accessible to current user (role-filtered)."""
     username = session.get("username", "")
-    role = session.get("role", "employee")
-
-    # For employee: only their own sheet (no dropdown needed)
-    if role == "employee":
-        sheet_url = session.get("sheet_url", "")
-        name = session.get("display_name", username)
-        sheets = [{"name": name, "url": sheet_url}] if sheet_url else []
-        return jsonify({"success": True, "sheets": sheets})
-
-    # For lead/admin: sheets from user config
     accessible = get_accessible_sheets_for_user(username)
     sheets = [{"name": s["name"], "url": s["url"], "team": s.get("team", "")} for s in accessible]
     return jsonify({"success": True, "sheets": sheets})
@@ -647,6 +699,8 @@ def api_admin_update_user(username):
         return jsonify({"success": False, "error": "Người dùng không tồn tại."}), 404
 
     role = data.get("role", users[username].get("role", "employee")).strip()
+    if username == SHARED_LOGIN_USERNAME and role != "employee":
+        return jsonify({"success": False, "error": "Tài khoản đăng nhập chung phải giữ vai trò employee."}), 400
     team = data.get("team", users[username].get("team", "")).strip()
     display_name = data.get("display_name", users[username].get("display_name", username)).strip()
     sheet_url = data.get("sheet_url", users[username].get("sheet_url", "")).strip()
@@ -687,6 +741,9 @@ def api_admin_delete_user(username):
 
     if username not in users:
         return jsonify({"success": False, "error": "Người dùng không tồn tại."}), 404
+
+    if username == SHARED_LOGIN_USERNAME:
+        return jsonify({"success": False, "error": "Không thể xoá tài khoản đăng nhập chung."}), 400
 
     # Prevent deleting last admin
     if users[username].get("role") == "admin":

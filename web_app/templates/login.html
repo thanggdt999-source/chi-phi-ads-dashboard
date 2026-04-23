@@ -159,10 +159,15 @@
     <div class="login-shell">
         <div class="login-page">
             <div class="login-card">
-                <div class="login-title">Đăng nhập hệ thống</div>
-                <div class="login-sub">Nhập tài khoản để mở Chi Phí Ads Dashboard</div>
+                {% if show_back_link %}
+                <a href="{{ url_for('index') }}" style="display:inline-flex;align-items:center;gap:6px;color:#64748b;text-decoration:none;font-size:0.9rem;margin-bottom:14px;">
+                    <i class="fas fa-arrow-left"></i> Quay lại dashboard
+                </a>
+                {% endif %}
+                <div class="login-title">{{ title or 'Đăng nhập hệ thống' }}</div>
+                <div class="login-sub">{{ subtitle or 'Nhập tài khoản để mở Chi Phí Ads Dashboard' }}</div>
 
-                <form method="post" action="{{ url_for('login') }}">
+                <form method="post" action="{{ form_action or url_for('login') }}">
                     <input class="login-field" type="text" name="username" placeholder="Tên đăng nhập" required autocomplete="username">
                     <div class="password-wrap">
                         <input class="login-field" type="password" id="passwordInput" name="password" placeholder="Mật khẩu" required autocomplete="current-password">
@@ -173,7 +178,7 @@
                             </svg>
                         </button>
                     </div>
-                    <button class="login-btn" type="submit">Đăng nhập</button>
+                    <button class="login-btn" type="submit">{{ submit_label or 'Đăng nhập' }}</button>
                 </form>
 
                 {% if error %}
