@@ -34,6 +34,11 @@
     "team": "TEAM_5",
     "display_name": "Lead TEAM_5"
   },
+  "employee_shared": {
+    "password": "Emp@123456",
+    "role": "employee",
+    "display_name": "Nhân viên"
+  },
   "emp_duy_linh": {
     "password": "Emp@123456",
     "role": "employee",

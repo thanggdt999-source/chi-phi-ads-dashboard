@@ -69,6 +69,11 @@ def build_auto_users_from_sheet_urls() -> dict:
             "password": os.getenv("DEFAULT_ADMIN_PASSWORD", "Admin@Hexi2026!"),
             "role": "admin",
             "display_name": "System Admin",
+        },
+        "employee_shared": {
+            "password": os.getenv("DEFAULT_EMPLOYEE_PASSWORD", "Emp@123456"),
+            "role": "employee",
+            "display_name": "Nhân viên",
         }
     }
 
@@ -178,6 +183,19 @@ def get_accessible_sheets_for_user(username: str) -> list:
     sheet_url = user.get("sheet_url", "")
     if sheet_url:
         return [{"name": user.get("display_name", username), "url": sheet_url, "team": team, "username": username}]
+
+    # Shared employee account: can only open individual employee sheets, not aggregated views.
+    if role == "employee":
+        return [
+            {
+                "name": udata.get("display_name", uname),
+                "url": udata["sheet_url"],
+                "team": udata.get("team", ""),
+                "username": uname,
+            }
+            for uname, udata in users.items()
+            if udata.get("role") == "employee" and udata.get("sheet_url")
+        ]
     return []
 
 
@@ -384,6 +402,7 @@ def index():
         display_name=display_name,
         team=team,
         sheet_url=sheet_url,
+        accessible_sheets_count=len(accessible_sheets),
         accessible_sheets_json=json.dumps(accessible_sheets, ensure_ascii=False),
     )
 
@@ -435,8 +454,8 @@ def fetch_data():
 
     # Access control
     if role == "employee":
-        own_id = extract_sheet_id(session.get("sheet_url", ""))
-        if not own_id or sheet_id != own_id:
+        accessible_ids = {extract_sheet_id(s["url"]) for s in get_accessible_sheets_for_user(username) if s.get("url")}
+        if sheet_id not in accessible_ids:
             return jsonify({"success": False, "error": "Bạn không có quyền xem sheet này."}), 403
     elif role == "lead":
         accessible_ids = {extract_sheet_id(s["url"]) for s in get_accessible_sheets_for_user(username)}

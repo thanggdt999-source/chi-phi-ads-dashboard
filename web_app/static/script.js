@@ -24,15 +24,19 @@ document.addEventListener("DOMContentLoaded", async () => {
     initURLInputListeners();
 
     if (ROLE === "employee") {
-        if (SHEET_URL) {
-            await fetchAndRender(SHEET_URL, false);
+        const defaultSheet = SHEET_URL || (SHEETS[0] && SHEETS[0].url) || "";
+        const sel = document.getElementById("memberSelect");
+        if (sel && defaultSheet) sel.value = defaultSheet;
+
+        if (defaultSheet) {
+            await fetchAndRender(defaultSheet, false);
         } else {
             showError("⚠️ Tài khoản chưa được gán sheet. Liên hệ Admin.");
         }
     }
 });
 
-// ─── Member dropdown (lead/admin) ─────────────────────
+// ─── Member dropdown ───────────────────────────────────
 function populateMemberSelect() {
     const sel = document.getElementById("memberSelect");
     if (!sel || !SHEETS.length) return;

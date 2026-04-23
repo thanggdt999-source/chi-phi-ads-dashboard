@@ -172,15 +172,17 @@
             {% endif %}
 
             <!-- ── Lead / Admin: action bar ── -->
-            {% if role in ['lead', 'admin'] %}
+            {% if role in ['lead', 'admin'] or (role == 'employee' and accessible_sheets_count > 1) %}
             <section class="action-bar-section">
                 <div class="card action-bar">
+                    {% if role in ['lead', 'admin'] %}
                     <button id="btnLoadAll" class="btn btn-primary" onclick="loadAllData()">
                         <i class="fas fa-layer-group"></i>
                         {% if role == 'admin' %}Tải tất cả báo cáo{% else %}Tải báo cáo tổng team{% endif %}
                     </button>
+                    {% endif %}
                     <div class="member-selector-wrap">
-                        <label for="memberSelect"><i class="fas fa-user-circle"></i> Xem theo thành viên:</label>
+                        <label for="memberSelect"><i class="fas fa-user-circle"></i> {% if role == 'employee' %}Chọn dữ liệu nhân viên:{% else %}Xem theo thành viên:{% endif %}</label>
                         <select id="memberSelect" class="member-select" onchange="loadMemberSheet(this.value)">
                             <option value="">-- Chọn thành viên --</option>
                         </select>
