@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản lý Người dùng – Admin</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+        a { color: #60a5fa; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        /* ── Layout ── */
+        .page-wrapper { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
+
+        /* ── Top bar ── */
+        .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; gap: 12px; flex-wrap: wrap; }
+        .topbar-left { display: flex; align-items: center; gap: 14px; }
+        .topbar h1 { font-size: 1.4rem; font-weight: 700; color: #f1f5f9; }
+        .back-link { display: inline-flex; align-items: center; gap: 6px; font-size: 0.9rem; color: #94a3b8; }
+        .back-link:hover { color: #e2e8f0; }
+
+        /* ── Add button ── */
+        .btn { display: inline-flex; align-items: center; gap: 6px; padding: 9px 18px; border-radius: 8px; border: none; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: background 0.18s, opacity 0.18s; }
+        .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+        .btn-primary { background: #3b82f6; color: #fff; }
+        .btn-primary:hover:not(:disabled) { background: #2563eb; }
+        .btn-danger  { background: #ef4444; color: #fff; }
+        .btn-danger:hover:not(:disabled)  { background: #dc2626; }
+        .btn-ghost   { background: transparent; color: #94a3b8; border: 1px solid #334155; }
+        .btn-ghost:hover:not(:disabled)   { background: #1e293b; color: #e2e8f0; }
+
+        /* ── Card ── */
+        .card { background: #1e293b; border-radius: 14px; padding: 0; overflow: hidden; border: 1px solid #334155; }
+
+        /* ── Table ── */
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+        thead { background: #0f172a; }
+        thead th { padding: 13px 16px; text-align: left; font-weight: 600; color: #94a3b8; white-space: nowrap; border-bottom: 1px solid #334155; }
+        tbody tr { border-bottom: 1px solid #1e293b; transition: background 0.12s; }
+        tbody tr:last-child { border-bottom: none; }
+        tbody tr:hover { background: #253147; }
+        tbody td { padding: 12px 16px; vertical-align: middle; }
+        .td-actions { display: flex; gap: 8px; }
+
+        /* ── Role badges ── */
+        .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.3px; }
+        .badge-admin    { background: #7c3aed22; color: #a78bfa; border: 1px solid #7c3aed44; }
+        .badge-lead     { background: #0369a122; color: #38bdf8; border: 1px solid #0369a144; }
+        .badge-employee { background: #16a34a22; color: #86efac; border: 1px solid #16a34a44; }
+
+        /* ── Empty state ── */
+        .empty-state { text-align: center; padding: 48px; color: #64748b; }
+        .empty-state i { font-size: 2.5rem; margin-bottom: 12px; }
+
+        /* ── Modal overlay ── */
+        .modal-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.65); z-index: 100;
+            align-items: center; justify-content: center;
+            padding: 16px;
+        }
+        .modal-overlay.open { display: flex; }
+        .modal {
+            background: #1e293b; border: 1px solid #334155; border-radius: 16px;
+            width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto;
+            padding: 28px 28px 24px;
+            box-shadow: 0 25px 60px rgba(0,0,0,0.5);
+        }
+        .modal h2 { font-size: 1.1rem; font-weight: 700; margin-bottom: 20px; color: #f1f5f9; }
+
+        /* ── Form ── */
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; font-size: 0.82rem; font-weight: 600; color: #94a3b8; margin-bottom: 6px; }
+        .form-group label span.req { color: #ef4444; margin-left: 2px; }
+        .form-control {
+            width: 100%; padding: 9px 12px; background: #0f172a; border: 1px solid #334155;
+            border-radius: 8px; color: #e2e8f0; font-size: 0.9rem; outline: none; transition: border 0.15s;
+        }
+        .form-control:focus { border-color: #3b82f6; }
+        .form-control::placeholder { color: #475569; }
+        select.form-control option { background: #1e293b; }
+
+        .form-hint { font-size: 0.78rem; color: #64748b; margin-top: 5px; }
+        .form-row { display: flex; gap: 12px; }
+        .form-row .form-group { flex: 1; }
+
+        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+
+        /* ── Toast ── */
+        #toast {
+            position: fixed; bottom: 24px; right: 24px; z-index: 200;
+            padding: 12px 20px; border-radius: 10px; font-size: 0.9rem; font-weight: 600;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+            transform: translateY(60px); opacity: 0;
+            transition: transform 0.3s, opacity 0.3s;
+            max-width: 340px;
+        }
+        #toast.show { transform: translateY(0); opacity: 1; }
+        #toast.success { background: #16a34a; color: #fff; }
+        #toast.error   { background: #dc2626; color: #fff; }
+
+        /* ── Confirm dialog ── */
+        .confirm-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.7); z-index: 150;
+            align-items: center; justify-content: center; padding: 16px;
+        }
+        .confirm-overlay.open { display: flex; }
+        .confirm-box {
+            background: #1e293b; border: 1px solid #334155; border-radius: 14px;
+            padding: 28px; max-width: 400px; width: 100%;
+            box-shadow: 0 25px 60px rgba(0,0,0,0.5);
+            text-align: center;
+        }
+        .confirm-box i { font-size: 2.2rem; color: #ef4444; margin-bottom: 14px; }
+        .confirm-box h3 { font-size: 1rem; font-weight: 700; color: #f1f5f9; margin-bottom: 8px; }
+        .confirm-box p { font-size: 0.88rem; color: #94a3b8; margin-bottom: 22px; }
+        .confirm-actions { display: flex; justify-content: center; gap: 12px; }
+
+        @media (max-width: 600px) {
+            .form-row { flex-direction: column; gap: 0; }
+            .modal { padding: 20px 16px 18px; }
+        }
+    </style>
+</head>
+<body>
+<div class="page-wrapper">
+
+    <!-- Top bar -->
+    <div class="topbar">
+        <div class="topbar-left">
+            <a href="{{ url_for('index') }}" class="back-link"><i class="fas fa-arrow-left"></i> Dashboard</a>
+            <h1><i class="fas fa-users-cog"></i> Quản lý Người dùng</h1>
+        </div>
+        <button class="btn btn-primary" onclick="openCreateModal()">
+            <i class="fas fa-plus"></i> Thêm người dùng
+        </button>
+    </div>
+
+    <!-- Users table -->
+    <div class="card">
+        <div class="table-wrap">
+            <table id="usersTable">
+                <thead>
+                    <tr>
+                        <th>Tên đăng nhập</th>
+                        <th>Họ tên</th>
+                        <th>Vai trò</th>
+                        <th>Team</th>
+                        <th>Sheet URL</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="usersBody"></tbody>
+            </table>
+        </div>
+        <div id="emptyState" class="empty-state" style="display:none;">
+            <i class="fas fa-users-slash"></i>
+            <p>Chưa có người dùng nào.</p>
+        </div>
+    </div>
+
+</div>
+
+<!-- ── Add / Edit Modal ── -->
+<div class="modal-overlay" id="modalOverlay">
+    <div class="modal" role="dialog" aria-modal="true">
+        <h2 id="modalTitle"><i class="fas fa-user-plus"></i> Thêm người dùng</h2>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label>Tên đăng nhập <span class="req">*</span></label>
+                <input type="text" id="fUsername" class="form-control" placeholder="vd: emp_thang" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label id="fPasswordLabel">Mật khẩu <span class="req">*</span></label>
+                <input type="text" id="fPassword" class="form-control" placeholder="Nhập mật khẩu" autocomplete="new-password">
+                <p class="form-hint" id="fPasswordHint" style="display:none;">Để trống = giữ mật khẩu cũ</p>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Họ tên hiển thị</label>
+            <input type="text" id="fDisplayName" class="form-control" placeholder="vd: Nguyễn Văn Thắng">
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label>Vai trò <span class="req">*</span></label>
+                <select id="fRole" class="form-control" onchange="onRoleChange()">
+                    <option value="employee">Employee</option>
+                    <option value="lead">Lead</option>
+                    <option value="admin">Admin</option>
+                </select>
+            </div>
+            <div class="form-group" id="fTeamGroup">
+                <label>Team <span class="req">*</span></label>
+                <select id="fTeam" class="form-control">
+                    <option value="">-- Chọn team --</option>
+                    {% for t in team_codes %}
+                    <option value="{{ t }}">{{ t }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="form-group" id="fSheetGroup">
+            <label>Sheet URL</label>
+            <input type="text" id="fSheetUrl" class="form-control" placeholder="https://docs.google.com/spreadsheets/d/...">
+            <p class="form-hint">Chỉ bắt buộc cho vai trò Employee.</p>
+        </div>
+
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeModal()">Huỷ</button>
+            <button class="btn btn-primary" id="modalSaveBtn" onclick="saveUser()">
+                <i class="fas fa-save"></i> Lưu
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Confirm delete ── -->
+<div class="confirm-overlay" id="confirmOverlay">
+    <div class="confirm-box">
+        <i class="fas fa-trash-alt"></i>
+        <h3>Xác nhận xoá</h3>
+        <p id="confirmMsg">Bạn chắc chắn muốn xoá tài khoản này?</p>
+        <div class="confirm-actions">
+            <button class="btn btn-ghost" onclick="closeConfirm()">Huỷ</button>
+            <button class="btn btn-danger" id="confirmDeleteBtn">Xoá</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Toast ── -->
+<div id="toast"></div>
+
+<script>
+    const TEAM_CODES = {{ team_codes | tojson }};
+    let usersData = {{ users_json | safe }};  // {username: {role, team, display_name, sheet_url}}
+    let editingUsername = null;  // null = create mode
+
+    // ── Render table ──────────────────────────────────────────────────
+    function renderTable() {
+        const tbody = document.getElementById('usersBody');
+        const keys = Object.keys(usersData);
+        tbody.innerHTML = '';
+        document.getElementById('emptyState').style.display = keys.length === 0 ? '' : 'none';
+
+        keys.forEach(uname => {
+            const u = usersData[uname];
+            const roleClass = `badge-${u.role}`;
+            const roleLabel = u.role === 'admin' ? 'Admin' : u.role === 'lead' ? 'Lead' : 'Employee';
+            const sheetCell = u.sheet_url
+                ? `<a href="${u.sheet_url}" target="_blank" title="${u.sheet_url}"><i class="fas fa-external-link-alt"></i> Xem sheet</a>`
+                : '<span style="color:#475569">—</span>';
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><strong>${uname}</strong></td>
+                <td>${u.display_name || uname}</td>
+                <td><span class="badge ${roleClass}">${roleLabel}</span></td>
+                <td>${u.team || '—'}</td>
+                <td>${sheetCell}</td>
+                <td>
+                    <div class="td-actions">
+                        <button class="btn btn-ghost" style="padding:6px 12px;font-size:0.8rem;" onclick="openEditModal('${uname}')">
+                            <i class="fas fa-edit"></i> Sửa
+                        </button>
+                        <button class="btn btn-danger" style="padding:6px 12px;font-size:0.8rem;" onclick="askDelete('${uname}')">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </td>`;
+            tbody.appendChild(tr);
+        });
+    }
+
+    // ── Modal helpers ──────────────────────────────────────────────────
+    function onRoleChange() {
+        const role = document.getElementById('fRole').value;
+        document.getElementById('fTeamGroup').style.display = role === 'admin' ? 'none' : '';
+        document.getElementById('fSheetGroup').style.display = role === 'employee' ? '' : 'none';
+    }
+
+    function openCreateModal() {
+        editingUsername = null;
+        document.getElementById('modalTitle').innerHTML = '<i class="fas fa-user-plus"></i> Thêm người dùng';
+        document.getElementById('fUsername').value = '';
+        document.getElementById('fUsername').disabled = false;
+        document.getElementById('fPassword').value = '';
+        document.getElementById('fPasswordLabel').innerHTML = 'Mật khẩu <span class="req">*</span>';
+        document.getElementById('fPasswordHint').style.display = 'none';
+        document.getElementById('fDisplayName').value = '';
+        document.getElementById('fRole').value = 'employee';
+        document.getElementById('fTeam').value = '';
+        document.getElementById('fSheetUrl').value = '';
+        onRoleChange();
+        document.getElementById('modalOverlay').classList.add('open');
+        document.getElementById('fUsername').focus();
+    }
+
+    function openEditModal(uname) {
+        editingUsername = uname;
+        const u = usersData[uname];
+        document.getElementById('modalTitle').innerHTML = `<i class="fas fa-user-edit"></i> Sửa: ${uname}`;
+        document.getElementById('fUsername').value = uname;
+        document.getElementById('fUsername').disabled = true;
+        document.getElementById('fPassword').value = '';
+        document.getElementById('fPasswordLabel').innerHTML = 'Mật khẩu mới';
+        document.getElementById('fPasswordHint').style.display = '';
+        document.getElementById('fDisplayName').value = u.display_name || '';
+        document.getElementById('fRole').value = u.role || 'employee';
+        document.getElementById('fTeam').value = u.team || '';
+        document.getElementById('fSheetUrl').value = u.sheet_url || '';
+        onRoleChange();
+        document.getElementById('modalOverlay').classList.add('open');
+        document.getElementById('fDisplayName').focus();
+    }
+
+    function closeModal() {
+        document.getElementById('modalOverlay').classList.remove('open');
+    }
+
+    // Close on overlay click
+    document.getElementById('modalOverlay').addEventListener('click', e => {
+        if (e.target === e.currentTarget) closeModal();
+    });
+
+    // ── Save user ──────────────────────────────────────────────────────
+    async function saveUser() {
+        const btn = document.getElementById('modalSaveBtn');
+        btn.disabled = true;
+
+        const role = document.getElementById('fRole').value;
+        const payload = {
+            username: document.getElementById('fUsername').value.trim(),
+            password: document.getElementById('fPassword').value.trim(),
+            display_name: document.getElementById('fDisplayName').value.trim(),
+            role,
+            team: document.getElementById('fTeam').value,
+            sheet_url: role === 'employee' ? document.getElementById('fSheetUrl').value.trim() : '',
+        };
+
+        let url, method;
+        if (editingUsername) {
+            url = `/api/admin/users/${encodeURIComponent(editingUsername)}`;
+            method = 'PUT';
+        } else {
+            url = '/api/admin/users';
+            method = 'POST';
+        }
+
+        try {
+            const res = await fetch(url, {
+                method,
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            });
+            const json = await res.json();
+            if (json.success) {
+                showToast(json.message, 'success');
+                closeModal();
+                await reloadUsers();
+            } else {
+                showToast(json.error || 'Có lỗi xảy ra.', 'error');
+            }
+        } catch (e) {
+            showToast('Lỗi kết nối.', 'error');
+        }
+        btn.disabled = false;
+    }
+
+    // ── Delete ────────────────────────────────────────────────────────
+    let pendingDeleteUsername = null;
+
+    function askDelete(uname) {
+        pendingDeleteUsername = uname;
+        document.getElementById('confirmMsg').textContent = `Bạn chắc chắn muốn xoá tài khoản "${uname}"?`;
+        document.getElementById('confirmOverlay').classList.add('open');
+    }
+
+    function closeConfirm() {
+        pendingDeleteUsername = null;
+        document.getElementById('confirmOverlay').classList.remove('open');
+    }
+
+    document.getElementById('confirmDeleteBtn').addEventListener('click', async () => {
+        if (!pendingDeleteUsername) return;
+        const uname = pendingDeleteUsername;
+        closeConfirm();
+
+        try {
+            const res = await fetch(`/api/admin/users/${encodeURIComponent(uname)}`, { method: 'DELETE' });
+            const json = await res.json();
+            if (json.success) {
+                showToast(json.message, 'success');
+                await reloadUsers();
+            } else {
+                showToast(json.error || 'Không thể xoá.', 'error');
+            }
+        } catch (e) {
+            showToast('Lỗi kết nối.', 'error');
+        }
+    });
+
+    // ── Reload users from server ───────────────────────────────────────
+    async function reloadUsers() {
+        try {
+            const res = await fetch('/api/admin/users');
+            const json = await res.json();
+            if (json.success) {
+                usersData = {};
+                json.users.forEach(u => {
+                    usersData[u.username] = {
+                        role: u.role,
+                        team: u.team,
+                        display_name: u.display_name,
+                        sheet_url: u.sheet_url,
+                    };
+                });
+                renderTable();
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    // ── Toast ─────────────────────────────────────────────────────────
+    let toastTimer = null;
+    function showToast(msg, type = 'success') {
+        const el = document.getElementById('toast');
+        el.textContent = msg;
+        el.className = `show ${type}`;
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => { el.className = ''; }, 3500);
+    }
+
+    // ── Init ──────────────────────────────────────────────────────────
+    renderTable();
+</script>
+</body>
+</html>

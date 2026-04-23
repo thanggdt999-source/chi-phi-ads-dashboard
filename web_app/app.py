@@ -528,6 +528,162 @@ def list_sheets():
     sheets = [{"name": s["name"], "url": s["url"], "team": s.get("team", "")} for s in accessible]
     return jsonify({"success": True, "sheets": sheets})
 
+# ─────────────────── ADMIN USER MANAGEMENT ───────────────────
+
+def save_users_config(config: dict) -> None:
+    """Persist user config to the JSON file (used by admin UI)."""
+    USERS_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with USERS_FILE_PATH.open("w", encoding="utf-8") as f:
+        json.dump(config, f, ensure_ascii=False, indent=2)
+
+
+def admin_page_required(view_func):
+    """Decorator for admin-only HTML pages (redirect to login/403 page)."""
+    @wraps(view_func)
+    def wrapper(*args, **kwargs):
+        if not is_logged_in():
+            return redirect(url_for("login", next=request.path))
+        if ROLE_LEVELS.get(session.get("role", ""), 0) < ROLE_LEVELS["admin"]:
+            return render_template("403.html"), 403
+        return view_func(*args, **kwargs)
+    return wrapper
+
+
+@app.route("/admin/users")
+@admin_page_required
+def admin_users_page():
+    users = load_users_config()
+    # Mask passwords before sending to template
+    users_safe = {
+        uname: {k: v for k, v in udata.items() if k != "password"}
+        for uname, udata in users.items()
+    }
+    return render_template(
+        "admin_users.html",
+        users_json=json.dumps(users_safe, ensure_ascii=False),
+        team_codes=TEAM_CODES,
+        display_name=session.get("display_name", ""),
+    )
+
+
+@app.route("/api/admin/users", methods=["GET"])
+@api_role_required("admin")
+def api_admin_list_users():
+    users = load_users_config()
+    result = []
+    for uname, udata in users.items():
+        result.append({
+            "username": uname,
+            "role": udata.get("role", "employee"),
+            "team": udata.get("team", ""),
+            "display_name": udata.get("display_name", uname),
+            "sheet_url": udata.get("sheet_url", ""),
+        })
+    return jsonify({"success": True, "users": result})
+
+
+@app.route("/api/admin/users", methods=["POST"])
+@api_role_required("admin")
+def api_admin_create_user():
+    data = request.get_json(silent=True) or {}
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+    role = data.get("role", "employee").strip()
+    team = data.get("team", "").strip()
+    display_name = data.get("display_name", "").strip()
+    sheet_url = data.get("sheet_url", "").strip()
+
+    if not username or not password:
+        return jsonify({"success": False, "error": "Tên đăng nhập và mật khẩu không được để trống."}), 400
+    if role not in ROLE_LEVELS:
+        return jsonify({"success": False, "error": "Vai trò không hợp lệ."}), 400
+    if role in ("lead", "employee") and team not in TEAM_CODES:
+        return jsonify({"success": False, "error": "Vui lòng chọn team hợp lệ."}), 400
+
+    users = load_users_config()
+    if username in users:
+        return jsonify({"success": False, "error": f'Tên đăng nhập "{username}" đã tồn tại.'}), 409
+
+    users[username] = {
+        "password": password,
+        "role": role,
+        "display_name": display_name or username,
+    }
+    if team:
+        users[username]["team"] = team
+    if role == "employee" and sheet_url:
+        users[username]["sheet_url"] = sheet_url
+
+    save_users_config(users)
+    return jsonify({"success": True, "message": f'Đã tạo tài khoản "{username}".'})
+
+
+@app.route("/api/admin/users/<username>", methods=["PUT"])
+@api_role_required("admin")
+def api_admin_update_user(username):
+    data = request.get_json(silent=True) or {}
+    users = load_users_config()
+
+    if username not in users:
+        return jsonify({"success": False, "error": "Người dùng không tồn tại."}), 404
+
+    role = data.get("role", users[username].get("role", "employee")).strip()
+    team = data.get("team", users[username].get("team", "")).strip()
+    display_name = data.get("display_name", users[username].get("display_name", username)).strip()
+    sheet_url = data.get("sheet_url", users[username].get("sheet_url", "")).strip()
+    new_password = data.get("password", "").strip()
+
+    if role not in ROLE_LEVELS:
+        return jsonify({"success": False, "error": "Vai trò không hợp lệ."}), 400
+    if role in ("lead", "employee") and team not in TEAM_CODES:
+        return jsonify({"success": False, "error": "Vui lòng chọn team hợp lệ."}), 400
+
+    # Prevent removing the last admin
+    if users[username].get("role") == "admin" and role != "admin":
+        admin_count = sum(1 for u in users.values() if u.get("role") == "admin")
+        if admin_count <= 1:
+            return jsonify({"success": False, "error": "Không thể hạ quyền admin duy nhất."}), 400
+
+    users[username]["role"] = role
+    users[username]["display_name"] = display_name or username
+    if team:
+        users[username]["team"] = team
+    elif "team" in users[username] and role == "admin":
+        users[username].pop("team", None)
+    if role == "employee":
+        users[username]["sheet_url"] = sheet_url
+    else:
+        users[username].pop("sheet_url", None)
+    if new_password:
+        users[username]["password"] = new_password
+
+    save_users_config(users)
+    return jsonify({"success": True, "message": f'Đã cập nhật tài khoản "{username}".'})
+
+
+@app.route("/api/admin/users/<username>", methods=["DELETE"])
+@api_role_required("admin")
+def api_admin_delete_user(username):
+    users = load_users_config()
+
+    if username not in users:
+        return jsonify({"success": False, "error": "Người dùng không tồn tại."}), 404
+
+    # Prevent deleting last admin
+    if users[username].get("role") == "admin":
+        admin_count = sum(1 for u in users.values() if u.get("role") == "admin")
+        if admin_count <= 1:
+            return jsonify({"success": False, "error": "Không thể xoá tài khoản admin duy nhất."}), 400
+
+    # Prevent deleting own account
+    if username == session.get("username"):
+        return jsonify({"success": False, "error": "Không thể xoá tài khoản của chính mình."}), 400
+
+    del users[username]
+    save_users_config(users)
+    return jsonify({"success": True, "message": f'Đã xoá tài khoản "{username}".'})
+
+
 @app.route("/api/save-sheet", methods=["POST"])
 @api_login_required
 def save_sheet():
