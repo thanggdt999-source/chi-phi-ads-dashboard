@@ -20,6 +20,7 @@ USERS_FILE_PATH = Path(os.getenv("USERS_FILE_PATH", str(Path(__file__).parent.pa
 ROLE_LEVELS = {"admin": 3, "lead": 2, "employee": 1}
 TEAM_CODES = ["TEAM_1", "TEAM_2", "TEAM_3", "TEAM_4", "TEAM_5"]
 SHARED_LOGIN_USERNAME = os.getenv("SHARED_LOGIN_USERNAME", "fbads.gdt")
+LOGIN_BOARD_NAME = os.getenv("LOGIN_BOARD_NAME", "Bang Chi Phi Ads")
 
 # ─────────────────── USER CONFIG ───────────────────
 
@@ -432,7 +433,7 @@ def login():
             "login.html",
             error="",
             title="Đăng nhập hệ thống",
-            subtitle="Bước 1: Tất cả mọi người dùng chung tài khoản để vào hệ thống",
+            board_name=LOGIN_BOARD_NAME,
             form_action=url_for("login"),
             submit_label="Vào hệ thống",
             show_back_link=False,
@@ -450,7 +451,7 @@ def login():
         "login.html",
         error="Sai tài khoản hoặc mật khẩu",
         title="Đăng nhập hệ thống",
-        subtitle="Bước 1: Tất cả mọi người dùng chung tài khoản để vào hệ thống",
+        board_name=LOGIN_BOARD_NAME,
         form_action=url_for("login"),
         submit_label="Vào hệ thống",
         show_back_link=False,
@@ -468,7 +469,7 @@ def privileged_login():
             "login.html",
             error="",
             title="Đăng nhập Leader / Admin",
-            subtitle="Bước 2: Chỉ leader hoặc admin mới cần đăng nhập thêm để xem báo cáo tổng",
+            board_name=LOGIN_BOARD_NAME,
             form_action=url_for("privileged_login"),
             submit_label="Mở quyền xem tổng",
             show_back_link=True,
@@ -486,7 +487,7 @@ def privileged_login():
         "login.html",
         error="Chỉ tài khoản leader hoặc admin mới dùng được bước 2",
         title="Đăng nhập Leader / Admin",
-        subtitle="Bước 2: Chỉ leader hoặc admin mới cần đăng nhập thêm để xem báo cáo tổng",
+        board_name=LOGIN_BOARD_NAME,
         form_action=url_for("privileged_login"),
         submit_label="Mở quyền xem tổng",
         show_back_link=True,

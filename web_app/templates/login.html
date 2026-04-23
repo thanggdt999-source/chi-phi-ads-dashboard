@@ -38,11 +38,20 @@
             text-align: center;
         }
 
-        .login-sub {
-            text-align: center;
-            color: #6b7280;
-            margin-bottom: 20px;
-            font-size: 0.95rem;
+        .login-board {
+            margin: 0 auto 20px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 7px 14px;
+            border-radius: 999px;
+            background: rgba(52, 152, 219, 0.12);
+            border: 1px solid rgba(52, 152, 219, 0.28);
+            color: #1f4f75;
+            font-size: 0.88rem;
+            font-weight: 700;
+            letter-spacing: 0.2px;
         }
 
         .login-field {
@@ -165,7 +174,12 @@
                 </a>
                 {% endif %}
                 <div class="login-title">{{ title or 'Đăng nhập hệ thống' }}</div>
-                <div class="login-sub">{{ subtitle or 'Nhập tài khoản để mở Chi Phí Ads Dashboard' }}</div>
+                <div style="text-align:center;">
+                    <div class="login-board">
+                        <i class="fas fa-table"></i>
+                        {{ board_name or 'Bang Chi Phi Ads' }}
+                    </div>
+                </div>
 
                 <form method="post" action="{{ form_action or url_for('login') }}">
                     <input class="login-field" type="text" name="username" placeholder="Tên đăng nhập" required autocomplete="username">
