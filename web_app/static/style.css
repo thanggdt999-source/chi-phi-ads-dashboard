@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap');
+
 :root {
     --primary: #3498db;
     --primary-dark: #2980b9;
@@ -18,8 +20,11 @@
 }
 
 body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    font-family: 'Plus Jakarta Sans', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background:
+        radial-gradient(circle at 18% 12%, rgba(125, 211, 252, 0.34), transparent 34%),
+        radial-gradient(circle at 84% 88%, rgba(56, 189, 248, 0.22), transparent 36%),
+        linear-gradient(135deg, #0f172a 0%, #1e3a8a 55%, #0e7490 100%);
     color: var(--gray-dark);
     min-height: 100vh;
     padding: 20px;
@@ -32,12 +37,13 @@ body {
 
 /* Header */
 .header {
-    background: white;
+    background: linear-gradient(135deg, rgba(255,255,255,0.96), rgba(241,245,249,0.94));
     padding: 30px;
-    border-radius: 10px;
+    border-radius: 18px;
     margin-bottom: 30px;
     box-shadow: var(--shadow-lg);
     text-align: center;
+    border: 1px solid rgba(226, 232, 240, 0.85);
 }
 
 .header h1 {

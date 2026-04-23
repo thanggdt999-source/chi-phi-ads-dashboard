@@ -156,6 +156,33 @@ def set_session_user(username: str, user: dict, *, elevated: bool = False) -> No
     session["display_name"] = user.get("display_name", username)
     session["sheet_url"] = user.get("sheet_url", "")
     session["is_elevated"] = elevated
+    if user.get("role") == "employee" and not elevated:
+        session["base_employee"] = {
+            "username": username,
+            "display_name": user.get("display_name", username),
+            "team": user.get("team", ""),
+            "sheet_url": user.get("sheet_url", ""),
+        }
+
+
+def get_base_employee_session() -> dict:
+    base = session.get("base_employee")
+    return base if isinstance(base, dict) else {}
+
+
+def restore_base_employee_session() -> bool:
+    base = get_base_employee_session()
+    if not base:
+        return False
+
+    base_username = base.get("username", "").strip()
+    users = load_users_config()
+    user = users.get(base_username)
+    if not user or user.get("role") != "employee":
+        return False
+
+    set_session_user(base_username, user, elevated=False)
+    return True
 
 
 def get_accessible_sheets_for_user(username: str) -> list:
@@ -392,6 +419,11 @@ def index():
     display_name = session.get("display_name", username)
     team = session.get("team", "")
     sheet_url = session.get("sheet_url", "")
+    is_elevated = bool(session.get("is_elevated", False))
+    base_employee = get_base_employee_session()
+    can_elevate = role == "employee" and not is_elevated
+    can_view_team = role in {"lead", "admin"}
+    can_manage_users = role == "admin"
     accessible_sheets = get_accessible_sheets_for_user(username)
     return render_template(
         "index.html",
@@ -399,6 +431,11 @@ def index():
         display_name=display_name,
         team=team,
         sheet_url=sheet_url,
+        is_elevated=is_elevated,
+        base_employee=base_employee,
+        can_elevate=can_elevate,
+        can_view_team=can_view_team,
+        can_manage_users=can_manage_users,
         accessible_sheets_count=len(accessible_sheets),
         accessible_sheets_json=json.dumps(accessible_sheets, ensure_ascii=False),
     )
@@ -423,11 +460,13 @@ def login():
             error="",
             success=success_message,
             title="Đăng nhập hệ thống",
+            subtitle="Bước 1/2: Đăng nhập tài khoản nhân viên để vào phiên làm việc cơ sở.",
             board_name=LOGIN_BOARD_NAME,
             form_action=url_for("login"),
             submit_label="Vào hệ thống",
             show_register_link=True,
             show_back_link=False,
+            mode="employee",
         )
 
     username = request.form.get("username", "").strip()
@@ -443,6 +482,8 @@ def login():
 
     if not user:
         error_message = "Tài khoản chưa tồn tại trong hệ thống"
+    elif user.get("role") != "employee" and user.get("password") == password:
+        error_message = "Tài khoản này là Leader/Admin. Vui lòng đăng nhập bằng tài khoản nhân viên ở bước 1 trước."
     elif user.get("role") != "employee":
         error_message = "Bước 1 chỉ dùng tài khoản nhân viên"
 
@@ -451,11 +492,13 @@ def login():
         error=error_message,
         success="",
         title="Đăng nhập hệ thống",
+        subtitle="Bước 1/2: Đăng nhập tài khoản nhân viên để vào phiên làm việc cơ sở.",
         board_name=LOGIN_BOARD_NAME,
         form_action=url_for("login"),
         submit_label="Vào hệ thống",
         show_register_link=True,
         show_back_link=False,
+        mode="employee",
     )
 
 
@@ -471,11 +514,13 @@ def privileged_login():
             error="",
             success="",
             title="Đăng nhập Leader / Admin",
+            subtitle="Bước 2/2: Nâng quyền để xem dữ liệu team hoặc toàn hệ thống.",
             board_name=LOGIN_BOARD_NAME,
             form_action=url_for("privileged_login"),
             submit_label="Mở quyền xem tổng",
             show_register_link=False,
             show_back_link=True,
+            mode="privileged",
         )
 
     username = request.form.get("username", "").strip()
@@ -488,15 +533,30 @@ def privileged_login():
 
     return render_template(
         "login.html",
-        error="Chỉ tài khoản leader hoặc admin mới dùng được bước 2",
+        error="Bước 2 chỉ chấp nhận tài khoản Leader hoặc Admin hợp lệ.",
         success="",
         title="Đăng nhập Leader / Admin",
+        subtitle="Bước 2/2: Nâng quyền để xem dữ liệu team hoặc toàn hệ thống.",
         board_name=LOGIN_BOARD_NAME,
         form_action=url_for("privileged_login"),
         submit_label="Mở quyền xem tổng",
         show_register_link=False,
         show_back_link=True,
+        mode="privileged",
     )
+
+
+@app.route("/return-to-employee", methods=["POST"])
+@login_required
+def return_to_employee():
+    if not bool(session.get("is_elevated", False)):
+        return redirect(url_for("index"))
+
+    if not restore_base_employee_session():
+        session.clear()
+        return redirect(url_for("login"))
+
+    return redirect(url_for("index"))
 
 
 @app.route("/register", methods=["GET", "POST"])

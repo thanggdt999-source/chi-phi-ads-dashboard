@@ -104,6 +104,20 @@
             justify-content: flex-end;
         }
 
+        .access-insight {
+            width: 100%;
+            margin-top: 12px;
+            padding: 14px 16px;
+            border-radius: 14px;
+            background: rgba(15, 23, 42, 0.24);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            color: rgba(226, 232, 240, 0.9);
+        }
+
+        .access-insight strong {
+            color: #f8fafc;
+        }
+
         .action-link {
             display: inline-flex;
             align-items: center;
@@ -123,6 +137,7 @@
 
         .action-link.elevate { background: linear-gradient(135deg, #0ea5e9, #2563eb); color: #fff; }
         .action-link.manage { background: rgba(139,92,246,0.16); color: #ede9fe; border: 1px solid rgba(167,139,250,0.28); }
+    .action-link.back-employee { background: rgba(56, 189, 248, 0.2); color: #e0f2fe; border: 1px solid rgba(125, 211, 252, 0.35); }
         .action-link.logout { background: rgba(239,68,68,0.92); color: #fff; }
 
         @media (max-width: 720px) {
@@ -172,7 +187,13 @@
                             </div>
                             <div>
                                 <div class="session-name">{{ display_name }}</div>
-                                <div class="session-subtext">{{ team if team else 'Tài khoản cá nhân' }}</div>
+                                <div class="session-subtext">
+                                    {% if is_elevated and base_employee %}
+                                    Nâng quyền từ tài khoản nhân viên: {{ base_employee.display_name }}
+                                    {% else %}
+                                    {{ team if team else 'Tài khoản cá nhân' }}
+                                    {% endif %}
+                                </div>
                             </div>
                         </div>
                         <div class="session-meta">
@@ -186,21 +207,43 @@
                             {% elif role == 'employee' %}
                             <span class="session-chip"><i class="fas fa-triangle-exclamation"></i> Chưa gán Google Sheet</span>
                             {% endif %}
+                            {% if is_elevated %}
+                            <span class="session-chip"><i class="fas fa-bolt"></i> Phiên đang ở chế độ nâng quyền</span>
+                            {% endif %}
                         </div>
                     </div>
 
                     <div class="quick-actions">
-                        {% if role == 'employee' %}
+                        {% if can_elevate %}
                         <a href="{{ url_for('privileged_login') }}" class="action-link elevate">
                             <i class="fas fa-lock-open"></i> Nâng quyền Leader / Admin
                         </a>
                         {% endif %}
-                        {% if role == 'admin' %}
+                        {% if is_elevated %}
+                        <form method="post" action="{{ url_for('return_to_employee') }}">
+                            <button type="submit" class="action-link back-employee" style="border: none; cursor: pointer;">
+                                <i class="fas fa-rotate-left"></i> Quay về quyền nhân viên
+                            </button>
+                        </form>
+                        {% endif %}
+                        {% if can_manage_users %}
                         <a href="{{ url_for('admin_users_page') }}" class="action-link manage">
                             <i class="fas fa-users-cog"></i> Quản lý Users
                         </a>
                         {% endif %}
                         <a href="{{ url_for('logout') }}" class="action-link logout"><i class="fas fa-sign-out-alt"></i> Đăng xuất</a>
+                    </div>
+
+                    <div class="access-insight">
+                        {% if is_elevated %}
+                        <strong>Chế độ truy cập hiện tại:</strong> Bạn đang dùng quyền {{ role|upper }} để xem dữ liệu mở rộng. Có thể quay lại quyền nhân viên bất kỳ lúc nào để tránh thao tác nhầm.
+                        {% elif role == 'employee' %}
+                        <strong>Chế độ truy cập hiện tại:</strong> Bạn đang ở quyền nhân viên, chỉ xem dữ liệu được gán. Dùng nút "Nâng quyền" khi cần xem tổng team hoặc toàn hệ thống.
+                        {% elif role == 'lead' %}
+                        <strong>Chế độ truy cập hiện tại:</strong> Bạn đang ở quyền Leader và có thể xem dữ liệu trong phạm vi team.
+                        {% else %}
+                        <strong>Chế độ truy cập hiện tại:</strong> Bạn đang ở quyền Admin với toàn bộ dữ liệu và quản trị người dùng.
+                        {% endif %}
                     </div>
                 </div>
                 <p class="company-name">GDT Group</p>

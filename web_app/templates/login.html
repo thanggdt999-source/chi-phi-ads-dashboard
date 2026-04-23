@@ -16,7 +16,10 @@
             min-height: 100vh;
             display: flex;
             flex-direction: column;
-            background: linear-gradient(135deg, #6574d8 0%, #7365d0 100%);
+            background:
+                radial-gradient(circle at 15% 10%, rgba(125, 211, 252, 0.24), transparent 32%),
+                radial-gradient(circle at 85% 85%, rgba(56, 189, 248, 0.18), transparent 36%),
+                linear-gradient(135deg, #0f172a 0%, #1e3a8a 52%, #0369a1 100%);
         }
 
         .login-page {
@@ -37,6 +40,11 @@
             box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
         }
 
+        .login-card.mode-privileged {
+            box-shadow: 0 26px 64px rgba(13, 148, 136, 0.22);
+            border-color: rgba(13, 148, 136, 0.22);
+        }
+
         .login-accent {
             width: 72px;
             height: 6px;
@@ -51,6 +59,39 @@
             font-weight: 800;
             color: #1890e8;
             margin-bottom: 10px;
+        }
+
+        .login-mode-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 14px;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin: 0 auto 12px;
+        }
+
+        .login-mode-badge.employee {
+            color: #1d4ed8;
+            background: #dbeafe;
+            border: 1px solid #bfdbfe;
+        }
+
+        .login-mode-badge.privileged {
+            color: #115e59;
+            background: #ccfbf1;
+            border: 1px solid #99f6e4;
+        }
+
+        .login-subtitle {
+            text-align: center;
+            margin: 0 0 14px;
+            font-size: 0.92rem;
+            color: #64748b;
+            line-height: 1.5;
         }
 
         .login-board-wrap {
@@ -211,7 +252,7 @@
 <body>
     <div class="login-shell">
         <div class="login-page">
-            <div class="login-card">
+            <div class="login-card mode-{{ mode or 'employee' }}">
                 {% if show_back_link %}
                 <a href="{{ url_for('index') }}" class="login-back">
                     <i class="fas fa-arrow-left"></i> Quay lại dashboard
@@ -219,7 +260,17 @@
                 {% endif %}
 
                 <div class="login-accent"></div>
+                <div class="login-mode-badge {{ mode or 'employee' }}">
+                    {% if (mode or 'employee') == 'privileged' %}
+                    <i class="fas fa-shield-alt"></i> Bước nâng quyền
+                    {% else %}
+                    <i class="fas fa-user-check"></i> Bước đăng nhập cơ sở
+                    {% endif %}
+                </div>
                 <div class="login-title">{{ title or 'Đăng nhập hệ thống' }}</div>
+                {% if subtitle %}
+                <p class="login-subtitle">{{ subtitle }}</p>
+                {% endif %}
 
                 <div class="login-board-wrap">
                     <div class="login-board">
