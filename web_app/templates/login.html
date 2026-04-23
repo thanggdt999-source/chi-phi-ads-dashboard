@@ -96,22 +96,6 @@
         }
         .eye-btn:hover { color: #3498db; }
 
-        .shared-pass-note {
-            text-align: center;
-            font-size: 0.8rem;
-            color: #9ca3af;
-            margin-top: -4px;
-            margin-bottom: 12px;
-        }
-        .shared-pass-note span {
-            background: #f3f4f6;
-            border-radius: 6px;
-            padding: 2px 8px;
-            font-family: monospace;
-            color: #374151;
-            font-size: 0.85rem;
-        }
-
         .login-error {
             margin-top: 14px;
             background: #fef2f2;
@@ -189,9 +173,6 @@
                             </svg>
                         </button>
                     </div>
-                    <p class="shared-pass-note">Nhân viên dùng chung mật khẩu: <span id="sharedPassHint" style="display:none;">Emp@123456</span>
-                        <button type="button" onclick="toggleSharedPass()" style="background:none;border:none;color:#3498db;cursor:pointer;font-size:0.78rem;padding:0 4px;">xem</button>
-                    </p>
                     <button class="login-btn" type="submit">Đăng nhập</button>
                 </form>
 
@@ -220,17 +201,6 @@
             } else {
                 inp.type = 'password';
                 icon.innerHTML = `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>`;
-            }
-        }
-        function toggleSharedPass() {
-            const el = document.getElementById('sharedPassHint');
-            const btn = event.target;
-            if (el.style.display === 'none') {
-                el.style.display = 'inline';
-                btn.textContent = 'ẩn';
-            } else {
-                el.style.display = 'none';
-                btn.textContent = 'xem';
             }
         }
     </script>
