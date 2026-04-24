@@ -37,13 +37,15 @@ body {
 
 /* Header */
 .header {
-    background: linear-gradient(135deg, rgba(255,255,255,0.96), rgba(241,245,249,0.94));
+    background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04));
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
     padding: 16px 24px;
     border-radius: 18px;
     margin-bottom: 20px;
     box-shadow: var(--shadow-lg);
     text-align: center;
-    border: 1px solid rgba(226, 232, 240, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .header h1 {
@@ -89,7 +91,7 @@ body {
 }
 
 .header p {
-    color: #95a5a6;
+    color: rgba(186, 230, 253, 0.75);
     font-size: 1.1em;
 }
 
