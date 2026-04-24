@@ -46,20 +46,6 @@
             justify-content: space-between;
         }
 
-        .brand-chip {
-            display: inline-flex;
-            gap: 8px;
-            align-items: center;
-            width: fit-content;
-            padding: 8px 14px;
-            border-radius: 999px;
-            background: rgba(255,255,255,0.12);
-            border: 1px solid rgba(255,255,255,0.16);
-            font-size: 0.78rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.16em;
-        }
 
         .register-brand h1 {
             margin: 24px 0 14px;
@@ -270,7 +256,6 @@
                 <div class="form-accent"></div>
                 <div class="form-title">Đăng ký nhân viên</div>
                 <div class="form-subtitle">Nhập chính xác thông tin cá nhân, team và link Google Sheet để hệ thống tạo đúng tài khoản sử dụng lâu dài.</div>
-                <div class="board-name"><i class="fas fa-chart-line"></i> {{ board_name or 'Chi Phí Ads Realtime | GDT GROUP' }}</div>
 
                 {% if error %}
                 <div class="alert alert-error">{{ error }}</div>
