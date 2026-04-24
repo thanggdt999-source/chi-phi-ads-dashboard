@@ -239,10 +239,6 @@
         <div class="register-card">
             <section class="register-form-wrap">
                 <a href="{{ url_for('login') }}" class="back-link"><i class="fas fa-arrow-left"></i> Quay lại đăng nhập</a>
-                <div class="form-accent"></div>
-                <div class="form-title">Đăng ký nhân viên</div>
-                <div class="form-subtitle">Nhập chính xác thông tin cá nhân, team và link Google Sheet để hệ thống tạo đúng tài khoản sử dụng lâu dài.</div>
-
                 {% if error %}
                 <div class="alert alert-error">{{ error }}</div>
                 {% endif %}
