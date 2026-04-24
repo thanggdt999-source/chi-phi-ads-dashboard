@@ -45,45 +45,12 @@
             border-color: rgba(13, 148, 136, 0.22);
         }
 
-        .login-accent {
-            width: 72px;
-            height: 6px;
-            border-radius: 999px;
-            margin: 0 auto 20px;
-            background: linear-gradient(90deg, #38bdf8, #2563eb);
-        }
-
         .login-title {
             text-align: center;
             font-size: 2rem;
             font-weight: 800;
             color: #1890e8;
             margin-bottom: 10px;
-        }
-
-        .login-mode-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 7px 14px;
-            border-radius: 999px;
-            font-size: 0.78rem;
-            font-weight: 800;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            margin: 0 auto 12px;
-        }
-
-        .login-mode-badge.employee {
-            color: #1d4ed8;
-            background: #dbeafe;
-            border: 1px solid #bfdbfe;
-        }
-
-        .login-mode-badge.privileged {
-            color: #115e59;
-            background: #ccfbf1;
-            border: 1px solid #99f6e4;
         }
 
         .login-subtitle {
@@ -244,14 +211,6 @@
                 </a>
                 {% endif %}
 
-                <div class="login-accent"></div>
-                <div class="login-mode-badge {{ mode or 'employee' }}">
-                    {% if (mode or 'employee') == 'privileged' %}
-                    <i class="fas fa-shield-alt"></i> Bước nâng quyền
-                    {% else %}
-                    <i class="fas fa-user-check"></i> Bước đăng nhập cơ sở
-                    {% endif %}
-                </div>
                 <div class="login-title">{{ title or 'Đăng nhập hệ thống' }}</div>
                 {% if subtitle %}
                 <p class="login-subtitle">{{ subtitle }}</p>
