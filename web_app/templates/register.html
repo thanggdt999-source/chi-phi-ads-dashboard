@@ -46,7 +46,7 @@
             justify-content: space-between;
         }
 
-
+            grid-template-columns: 1fr;
         .register-brand h1 {
             margin: 24px 0 14px;
             font-size: 2.4rem;
@@ -238,19 +238,6 @@
 <body>
     <div class="register-shell">
         <div class="register-card">
-            <section class="register-brand">
-                <div>
-                    <div class="brand-chip"><i class="fas fa-user-plus"></i> Employee Onboarding</div>
-                    <h1>Tạo tài khoản nhân viên mới</h1>
-                    <p>Nhân viên có thể tự đăng ký tài khoản để truy cập đúng dữ liệu quảng cáo của mình. Hệ thống chỉ tạo tài khoản mới nếu username chưa tồn tại.</p>
-                    <div class="brand-list">
-                        <div class="brand-item"><i class="fas fa-circle-check"></i><span>Mỗi tài khoản nhân viên gắn với một Google Sheet riêng.</span></div>
-                        <div class="brand-item"><i class="fas fa-circle-check"></i><span>Sau khi đăng ký thành công, hệ thống tự đưa về trang đăng nhập.</span></div>
-                        <div class="brand-item"><i class="fas fa-circle-check"></i><span>Leader và Admin vẫn đăng nhập nâng quyền ở bước 2 trong hệ thống.</span></div>
-                    </div>
-                </div>
-            </section>
-
             <section class="register-form-wrap">
                 <a href="{{ url_for('login') }}" class="back-link"><i class="fas fa-arrow-left"></i> Quay lại đăng nhập</a>
                 <div class="form-accent"></div>
