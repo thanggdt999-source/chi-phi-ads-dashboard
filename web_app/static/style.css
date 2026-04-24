@@ -500,26 +500,28 @@ small {
 }
 
 .mb-20 {
+    margin-bottom: 20px;
+}
 
-    /* ─── Role Badge & Header Top Bar ─────────────────── */
-    .header {
-        position: relative;
-    }
+/* ─── Role Badge & Header Top Bar ─────────────────── */
+.header {
+    position: relative;
+}
 
-    .header-top-bar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 12px;
-        flex-wrap: wrap;
-        gap: 8px;
-    }
+.header-top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+}
 
-    .user-info-bar {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
+.user-info-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
 
     .role-badge {
         display: inline-flex;
@@ -777,24 +779,22 @@ small {
         background: #fff7ed;
     }
 
-    @media (max-width: 768px) {
-        .table-header-row {
-            flex-direction: column;
-        }
-        .date-filter-bar {
-            width: 100%;
-        }
-        .action-bar {
-            flex-direction: column;
-            align-items: flex-start;
-        }
-        .header-top-bar {
-            flex-direction: column;
-            align-items: flex-start;
-        }
-        .pagination-bar {
-            justify-content: flex-start;
-        }
+@media (max-width: 768px) {
+    .table-header-row {
+        flex-direction: column;
     }
-    margin-bottom: 20px;
+    .date-filter-bar {
+        width: 100%;
+    }
+    .action-bar {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .header-top-bar {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .pagination-bar {
+        justify-content: flex-start;
+    }
 }
