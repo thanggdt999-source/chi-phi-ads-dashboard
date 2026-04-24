@@ -375,15 +375,34 @@ small {
 }
 
 .stat-value {
-    font-size: 2.5em;
-    font-weight: bold;
+    font-size: 2.3em;
+    font-weight: 800;
     color: var(--primary);
-    margin-bottom: 5px;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 8px;
+    letter-spacing: 0.01em;
+    line-height: 1;
 }
 
-.stat-unit {
-    color: #bdc3c7;
-    font-size: 0.9em;
+.stat-value .value-main {
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+
+.stat-value .value-unit {
+    font-size: 0.34em;
+    font-weight: 700;
+    color: #5f8fb4;
+    background: #edf6ff;
+    border: 1px solid #d8eafe;
+    border-radius: 999px;
+    padding: 4px 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transform: translateY(-2px);
 }
 
 /* Charts Section */

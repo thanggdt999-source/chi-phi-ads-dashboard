@@ -247,10 +247,31 @@ function renderStats(rows) {
         totalResults += parseIntJS(row["Số Data"] || "");
     });
     const costPerResult = totalResults > 0 ? Math.round(totalSpend / totalResults) : 0;
-    document.getElementById("totalSpend").textContent    = formatCurrency(totalSpend);
-    document.getElementById("totalResults").textContent  = totalResults.toLocaleString("en-US");
-    document.getElementById("costPerResult").textContent = formatCurrency(costPerResult);
-    document.getElementById("adsPercent").textContent    = currentData.ads_percent || "—";
+    setStatValue("totalSpend", totalSpend.toLocaleString("vi-VN"), "VND");
+    setStatValue("totalResults", totalResults.toLocaleString("en-US"), "data");
+    setStatValue("costPerResult", costPerResult.toLocaleString("vi-VN"), "VND");
+
+    const adsRaw = (currentData.ads_percent || "").toString().trim();
+    if (!adsRaw || adsRaw === "—") {
+        setStatValue("adsPercent", "—", "");
+    } else {
+        const adsMain = adsRaw.endsWith("%") ? adsRaw.slice(0, -1) : adsRaw;
+        setStatValue("adsPercent", adsMain, "%");
+    }
+}
+
+function setStatValue(elementId, mainValue, unit = "") {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    const safeMain = escapeHtml(mainValue || "—");
+    const safeUnit = escapeHtml(unit || "");
+
+    if (!safeUnit) {
+        el.innerHTML = `<span class="value-main">${safeMain}</span>`;
+        return;
+    }
+
+    el.innerHTML = `<span class="value-main">${safeMain}</span><span class="value-unit">${safeUnit}</span>`;
 }
 
 function renderRankings() {
@@ -499,6 +520,14 @@ function formatShortCurrency(value) {
     if (value >= 1_000_000) return (value/1_000_000).toFixed(1)+"M";
     if (value >= 1_000)     return (value/1_000).toFixed(0)+"K";
     return value.toFixed(0);
+}
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#039;");
 }
 function showError(message) {
     const div = document.getElementById("errorMessage");
