@@ -266,7 +266,7 @@
                             <select name="team" required>
                                 <option value="">-- Chọn team --</option>
                                 {% for t in team_codes %}
-                                <option value="{{ t }}" {% if form_values.team == t %}selected{% endif %}>{{ t }}</option>
+                                <option value="{{ t }}" {% if form_values.team == t %}selected{% endif %}>{{ t.replace('TEAM_', 'Team ').replace('_', ' ') }}</option>
                                 {% endfor %}
                             </select>
                         </div>
