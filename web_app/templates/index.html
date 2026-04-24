@@ -140,6 +140,30 @@
     .action-link.back-employee { background: rgba(56, 189, 248, 0.2); color: #e0f2fe; border: 1px solid rgba(125, 211, 252, 0.35); }
         .action-link.logout { background: rgba(239,68,68,0.92); color: #fff; }
 
+        .employee-sheet-panel {
+            margin-bottom: 18px;
+            padding: 16px 18px;
+            border-radius: 18px;
+            background: linear-gradient(135deg, rgba(255,255,255,0.18), rgba(255,255,255,0.08));
+            border: 1px solid rgba(255,255,255,0.16);
+            color: #e2e8f0;
+        }
+
+        .employee-sheet-panel h2 {
+            color: #ffffff;
+            margin-bottom: 8px;
+        }
+
+        .employee-sheet-panel p {
+            color: rgba(226, 232, 240, 0.86);
+            margin-bottom: 14px;
+            line-height: 1.6;
+        }
+
+        .employee-sheet-panel small {
+            color: rgba(226, 232, 240, 0.72);
+        }
+
         @media (max-width: 720px) {
             .access-toolbar {
                 flex-direction: column;
@@ -278,10 +302,24 @@
                 </div>
             </section>
             {% else %}
-            <!-- Employee: hidden spinner (auto-load) -->
-            <div id="loadingSpinner" class="loading-spinner" style="display: none;">
-                <i class="fas fa-spinner"></i> Đang tải dữ liệu của bạn...
-            </div>
+            <section class="input-section employee-sheet-panel">
+                <div class="card" style="background: transparent; box-shadow: none; padding: 0; border-radius: 0;">
+                    <h2><i class="fas fa-link"></i> Sheet dữ liệu của bạn</h2>
+                    <p>Ngay sau bước đăng nhập đầu tiên, bạn có thể kiểm tra hoặc dùng lại link Google Sheet đã cung cấp để tải đúng dữ liệu quảng cáo của mình.</p>
+                    <form id="urlForm" onsubmit="handleSubmit(event)">
+                        <div class="input-wrap">
+                            <div class="input-group">
+                                <input type="text" id="sheetUrl" placeholder="Dán link Google Sheet tại đây..." autocomplete="off" value="{{ sheet_url or '' }}" required>
+                                <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Đọc dữ liệu</button>
+                            </div>
+                        </div>
+                        <small>Hệ thống ưu tiên link Google Sheet bạn đã cung cấp khi đăng ký hoặc được gán trong tài khoản.</small>
+                    </form>
+                    <div id="loadingSpinner" class="loading-spinner" style="display: none;">
+                        <i class="fas fa-spinner"></i> Đang tải dữ liệu của bạn...
+                    </div>
+                </div>
+            </section>
             {% endif %}
 
             <!-- ── Lead / Admin: action bar ── -->

@@ -25,6 +25,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     if (ROLE === "employee") {
         const defaultSheet = SHEET_URL || (SHEETS[0] && SHEETS[0].url) || "";
+        const sheetInput = document.getElementById("sheetUrl");
+        if (sheetInput && defaultSheet) sheetInput.value = defaultSheet;
         const sel = document.getElementById("memberSelect");
         if (sel && defaultSheet) sel.value = defaultSheet;
 
