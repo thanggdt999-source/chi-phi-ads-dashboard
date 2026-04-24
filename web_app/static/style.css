@@ -40,7 +40,7 @@ body {
     background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04));
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
-    padding: 16px 24px;
+    padding: 12px 20px;
     border-radius: 18px;
     margin-bottom: 20px;
     box-shadow: var(--shadow-lg);
@@ -51,7 +51,7 @@ body {
 .header h1 {
     font-size: 2em;
     color: var(--primary);
-    margin-bottom: 10px;
+    margin-bottom: 2px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -63,7 +63,7 @@ body {
     font-weight: 700;
     letter-spacing: 4px;
     text-transform: uppercase;
-    margin-bottom: 4px;
+    margin-bottom: 2px;
     background: linear-gradient(
         120deg,
         #818cf8 0%,
@@ -99,7 +99,7 @@ body {
 .main-content {
     display: flex;
     flex-direction: column;
-    gap: 30px;
+    gap: 22px;
 }
 
 /* Card */

@@ -564,6 +564,10 @@ def fetch_chi_phi_ads_data(sheet_id):
         return {"success": False, "error": raw_error}
 
 @app.route("/")
+def root_redirect():
+    return redirect(url_for("index"))
+
+
 @app.route("/dashboard")
 @login_required
 def index():

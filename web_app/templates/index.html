@@ -13,7 +13,7 @@
             justify-content: space-between;
             gap: 10px;
             flex-wrap: wrap;
-            margin-bottom: 10px;
+            margin-bottom: 6px;
         }
 
         .session-card {
@@ -123,9 +123,9 @@
         .action-link.logout { background: rgba(239,68,68,0.92); color: #fff; }
 
         .employee-sheet-panel {
-            margin-bottom: 18px;
-            padding: 16px 18px;
-            border-radius: 18px;
+            margin-bottom: 12px;
+            padding: 12px 14px;
+            border-radius: 14px;
             background: linear-gradient(135deg, rgba(255,255,255,0.18), rgba(255,255,255,0.08));
             border: 1px solid rgba(255,255,255,0.16);
             color: #e2e8f0;
@@ -133,7 +133,7 @@
 
         .employee-sheet-panel h2 {
             color: #ffffff;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
         }
 
         .employee-sheet-panel p {
@@ -147,7 +147,7 @@
         }
 
         .month-tools {
-            margin-top: 10px;
+            margin-top: 8px;
         }
 
         .month-tools-row {
@@ -155,7 +155,7 @@
             gap: 10px;
             align-items: center;
             flex-wrap: wrap;
-            margin-bottom: 6px;
+            margin-bottom: 0;
         }
 
         .month-tools-row select {
@@ -261,7 +261,6 @@
                 </div>
                 <p class="company-name">GDT Group</p>
                 <h1><i class="fas fa-chart-line"></i> Chi Phí Ads Dashboard</h1>
-                <p>Quản lý chi phí quảng cáo một cách dễ dàng</p>
             </div>
         </header>
 
@@ -294,7 +293,6 @@
             <section class="input-section employee-sheet-panel">
                 <div class="card" style="background: transparent; box-shadow: none; padding: 0; border-radius: 0;">
                     <h2><i class="fas fa-link"></i> Sheet dữ liệu của bạn</h2>
-                    <p>Ngay sau bước đăng nhập đầu tiên, bạn có thể kiểm tra hoặc dùng lại link Google Sheet đã cung cấp để tải đúng dữ liệu quảng cáo của mình.</p>
                     <form id="urlForm" onsubmit="handleSubmit(event)">
                         <div class="input-wrap">
                             <div class="input-group">
@@ -312,9 +310,7 @@
                                     <i class="fas fa-folder-open"></i> Mở thư mục tháng
                                 </button>
                             </div>
-                            <small>Chọn tháng để nạp đúng sheet theo từng tháng làm việc.</small>
                         </div>
-                        <small>Hệ thống ưu tiên link Google Sheet bạn đã cung cấp khi đăng ký hoặc được gán trong tài khoản.</small>
                     </form>
                     <div id="loadingSpinner" class="loading-spinner" style="display: none;">
                         <i class="fas fa-spinner"></i> Đang tải dữ liệu của bạn...
