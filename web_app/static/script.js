@@ -362,7 +362,7 @@ function renderCharts(rows) {
     });
 }
 
-// ─── URL suggestions (lead/admin) ─────────────────────
+// ─── URL suggestions ──────────────────────────────────
 function initURLInputListeners() {
     const input   = document.getElementById("sheetUrl");
     const box     = document.getElementById("sheetSuggestions");
@@ -378,16 +378,46 @@ function initURLInputListeners() {
     document.addEventListener("click", e => { if (!wrap.contains(e.target)) box.style.display = "none"; });
 }
 
+function getSuggestionSource() {
+    if (ROLE !== "employee") {
+        return SHEETS.map(s => ({
+            name: s.name || "",
+            url: s.url || "",
+            team: s.team || "",
+            month_label: "",
+        })).filter(s => s.url);
+    }
+
+    // Employee: suggest previously used sheets from monthly history.
+    const seen = new Set();
+    const source = [];
+    MONTHLY_SHEETS.forEach(item => {
+        const url = (item.sheet_url || "").trim();
+        if (!url || seen.has(url)) return;
+        seen.add(url);
+        source.push({
+            name: item.sheet_name || item.month_label || "Sheet đã dùng",
+            url,
+            team: "",
+            month_label: item.month_label || "",
+        });
+    });
+    return source;
+}
+
 function renderSuggestions(filterText = "") {
     const box = document.getElementById("sheetSuggestions");
     if (!box) return;
     const q    = filterText.trim().toLowerCase();
-    const list = SHEETS.filter(s => !q || (s.name || "").toLowerCase().includes(q) || (s.url || "").toLowerCase().includes(q));
+    const source = getSuggestionSource();
+    const list = source.filter(s => !q || (s.name || "").toLowerCase().includes(q) || (s.url || "").toLowerCase().includes(q));
     if (!list.length) {
         box.innerHTML = '<div class="suggestion-empty">Không có gợi ý phù hợp</div>';
     } else {
         box.innerHTML = list.map(s => {
-            const label = ROLE === "admin" ? `[${s.team || "?"}] ${s.name}` : s.name;
+            const label = ROLE === "admin"
+                ? `[${s.team || "?"}] ${s.name}`
+                : (ROLE === "employee" && s.month_label ? `${s.name} · ${s.month_label}` : s.name);
             return `<button type="button" class="suggestion-item" data-url="${s.url.replace(/"/g,"&quot;")}">
                 <span class="suggestion-name">${label}</span>
                 <span class="suggestion-url">${s.url}</span>
