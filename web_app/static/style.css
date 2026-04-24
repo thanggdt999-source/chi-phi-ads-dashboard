@@ -38,16 +38,16 @@ body {
 /* Header */
 .header {
     background: linear-gradient(135deg, rgba(255,255,255,0.96), rgba(241,245,249,0.94));
-    padding: 30px;
+    padding: 16px 24px;
     border-radius: 18px;
-    margin-bottom: 30px;
+    margin-bottom: 20px;
     box-shadow: var(--shadow-lg);
     text-align: center;
     border: 1px solid rgba(226, 232, 240, 0.85);
 }
 
 .header h1 {
-    font-size: 2.5em;
+    font-size: 2em;
     color: var(--primary);
     margin-bottom: 10px;
     display: flex;

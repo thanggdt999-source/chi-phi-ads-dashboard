@@ -9,31 +9,27 @@
     <style>
         .access-toolbar {
             display: flex;
-            align-items: flex-start;
+            align-items: center;
             justify-content: space-between;
-            gap: 18px;
+            gap: 10px;
             flex-wrap: wrap;
-            margin-bottom: 18px;
+            margin-bottom: 10px;
         }
 
         .session-card {
             display: flex;
-            flex-direction: column;
-            gap: 10px;
-            padding: 16px 18px;
-            border-radius: 18px;
+            flex-direction: row;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 14px;
+            border-radius: 14px;
             background: linear-gradient(135deg, rgba(255,255,255,0.16), rgba(255,255,255,0.06));
             border: 1px solid rgba(255,255,255,0.18);
-            min-width: 280px;
             backdrop-filter: blur(10px);
         }
 
         .session-kicker {
-            font-size: 0.72rem;
-            text-transform: uppercase;
-            letter-spacing: 0.22em;
-            color: rgba(226, 232, 240, 0.72);
-            font-weight: 700;
+            display: none;
         }
 
         .session-main {
@@ -102,20 +98,6 @@
             gap: 10px;
             flex-wrap: wrap;
             justify-content: flex-end;
-        }
-
-        .access-insight {
-            width: 100%;
-            margin-top: 12px;
-            padding: 14px 16px;
-            border-radius: 14px;
-            background: rgba(15, 23, 42, 0.24);
-            border: 1px solid rgba(255, 255, 255, 0.14);
-            color: rgba(226, 232, 240, 0.9);
-        }
-
-        .access-insight strong {
-            color: #f8fafc;
         }
 
         .action-link {
@@ -258,17 +240,7 @@
                         <a href="{{ url_for('logout') }}" class="action-link logout"><i class="fas fa-sign-out-alt"></i> Đăng xuất</a>
                     </div>
 
-                    <div class="access-insight">
-                        {% if is_elevated %}
-                        <strong>Chế độ truy cập hiện tại:</strong> Bạn đang dùng quyền {{ role|upper }} để xem dữ liệu mở rộng. Có thể quay lại quyền nhân viên bất kỳ lúc nào để tránh thao tác nhầm.
-                        {% elif role == 'employee' %}
-                        <strong>Chế độ truy cập hiện tại:</strong> Bạn đang ở quyền nhân viên, chỉ xem dữ liệu được gán. Dùng nút "Nâng quyền" khi cần xem tổng team hoặc toàn hệ thống.
-                        {% elif role == 'lead' %}
-                        <strong>Chế độ truy cập hiện tại:</strong> Bạn đang ở quyền Leader và có thể xem dữ liệu trong phạm vi team.
-                        {% else %}
-                        <strong>Chế độ truy cập hiện tại:</strong> Bạn đang ở quyền Admin với toàn bộ dữ liệu và quản trị người dùng.
-                        {% endif %}
-                    </div>
+
                 </div>
                 <p class="company-name">GDT Group</p>
                 <h1><i class="fas fa-chart-line"></i> Chi Phí Ads Dashboard</h1>
