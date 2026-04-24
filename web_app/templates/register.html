@@ -90,7 +90,28 @@
             color: #64748b;
             text-decoration: none;
             font-weight: 600;
-            margin-bottom: 18px;
+            margin-bottom: 12px;
+        }
+
+        .form-topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding: 10px 12px;
+            border-radius: 14px;
+            background: rgba(37, 99, 235, 0.06);
+            border: 1px solid rgba(59, 130, 246, 0.18);
+        }
+
+        .form-topbar-label {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: #1e3a8a;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
         }
 
         .form-accent {
@@ -188,8 +209,9 @@
         .actions {
             display: flex;
             gap: 12px;
-            margin-top: 24px;
+            margin-top: 0;
             flex-wrap: wrap;
+            justify-content: flex-end;
         }
 
         .btn {
@@ -231,6 +253,19 @@
             .form-grid {
                 grid-template-columns: 1fr;
             }
+
+            .form-topbar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .actions {
+                width: 100%;
+            }
+
+            .actions .btn {
+                width: 100%;
+            }
         }
     </style>
 </head>
@@ -244,6 +279,13 @@
                 {% endif %}
 
                 <form method="post" action="{{ url_for('register_employee') }}">
+                    <div class="form-topbar">
+                        <div class="form-topbar-label"><i class="fas fa-id-badge"></i> Thông tin đăng ký</div>
+                        <div class="actions">
+                            <button type="submit" class="btn btn-primary"><i class="fas fa-user-check"></i> Đăng ký</button>
+                        </div>
+                    </div>
+
                     <div class="form-grid">
                         <div class="field">
                             <label>Tên đăng nhập</label>
@@ -277,9 +319,6 @@
                         </div>
                     </div>
 
-                    <div class="actions">
-                        <button type="submit" class="btn btn-primary"><i class="fas fa-user-check"></i> Đăng ký</button>
-                    </div>
                 </form>
             </section>
         </div>
