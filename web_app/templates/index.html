@@ -146,6 +146,22 @@
             color: rgba(226, 232, 240, 0.72);
         }
 
+        .month-tools {
+            margin-top: 10px;
+        }
+
+        .month-tools-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 6px;
+        }
+
+        .month-tools-row select {
+            min-width: 180px;
+        }
+
         @media (max-width: 720px) {
             .access-toolbar {
                 flex-direction: column;
@@ -176,6 +192,7 @@
         window.APP_DISPLAY   = {{ display_name | tojson }};
         window.APP_SHEET_URL = {{ sheet_url | tojson }};
         window.APP_SHEETS    = {{ accessible_sheets_json | safe }};
+        window.APP_MONTHLY_SHEETS = {{ monthly_sheets_json | safe }};
     </script>
 
     <div class="container">
@@ -284,6 +301,17 @@
                                 <input type="text" id="sheetUrl" placeholder="Dán link Google Sheet tại đây..." autocomplete="off" value="{{ sheet_url or '' }}" required>
                                 <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Đọc dữ liệu</button>
                             </div>
+                        </div>
+                        <div class="month-tools">
+                            <div class="month-tools-row">
+                                <select id="monthSelect" onchange="loadMonthSheet(this.value)">
+                                    <option value="">-- Chọn tháng --</option>
+                                </select>
+                                <button type="button" class="btn btn-secondary" onclick="openMonthFolder()">
+                                    <i class="fas fa-folder-open"></i> Mở thư mục tháng
+                                </button>
+                            </div>
+                            <small>Chọn tháng để nạp đúng sheet theo từng tháng làm việc.</small>
                         </div>
                         <small>Hệ thống ưu tiên link Google Sheet bạn đã cung cấp khi đăng ký hoặc được gán trong tài khoản.</small>
                     </form>

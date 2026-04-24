@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from flask import Flask, render_template, render_template_string, request, jsonify, session, redirect, url_for
 from google.oauth2.service_account import Credentials
 import gspread
 import re
@@ -16,6 +16,7 @@ SERVICE_ACCOUNT_PATH = Path(__file__).parent.parent / "storage" / "credentials" 
 SHEET_URLS_PATH = Path(os.getenv("SHEET_URLS_PATH", str(Path(__file__).parent.parent / "storage" / "sheet_urls.csv")))
 AUTO_STATE_PATH = Path(os.getenv("AUTO_STATE_PATH", str(Path(__file__).parent.parent / "storage" / "config" / "auto_fill_state.json")))
 USERS_FILE_PATH = Path(os.getenv("USERS_FILE_PATH", str(Path(__file__).parent.parent / "storage" / "config" / "users.json")))
+MONTHLY_SHEETS_ROOT = Path(os.getenv("MONTHLY_SHEETS_ROOT", str(Path(__file__).parent.parent / "storage" / "monthly_sheets")))
 STATIC_ASSET_VERSION = os.getenv("STATIC_ASSET_VERSION", str(int(datetime.now().timestamp())))
 
 ROLE_LEVELS = {"admin": 3, "lead": 2, "employee": 1}
@@ -152,6 +153,151 @@ def get_user(username: str) -> Optional[dict]:
 
 def is_valid_sheet_url(sheet_url: str) -> bool:
     return bool(sheet_url) and bool(extract_sheet_id(sheet_url))
+
+
+def normalize_month_key(year: int, month: int) -> str:
+    return f"{year:04d}-{month:02d}"
+
+
+def current_month_key() -> str:
+    now = datetime.now()
+    return normalize_month_key(now.year, now.month)
+
+
+def month_label(month_key: str) -> str:
+    try:
+        year_str, month_str = month_key.split("-", 1)
+        return f"Tháng {int(month_str)}/{int(year_str)}"
+    except Exception:
+        return month_key
+
+
+def detect_month_key_from_text(text: str) -> str:
+    value = (text or "").lower().strip()
+    now = datetime.now()
+
+    # e.g. "thang 5 2026" / "tháng 5"
+    m = re.search(r"(?:th[aá]ng)\s*(1[0-2]|0?[1-9])(?:\D+(20\d{2}))?", value)
+    if m:
+        month = int(m.group(1))
+        year = int(m.group(2)) if m.group(2) else now.year
+        return normalize_month_key(year, month)
+
+    # e.g. 05/2026, 5-2026
+    m = re.search(r"\b(0?[1-9]|1[0-2])[/-](20\d{2})\b", value)
+    if m:
+        return normalize_month_key(int(m.group(2)), int(m.group(1)))
+
+    # e.g. 2026-05
+    m = re.search(r"\b(20\d{2})[/-](0?[1-9]|1[0-2])\b", value)
+    if m:
+        return normalize_month_key(int(m.group(1)), int(m.group(2)))
+
+    return current_month_key()
+
+
+def get_sheet_name_and_month(sheet_url: str) -> tuple[str, str, str]:
+    sheet_id = extract_sheet_id(sheet_url)
+    if not sheet_id:
+        return "", current_month_key(), ""
+
+    clean_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit"
+    sheet_name = sheet_id
+    month_key = current_month_key()
+    try:
+        client = get_gspread_client()
+        spreadsheet = client.open_by_key(sheet_id)
+        sheet_name = spreadsheet.title or sheet_id
+        month_key = detect_month_key_from_text(sheet_name)
+    except Exception:
+        # Keep fallback values if title cannot be fetched
+        pass
+
+    return sheet_name, month_key, clean_url
+
+
+def save_monthly_sheet_record(username: str, sheet_url: str, sheet_name: str, month_key: str) -> None:
+    month_dir = MONTHLY_SHEETS_ROOT / month_key
+    month_dir.mkdir(parents=True, exist_ok=True)
+    user_file = month_dir / f"{username}.json"
+
+    payload = {
+        "username": username,
+        "month": month_key,
+        "entries": [],
+    }
+    if user_file.exists():
+        try:
+            with user_file.open("r", encoding="utf-8") as f:
+                loaded = json.load(f)
+            if isinstance(loaded, dict):
+                payload.update(loaded)
+        except Exception:
+            pass
+
+    entries = payload.get("entries")
+    if not isinstance(entries, list):
+        entries = []
+
+    now_iso = datetime.now().isoformat(timespec="seconds")
+    existing_idx = next((i for i, e in enumerate(entries) if e.get("sheet_url") == sheet_url), -1)
+    record = {
+        "sheet_name": sheet_name,
+        "sheet_url": sheet_url,
+        "saved_at": now_iso,
+    }
+    if existing_idx >= 0:
+        entries[existing_idx] = record
+    else:
+        entries.append(record)
+
+    payload["entries"] = entries
+    with user_file.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def get_user_monthly_sheets(username: str, fallback_sheet_url: str = "") -> list:
+    result = []
+    if MONTHLY_SHEETS_ROOT.exists():
+        for month_dir in MONTHLY_SHEETS_ROOT.iterdir():
+            if not month_dir.is_dir():
+                continue
+            month_key = month_dir.name
+            if not re.match(r"^\d{4}-\d{2}$", month_key):
+                continue
+            user_file = month_dir / f"{username}.json"
+            if not user_file.exists():
+                continue
+            try:
+                with user_file.open("r", encoding="utf-8") as f:
+                    payload = json.load(f)
+                entries = payload.get("entries", []) if isinstance(payload, dict) else []
+                if not entries:
+                    continue
+                latest = entries[-1]
+                result.append({
+                    "month_key": month_key,
+                    "month_label": month_label(month_key),
+                    "sheet_name": latest.get("sheet_name", ""),
+                    "sheet_url": latest.get("sheet_url", ""),
+                    "folder_url": url_for("view_month_folder", month_key=month_key),
+                })
+            except Exception:
+                continue
+
+    result.sort(key=lambda x: x.get("month_key", ""), reverse=True)
+
+    if fallback_sheet_url and not any(item.get("sheet_url") == fallback_sheet_url for item in result):
+        mk = current_month_key()
+        result.insert(0, {
+            "month_key": mk,
+            "month_label": month_label(mk),
+            "sheet_name": "Sheet hiện tại",
+            "sheet_url": fallback_sheet_url,
+            "folder_url": url_for("view_month_folder", month_key=mk),
+        })
+
+    return result
 
 
 def set_session_user(username: str, user: dict, *, elevated: bool = False) -> None:
@@ -431,6 +577,7 @@ def index():
     can_view_team = role in {"lead", "admin"}
     can_manage_users = role == "admin"
     accessible_sheets = get_accessible_sheets_for_user(username)
+    monthly_sheets = get_user_monthly_sheets(username, fallback_sheet_url=sheet_url)
     return render_template(
         "index.html",
         role=role,
@@ -444,6 +591,7 @@ def index():
         can_manage_users=can_manage_users,
         accessible_sheets_count=len(accessible_sheets),
         accessible_sheets_json=json.dumps(accessible_sheets, ensure_ascii=False),
+        monthly_sheets_json=json.dumps(monthly_sheets, ensure_ascii=False),
     )
 
 
@@ -646,14 +794,17 @@ def register_employee():
             form_values=form_values,
         )
 
+    sheet_name, month_key, clean_url = get_sheet_name_and_month(sheet_url)
     users[username] = {
         "password": password,
         "role": "employee",
         "team": team,
         "display_name": display_name,
-        "sheet_url": sheet_url,
+        "sheet_url": clean_url or sheet_url,
     }
     save_users_config(users)
+    if clean_url:
+        save_monthly_sheet_record(username, clean_url, sheet_name or username, month_key)
 
     return redirect(url_for("login", registered="1", username=username))
 
@@ -850,7 +1001,10 @@ def api_admin_create_user():
     if team:
         users[username]["team"] = team
     if role == "employee" and sheet_url:
-        users[username]["sheet_url"] = sheet_url
+        sheet_name, month_key, clean_url = get_sheet_name_and_month(sheet_url)
+        users[username]["sheet_url"] = clean_url or sheet_url
+        if clean_url:
+            save_monthly_sheet_record(username, clean_url, sheet_name or username, month_key)
 
     save_users_config(users)
     return jsonify({"success": True, "message": f'Đã tạo tài khoản "{username}".'})
@@ -891,7 +1045,10 @@ def api_admin_update_user(username):
     elif "team" in users[username] and role == "admin":
         users[username].pop("team", None)
     if role == "employee":
-        users[username]["sheet_url"] = sheet_url
+        sheet_name, month_key, clean_url = get_sheet_name_and_month(sheet_url)
+        users[username]["sheet_url"] = clean_url or sheet_url
+        if clean_url:
+            save_monthly_sheet_record(username, clean_url, sheet_name or username, month_key)
     else:
         users[username].pop("sheet_url", None)
     if new_password:
@@ -933,29 +1090,117 @@ def save_sheet():
     if not sheet_id:
         return jsonify({"success": False, "error": "URL không hợp lệ"}), 400
 
+    username = session.get("username", "")
+    role = session.get("role", "employee")
+    sheet_name, month_key, clean_url = get_sheet_name_and_month(sheet_url)
+    if not clean_url:
+        return jsonify({"success": False, "error": "URL không hợp lệ"}), 400
+
     # Đọc file hiện tại
     existing_lines = []
     if SHEET_URLS_PATH.exists():
         with open(SHEET_URLS_PATH, "r", encoding="utf-8") as f:
             existing_lines = [l.strip() for l in f if l.strip()]
 
-    if any(sheet_id in l for l in existing_lines):
-        return jsonify({"success": True, "message": "Sheet đã có trong danh sách tự động điền", "already_exists": True})
+    already_exists = any(sheet_id in l for l in existing_lines)
+    if not already_exists:
+        with open(SHEET_URLS_PATH, "a", encoding="utf-8") as f:
+            f.write(f"{sheet_name},{clean_url}\n")
 
-    # Lấy tên sheet từ Google Sheets title
-    sheet_name = ""
-    try:
-        client = get_gspread_client()
-        spreadsheet = client.open_by_key(sheet_id)
-        sheet_name = spreadsheet.title
-    except Exception:
-        sheet_name = sheet_id
+    if username:
+        save_monthly_sheet_record(username, clean_url, sheet_name, month_key)
 
-    clean_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit"
-    with open(SHEET_URLS_PATH, "a", encoding="utf-8") as f:
-        f.write(f"{sheet_name},{clean_url}\n")
+        if role == "employee":
+            users = load_users_config()
+            if username in users:
+                users[username]["sheet_url"] = clean_url
+                save_users_config(users)
+            session["sheet_url"] = clean_url
 
-    return jsonify({"success": True, "message": f'Đã lưu sheet "{sheet_name}" vào danh sách!', "name": sheet_name})
+    msg = f'Đã lưu sheet "{sheet_name}" vào thư mục tháng {month_label(month_key)}.'
+    return jsonify({
+        "success": True,
+        "message": msg,
+        "name": sheet_name,
+        "already_exists": already_exists,
+        "month_key": month_key,
+        "month_label": month_label(month_key),
+        "clean_url": clean_url,
+        "folder_url": url_for("view_month_folder", month_key=month_key),
+    })
+
+
+@app.route("/monthly-folder/<month_key>", methods=["GET"])
+@login_required
+def view_month_folder(month_key):
+    if not re.match(r"^\d{4}-\d{2}$", month_key):
+        return "Tháng không hợp lệ.", 400
+
+    username = session.get("username", "")
+    user_file = MONTHLY_SHEETS_ROOT / month_key / f"{username}.json"
+    entries = []
+    if user_file.exists():
+        try:
+            with user_file.open("r", encoding="utf-8") as f:
+                payload = json.load(f)
+            raw_entries = payload.get("entries", []) if isinstance(payload, dict) else []
+            if isinstance(raw_entries, list):
+                entries = raw_entries
+        except Exception:
+            entries = []
+
+    return render_template_string(
+        """
+        <!DOCTYPE html>
+        <html lang="vi">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Thư mục tháng {{ month_label }}</title>
+            <style>
+                body { font-family: Segoe UI, sans-serif; margin: 24px; background: #f8fafc; color: #0f172a; }
+                .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; max-width: 980px; }
+                h1 { margin: 0 0 8px; font-size: 1.4rem; }
+                table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+                th, td { border-bottom: 1px solid #e2e8f0; text-align: left; padding: 10px 8px; }
+                th { background: #f1f5f9; }
+                a { color: #2563eb; }
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <h1>Thư mục sheet tháng {{ month_label }}</h1>
+                <div>Người dùng: <strong>{{ username }}</strong></div>
+                {% if entries %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Tên sheet</th>
+                            <th>URL</th>
+                            <th>Lưu lúc</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for e in entries %}
+                        <tr>
+                            <td>{{ e.get('sheet_name', '-') }}</td>
+                            <td><a href="{{ e.get('sheet_url', '#') }}" target="_blank">Mở sheet</a></td>
+                            <td>{{ e.get('saved_at', '-') }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p>Chưa có sheet nào được lưu cho tháng này.</p>
+                {% endif %}
+            </div>
+        </body>
+        </html>
+        """,
+        month_label=month_label(month_key),
+        username=username,
+        entries=entries,
+    )
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))

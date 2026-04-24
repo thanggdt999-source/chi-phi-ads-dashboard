@@ -8,6 +8,7 @@ const TEAM      = window.APP_TEAM      || "";
 const DISPLAY   = window.APP_DISPLAY   || "";
 const SHEET_URL = window.APP_SHEET_URL || "";
 const SHEETS    = window.APP_SHEETS    || [];
+const MONTHLY_SHEETS = window.APP_MONTHLY_SHEETS || [];
 
 // ─── State ────────────────────────────────────────────
 let currentData  = { rows: [], headers: [], ads_percent: "", memberSummaries: [] };
@@ -20,6 +21,7 @@ let pageSize = 50;
 // ─── Init ─────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", async () => {
     populateMemberSelect();
+    populateMonthSelect();
     await loadAutoFillStatus();
     initURLInputListeners();
 
@@ -53,6 +55,49 @@ function populateMemberSelect() {
 function loadMemberSheet(url) {
     if (!url) return;
     fetchAndRender(url, false);
+}
+
+function populateMonthSelect() {
+    const sel = document.getElementById("monthSelect");
+    if (!sel || ROLE !== "employee") return;
+
+    sel.innerHTML = '<option value="">-- Chọn tháng --</option>';
+    MONTHLY_SHEETS.forEach(item => {
+        const opt = document.createElement("option");
+        opt.value = item.month_key;
+        opt.textContent = item.month_label || item.month_key;
+        sel.appendChild(opt);
+    });
+
+    if (MONTHLY_SHEETS.length > 0) {
+        sel.value = MONTHLY_SHEETS[0].month_key;
+        const input = document.getElementById("sheetUrl");
+        if (input && !input.value && MONTHLY_SHEETS[0].sheet_url) {
+            input.value = MONTHLY_SHEETS[0].sheet_url;
+        }
+    }
+}
+
+function loadMonthSheet(monthKey) {
+    if (!monthKey) return;
+    const found = MONTHLY_SHEETS.find(m => m.month_key === monthKey);
+    if (!found || !found.sheet_url) {
+        showError("⚠️ Chưa có sheet cho tháng đã chọn.");
+        return;
+    }
+    const input = document.getElementById("sheetUrl");
+    if (input) input.value = found.sheet_url;
+    fetchAndRender(found.sheet_url, false);
+}
+
+function openMonthFolder() {
+    const sel = document.getElementById("monthSelect");
+    const key = sel ? sel.value : "";
+    if (!key) {
+        showToast("⚠️ Vui lòng chọn tháng trước.");
+        return;
+    }
+    window.open(`/monthly-folder/${encodeURIComponent(key)}`, "_blank");
 }
 
 // ─── Load ALL sheets (lead/admin) ─────────────────────
@@ -107,7 +152,7 @@ async function fetchAndRender(sheetUrl, shouldAutoSave = true) {
         resetDateInputs();
         renderData();
 
-        if (shouldAutoSave && ROLE !== "employee") saveSheetUrl(sheetUrl);
+        if (shouldAutoSave) saveSheetUrl(sheetUrl);
     } catch (e) {
         if (spinner) spinner.style.display = "none";
         showError("❌ Lỗi kết nối: " + e.message);
@@ -385,7 +430,28 @@ function renderAutoToggle() {
 async function saveSheetUrl(sheetUrl) {
     try {
         const data = await (await fetch("/api/save-sheet", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sheet_url: sheetUrl }) })).json();
-        if (data.success && !data.already_exists) showToast("✅ " + data.message);
+        if (data.success) {
+            if (!data.already_exists) showToast("✅ " + data.message);
+            if (ROLE === "employee" && data.month_key) {
+                const idx = MONTHLY_SHEETS.findIndex(m => m.month_key === data.month_key);
+                const item = {
+                    month_key: data.month_key,
+                    month_label: data.month_label || data.month_key,
+                    sheet_name: data.name || "",
+                    sheet_url: data.clean_url || sheetUrl,
+                    folder_url: data.folder_url || `/monthly-folder/${data.month_key}`,
+                };
+                if (idx >= 0) {
+                    MONTHLY_SHEETS[idx] = item;
+                } else {
+                    MONTHLY_SHEETS.unshift(item);
+                }
+                MONTHLY_SHEETS.sort((a, b) => (b.month_key || "").localeCompare(a.month_key || ""));
+                populateMonthSelect();
+                const sel = document.getElementById("monthSelect");
+                if (sel) sel.value = data.month_key;
+            }
+        }
     } catch (_) {}
 }
 
