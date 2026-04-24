@@ -284,6 +284,11 @@
                             <input type="text" name="sheet_url" value="{{ form_values.sheet_url }}" placeholder="https://docs.google.com/spreadsheets/d/..." required>
                             <small>Link này sẽ được dùng để mở đúng dữ liệu quảng cáo của tài khoản nhân viên sau khi đăng nhập.</small>
                         </div>
+                        <div class="field full">
+                            <label>Telegram Chat ID</label>
+                            <input type="text" name="telegram_chat_id" value="{{ form_values.telegram_chat_id }}" placeholder="vd: 123456789 hoặc -1001234567890" required inputmode="numeric">
+                            <small>Để nhận tin nhắn tự động: 1) Nhắn <b>/start</b> cho bot của hệ thống. 2) Mở @userinfobot để lấy Chat ID rồi dán vào đây.</small>
+                        </div>
                     </div>
 
                     <div class="actions">

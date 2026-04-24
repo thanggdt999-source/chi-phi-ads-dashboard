@@ -155,6 +155,14 @@ def is_valid_sheet_url(sheet_url: str) -> bool:
     return bool(sheet_url) and bool(extract_sheet_id(sheet_url))
 
 
+def normalize_telegram_chat_id(value: str) -> str:
+    chat_id = (value or "").strip()
+    # Telegram private/group chat IDs are numeric (group IDs can be negative).
+    if re.fullmatch(r"-?\d{6,20}", chat_id):
+        return chat_id
+    return ""
+
+
 def normalize_month_key(year: int, month: int) -> str:
     return f"{year:04d}-{month:02d}"
 
@@ -728,6 +736,7 @@ def register_employee():
         "display_name": "",
         "team": "",
         "sheet_url": "",
+        "telegram_chat_id": "",
     }
 
     if request.method == "GET":
@@ -743,6 +752,7 @@ def register_employee():
     display_name = request.form.get("display_name", "").strip()
     team = request.form.get("team", "").strip()
     sheet_url = request.form.get("sheet_url", "").strip()
+    telegram_chat_id = request.form.get("telegram_chat_id", "").strip()
     password = request.form.get("password", "")
     confirm_password = request.form.get("confirm_password", "")
 
@@ -751,9 +761,10 @@ def register_employee():
         "display_name": display_name,
         "team": team,
         "sheet_url": sheet_url,
+        "telegram_chat_id": telegram_chat_id,
     }
 
-    if not username or not display_name or not password or not confirm_password or not team or not sheet_url:
+    if not username or not display_name or not password or not confirm_password or not team or not sheet_url or not telegram_chat_id:
         return render_template(
             "register.html",
             error="Vui lòng nhập đầy đủ thông tin đăng ký.",
@@ -789,6 +800,16 @@ def register_employee():
             form_values=form_values,
         )
 
+    normalized_chat_id = normalize_telegram_chat_id(telegram_chat_id)
+    if not normalized_chat_id:
+        return render_template(
+            "register.html",
+            error="Telegram Chat ID không hợp lệ. Ví dụ: 123456789 hoặc -1001234567890.",
+            board_name=LOGIN_BOARD_NAME,
+            team_codes=TEAM_CODES,
+            form_values=form_values,
+        )
+
     users = load_users_config()
     if username in users:
         return render_template(
@@ -806,6 +827,7 @@ def register_employee():
         "team": team,
         "display_name": display_name,
         "sheet_url": clean_url or sheet_url,
+        "telegram_chat_id": normalized_chat_id,
     }
     save_users_config(users)
     if clean_url:
