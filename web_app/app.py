@@ -19,7 +19,7 @@ USERS_FILE_PATH = Path(os.getenv("USERS_FILE_PATH", str(Path(__file__).parent.pa
 STATIC_ASSET_VERSION = os.getenv("STATIC_ASSET_VERSION", str(int(datetime.now().timestamp())))
 
 ROLE_LEVELS = {"admin": 3, "lead": 2, "employee": 1}
-TEAM_CODES = ["TEAM_1", "TEAM_2", "TEAM_3", "TEAM_4", "TEAM_5"]
+TEAM_CODES = ["TEAM_1", "TEAM_2", "TEAM_3", "TEAM_4", "TEAM_5", "Fanmen"]
 LOGIN_BOARD_NAME = os.getenv("LOGIN_BOARD_NAME", "Chi Phí Ads Realtime | GDT GROUP")
 
 
