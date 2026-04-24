@@ -254,6 +254,14 @@
                             <input type="text" name="display_name" value="{{ form_values.display_name }}" placeholder="vd: Nguyễn Bá Thắng" required>
                         </div>
                         <div class="field">
+                            <label>Mật khẩu</label>
+                            <input type="password" name="password" placeholder="Nhập mật khẩu" required autocomplete="new-password">
+                        </div>
+                        <div class="field">
+                            <label>Xác nhận mật khẩu</label>
+                            <input type="password" name="confirm_password" placeholder="Nhập lại mật khẩu" required autocomplete="new-password">
+                        </div>
+                        <div class="field">
                             <label>Team</label>
                             <select name="team" required>
                                 <option value="">-- Chọn team --</option>
@@ -262,18 +270,10 @@
                                 {% endfor %}
                             </select>
                         </div>
-                        <div class="field full">
+                        <div class="field">
                             <label>Link Google Sheet</label>
                             <input type="text" name="sheet_url" value="{{ form_values.sheet_url }}" placeholder="https://docs.google.com/spreadsheets/d/..." required>
                             <small>Link này sẽ được dùng để mở đúng dữ liệu quảng cáo của tài khoản nhân viên sau khi đăng nhập.</small>
-                        </div>
-                        <div class="field">
-                            <label>Mật khẩu</label>
-                            <input type="password" name="password" placeholder="Nhập mật khẩu" required autocomplete="new-password">
-                        </div>
-                        <div class="field">
-                            <label>Xác nhận mật khẩu</label>
-                            <input type="password" name="confirm_password" placeholder="Nhập lại mật khẩu" required autocomplete="new-password">
                         </div>
                     </div>
 
