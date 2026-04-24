@@ -564,6 +564,7 @@ def fetch_chi_phi_ads_data(sheet_id):
         return {"success": False, "error": raw_error}
 
 @app.route("/")
+@app.route("/dashboard")
 @login_required
 def index():
     username = session.get("username", "")
