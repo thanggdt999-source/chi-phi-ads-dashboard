@@ -494,6 +494,34 @@ def get_current_telegram_setup_actor() -> tuple[str, Optional[dict]]:
     return "", None
 
 
+def render_telegram_setup_page(
+    *,
+    error: str,
+    username: str,
+    display_name: str,
+    form_values: dict,
+    bind_code: str,
+    form_action: str,
+    back_url: str | None = None,
+    back_text: str | None = None,
+    submit_label: str | None = None,
+    title_text: str | None = None,
+):
+    return render_template(
+        "telegram_setup.html",
+        error=error,
+        username=username,
+        display_name=display_name,
+        form_values=form_values,
+        bind_code=bind_code,
+        form_action=form_action,
+        back_url=back_url,
+        back_text=back_text,
+        submit_label=submit_label,
+        title_text=title_text,
+    )
+
+
 def send_telegram_test_message(chat_id: str, display_name: str, bot_token: str = "") -> tuple[str, str]:
     text = (
         f"Xin chào {display_name}!\n\n"
@@ -1432,18 +1460,14 @@ def register_telegram():
         "telegram_bot_username": user.get("telegram_bot_username", ""),
         "telegram_bot_token": user.get("telegram_bot_token", ""),
     }
-    personal_bot_mode = True
 
     if request.method == "GET":
         bind_code = ensure_telegram_bind_code(pending_username)
-        return render_template(
-            "telegram_setup.html",
+        return render_telegram_setup_page(
             error="",
             username=pending_username,
             display_name=user.get("display_name", pending_username),
-            bot_username=TELEGRAM_BOT_USERNAME,
             form_values=form_values,
-            personal_bot_mode=personal_bot_mode,
             bind_code=bind_code,
             form_action=url_for("register_telegram"),
         )
@@ -1461,70 +1485,55 @@ def register_telegram():
 
     normalized_chat_id = normalize_telegram_chat_id(telegram_chat_id)
     if not normalized_chat_id:
-        return render_template(
-            "telegram_setup.html",
+        return render_telegram_setup_page(
             error="Telegram Chat ID không hợp lệ. Ví dụ: 123456789 hoặc -1001234567890.",
             username=pending_username,
             display_name=user.get("display_name", pending_username),
-            bot_username=TELEGRAM_BOT_USERNAME,
             form_values=form_values,
-            personal_bot_mode=personal_bot_mode,
             bind_code=ensure_telegram_bind_code(pending_username),
             form_action=url_for("register_telegram"),
         )
 
     normalized_username = normalize_telegram_username(telegram_username)
     if telegram_username and not normalized_username:
-        return render_template(
-            "telegram_setup.html",
+        return render_telegram_setup_page(
             error="Telegram username không hợp lệ. Ví dụ: nguyenthang_ads hoặc @nguyenthang_ads.",
             username=pending_username,
             display_name=user.get("display_name", pending_username),
-            bot_username=TELEGRAM_BOT_USERNAME,
             form_values=form_values,
-            personal_bot_mode=personal_bot_mode,
             bind_code=ensure_telegram_bind_code(pending_username),
             form_action=url_for("register_telegram"),
         )
 
     normalized_bot_token = normalize_telegram_bot_token(telegram_bot_token)
     if not normalized_bot_token:
-        return render_template(
-            "telegram_setup.html",
+        return render_telegram_setup_page(
             error="Bot token chưa sẵn sàng. Hãy tạo bot bằng BotFather rồi dán token của bạn vào đây.",
             username=pending_username,
             display_name=user.get("display_name", pending_username),
-            bot_username=TELEGRAM_BOT_USERNAME,
             form_values=form_values,
-            personal_bot_mode=personal_bot_mode,
             bind_code=ensure_telegram_bind_code(pending_username),
             form_action=url_for("register_telegram"),
         )
 
     resolve_ok, resolved_bot_username, resolve_error = resolve_bot_username_from_token(normalized_bot_token)
     if not resolve_ok:
-        return render_template(
-            "telegram_setup.html",
+        return render_telegram_setup_page(
             error=f"Không thể xác thực bot từ token: {resolve_error}",
             username=pending_username,
             display_name=user.get("display_name", pending_username),
-            bot_username=TELEGRAM_BOT_USERNAME,
             form_values=form_values,
-            personal_bot_mode=personal_bot_mode,
             bind_code=ensure_telegram_bind_code(pending_username),
             form_action=url_for("register_telegram"),
         )
 
     normalized_bot_username = normalize_telegram_bot_username(telegram_bot_username)
     if normalized_bot_username and normalized_bot_username != resolved_bot_username:
-        return render_template(
-            "telegram_setup.html",
+        return render_telegram_setup_page(
             error="Bot username không khớp với token đã nhập. Hãy kiểm tra lại bot token.",
             username=pending_username,
             display_name=user.get("display_name", pending_username),
-            bot_username=TELEGRAM_BOT_USERNAME,
             form_values=form_values,
-            personal_bot_mode=personal_bot_mode,
             bind_code=ensure_telegram_bind_code(pending_username),
             form_action=url_for("register_telegram"),
         )
@@ -1550,18 +1559,15 @@ def register_telegram():
             if telegram_test == "not_configured"
             else "Gửi tin test chưa thành công. Hãy bấm Start cho bot rồi thử lại."
         )
-        return render_template(
-            "telegram_setup.html",
+        return render_telegram_setup_page(
             error=f"{failed_msg} Nếu chưa có Chat ID, bấm nút 'Tự lấy từ Telegram' để hệ thống tự điền.",
             username=pending_username,
             display_name=user.get("display_name", pending_username),
-            bot_username=TELEGRAM_BOT_USERNAME,
             form_values=form_values,
             back_url=url_for("register_employee"),
             back_text="Quay lại đăng ký",
             submit_label="Thử gửi test lại",
             title_text="Bước 2: Kết nối Telegram",
-            personal_bot_mode=personal_bot_mode,
             bind_code=ensure_telegram_bind_code(pending_username),
             form_action=url_for("register_telegram"),
         )
@@ -1586,24 +1592,20 @@ def employee_telegram_connect():
         "telegram_bot_username": user.get("telegram_bot_username", ""),
         "telegram_bot_token": user.get("telegram_bot_token", ""),
     }
-    personal_bot_mode = True
 
     if request.method == "GET":
         if not employee_requires_telegram_setup(username, user):
             return redirect(next_target)
         bind_code = ensure_telegram_bind_code(username)
-        return render_template(
-            "telegram_setup.html",
+        return render_telegram_setup_page(
             error="",
             username=username,
             display_name=user.get("display_name", username),
-            bot_username=TELEGRAM_BOT_USERNAME,
             form_values=form_values,
             back_url=url_for("logout"),
             back_text="Đăng xuất",
             submit_label="Lưu và gửi test",
             title_text="Kết nối Telegram trước khi vào hệ thống",
-            personal_bot_mode=personal_bot_mode,
             bind_code=bind_code,
             form_action=url_for("employee_telegram_connect", next=next_target),
         )
@@ -1621,90 +1623,75 @@ def employee_telegram_connect():
 
     normalized_chat_id = normalize_telegram_chat_id(telegram_chat_id)
     if not normalized_chat_id:
-        return render_template(
-            "telegram_setup.html",
+        return render_telegram_setup_page(
             error="Telegram Chat ID không hợp lệ. Ví dụ: 123456789 hoặc -1001234567890.",
             username=username,
             display_name=user.get("display_name", username),
-            bot_username=TELEGRAM_BOT_USERNAME,
             form_values=form_values,
             back_url=url_for("logout"),
             back_text="Đăng xuất",
             submit_label="Lưu và gửi test",
             title_text="Kết nối Telegram trước khi vào hệ thống",
-            personal_bot_mode=personal_bot_mode,
             bind_code=ensure_telegram_bind_code(username),
             form_action=url_for("employee_telegram_connect", next=next_target),
         )
 
     normalized_username = normalize_telegram_username(telegram_username)
     if telegram_username and not normalized_username:
-        return render_template(
-            "telegram_setup.html",
+        return render_telegram_setup_page(
             error="Telegram username không hợp lệ. Ví dụ: nguyenthang_ads hoặc @nguyenthang_ads.",
             username=username,
             display_name=user.get("display_name", username),
-            bot_username=TELEGRAM_BOT_USERNAME,
             form_values=form_values,
             back_url=url_for("logout"),
             back_text="Đăng xuất",
             submit_label="Lưu và gửi test",
             title_text="Kết nối Telegram trước khi vào hệ thống",
-            personal_bot_mode=personal_bot_mode,
             bind_code=ensure_telegram_bind_code(username),
             form_action=url_for("employee_telegram_connect", next=next_target),
         )
 
     normalized_bot_token = normalize_telegram_bot_token(telegram_bot_token)
     if not normalized_bot_token:
-        return render_template(
-            "telegram_setup.html",
+        return render_telegram_setup_page(
             error="Bot token chưa sẵn sàng. Hãy tạo bot bằng BotFather rồi dán token của bạn vào đây.",
             username=username,
             display_name=user.get("display_name", username),
-            bot_username=TELEGRAM_BOT_USERNAME,
             form_values=form_values,
             back_url=url_for("logout"),
             back_text="Đăng xuất",
             submit_label="Lưu và gửi test",
             title_text="Kết nối Telegram trước khi vào hệ thống",
-            personal_bot_mode=personal_bot_mode,
             bind_code=ensure_telegram_bind_code(username),
             form_action=url_for("employee_telegram_connect", next=next_target),
         )
 
     resolve_ok, resolved_bot_username, resolve_error = resolve_bot_username_from_token(normalized_bot_token)
     if not resolve_ok:
-        return render_template(
-            "telegram_setup.html",
+        return render_telegram_setup_page(
             error=f"Không thể xác thực bot từ token: {resolve_error}",
             username=username,
             display_name=user.get("display_name", username),
-            bot_username=TELEGRAM_BOT_USERNAME,
             form_values=form_values,
             back_url=url_for("logout"),
             back_text="Đăng xuất",
             submit_label="Lưu và gửi test",
             title_text="Kết nối Telegram trước khi vào hệ thống",
-            personal_bot_mode=personal_bot_mode,
             bind_code=ensure_telegram_bind_code(username),
             form_action=url_for("employee_telegram_connect", next=next_target),
         )
 
     normalized_bot_username = normalize_telegram_bot_username(telegram_bot_username)
     if normalized_bot_username and normalized_bot_username != resolved_bot_username:
-        return render_template(
-            "telegram_setup.html",
+        return render_telegram_setup_page(
             error="Bot username không khớp với token đã nhập. Hãy kiểm tra lại bot token.",
             username=username,
             display_name=user.get("display_name", username),
-            bot_username=TELEGRAM_BOT_USERNAME,
             form_values=form_values,
             back_url=url_for("logout"),
             back_text="Đăng xuất",
             submit_label="Lưu và gửi test",
             title_text="Kết nối Telegram trước khi vào hệ thống",
-            personal_bot_mode=personal_bot_mode,
             bind_code=ensure_telegram_bind_code(username),
             form_action=url_for("employee_telegram_connect", next=next_target),
         )
@@ -1730,18 +1717,15 @@ def employee_telegram_connect():
             if telegram_test == "not_configured"
             else "Gửi tin test chưa thành công. Hãy bấm Start cho bot rồi thử lại."
         )
-        return render_template(
-            "telegram_setup.html",
+        return render_telegram_setup_page(
             error=f"{failed_msg} Nếu chưa có Chat ID, bấm nút 'Tự lấy từ Telegram' để hệ thống tự điền.",
             username=username,
             display_name=user.get("display_name", username),
-            bot_username=TELEGRAM_BOT_USERNAME,
             form_values=form_values,
             back_url=url_for("logout"),
             back_text="Đăng xuất",
             submit_label="Thử gửi test lại",
             title_text="Kết nối Telegram trước khi vào hệ thống",
-            personal_bot_mode=personal_bot_mode,
             bind_code=ensure_telegram_bind_code(username),
             form_action=url_for("employee_telegram_connect", next=next_target),
         )
