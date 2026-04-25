@@ -18,6 +18,7 @@ AUTO_STATE_PATH = Path(os.getenv("AUTO_STATE_PATH", str(Path(__file__).parent.pa
 USERS_FILE_PATH = Path(os.getenv("USERS_FILE_PATH", str(Path(__file__).parent.parent / "storage" / "config" / "users.json")))
 MONTHLY_SHEETS_ROOT = Path(os.getenv("MONTHLY_SHEETS_ROOT", str(Path(__file__).parent.parent / "storage" / "monthly_sheets")))
 STATIC_ASSET_VERSION = os.getenv("STATIC_ASSET_VERSION", str(int(datetime.now().timestamp())))
+TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "").strip().lstrip("@")
 
 ROLE_LEVELS = {"admin": 3, "lead": 2, "employee": 1}
 TEAM_CODES = ["TEAM_1", "TEAM_2", "TEAM_3", "TEAM_4", "TEAM_5", "Fanmen"]
@@ -160,6 +161,15 @@ def normalize_telegram_chat_id(value: str) -> str:
     # Telegram private/group chat IDs are numeric (group IDs can be negative).
     if re.fullmatch(r"-?\d{6,20}", chat_id):
         return chat_id
+    return ""
+
+
+def normalize_telegram_username(value: str) -> str:
+    username = (value or "").strip().lstrip("@")
+    if not username:
+        return ""
+    if re.fullmatch(r"[A-Za-z0-9_]{5,32}", username):
+        return username
     return ""
 
 
@@ -615,10 +625,13 @@ def login():
             return redirect(url_for("index"))
         success_message = ""
         registered = request.args.get("registered", "").strip()
+        telegram_ready = request.args.get("telegram_ready", "").strip()
         registered_username = request.args.get("username", "").strip()
         if registered == "1":
             success_message = (
-                f'Đăng ký thành công cho tài khoản "{registered_username}". Vui lòng đăng nhập để vào hệ thống.'
+                f'Đăng ký thành công cho tài khoản "{registered_username}" và đã lưu Telegram. Vui lòng đăng nhập để vào hệ thống.'
+                if registered_username and telegram_ready == "1"
+                else f'Đăng ký thành công cho tài khoản "{registered_username}". Vui lòng đăng nhập để vào hệ thống.'
                 if registered_username
                 else "Đăng ký thành công. Vui lòng đăng nhập để vào hệ thống."
             )
@@ -736,7 +749,6 @@ def register_employee():
         "display_name": "",
         "team": "",
         "sheet_url": "",
-        "telegram_chat_id": "",
     }
 
     if request.method == "GET":
@@ -752,7 +764,6 @@ def register_employee():
     display_name = request.form.get("display_name", "").strip()
     team = request.form.get("team", "").strip()
     sheet_url = request.form.get("sheet_url", "").strip()
-    telegram_chat_id = request.form.get("telegram_chat_id", "").strip()
     password = request.form.get("password", "")
     confirm_password = request.form.get("confirm_password", "")
 
@@ -761,10 +772,9 @@ def register_employee():
         "display_name": display_name,
         "team": team,
         "sheet_url": sheet_url,
-        "telegram_chat_id": telegram_chat_id,
     }
 
-    if not username or not display_name or not password or not confirm_password or not team or not sheet_url or not telegram_chat_id:
+    if not username or not display_name or not password or not confirm_password or not team or not sheet_url:
         return render_template(
             "register.html",
             error="Vui lòng nhập đầy đủ thông tin đăng ký.",
@@ -800,16 +810,6 @@ def register_employee():
             form_values=form_values,
         )
 
-    normalized_chat_id = normalize_telegram_chat_id(telegram_chat_id)
-    if not normalized_chat_id:
-        return render_template(
-            "register.html",
-            error="Telegram Chat ID không hợp lệ. Ví dụ: 123456789 hoặc -1001234567890.",
-            board_name=LOGIN_BOARD_NAME,
-            team_codes=TEAM_CODES,
-            form_values=form_values,
-        )
-
     users = load_users_config()
     if username in users:
         return render_template(
@@ -827,13 +827,83 @@ def register_employee():
         "team": team,
         "display_name": display_name,
         "sheet_url": clean_url or sheet_url,
-        "telegram_chat_id": normalized_chat_id,
     }
     save_users_config(users)
     if clean_url:
         save_monthly_sheet_record(username, clean_url, sheet_name or username, month_key)
 
-    return redirect(url_for("login", registered="1", username=username))
+    session["pending_telegram_setup"] = username
+    return redirect(url_for("register_telegram"))
+
+
+@app.route("/register/telegram", methods=["GET", "POST"])
+def register_telegram():
+    if is_logged_in():
+        return redirect(url_for("index"))
+
+    pending_username = str(session.get("pending_telegram_setup", "")).strip()
+    if not pending_username:
+        return redirect(url_for("register_employee"))
+
+    users = load_users_config()
+    user = users.get(pending_username)
+    if not user or user.get("role") != "employee":
+        session.pop("pending_telegram_setup", None)
+        return redirect(url_for("register_employee"))
+
+    form_values = {
+        "telegram_chat_id": user.get("telegram_chat_id", ""),
+        "telegram_username": user.get("telegram_username", ""),
+    }
+
+    if request.method == "GET":
+        return render_template(
+            "telegram_setup.html",
+            error="",
+            username=pending_username,
+            display_name=user.get("display_name", pending_username),
+            bot_username=TELEGRAM_BOT_USERNAME,
+            form_values=form_values,
+        )
+
+    telegram_chat_id = request.form.get("telegram_chat_id", "").strip()
+    telegram_username = request.form.get("telegram_username", "").strip()
+    form_values = {
+        "telegram_chat_id": telegram_chat_id,
+        "telegram_username": telegram_username,
+    }
+
+    normalized_chat_id = normalize_telegram_chat_id(telegram_chat_id)
+    if not normalized_chat_id:
+        return render_template(
+            "telegram_setup.html",
+            error="Telegram Chat ID không hợp lệ. Ví dụ: 123456789 hoặc -1001234567890.",
+            username=pending_username,
+            display_name=user.get("display_name", pending_username),
+            bot_username=TELEGRAM_BOT_USERNAME,
+            form_values=form_values,
+        )
+
+    normalized_username = normalize_telegram_username(telegram_username)
+    if telegram_username and not normalized_username:
+        return render_template(
+            "telegram_setup.html",
+            error="Telegram username không hợp lệ. Ví dụ: nguyenthang_ads hoặc @nguyenthang_ads.",
+            username=pending_username,
+            display_name=user.get("display_name", pending_username),
+            bot_username=TELEGRAM_BOT_USERNAME,
+            form_values=form_values,
+        )
+
+    users[pending_username]["telegram_chat_id"] = normalized_chat_id
+    if normalized_username:
+        users[pending_username]["telegram_username"] = normalized_username
+    else:
+        users[pending_username].pop("telegram_username", None)
+    save_users_config(users)
+
+    session.pop("pending_telegram_setup", None)
+    return redirect(url_for("login", registered="1", telegram_ready="1", username=pending_username))
 
 
 @app.route("/logout", methods=["GET"])
