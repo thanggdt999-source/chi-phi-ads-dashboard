@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 
 app = Flask(__name__)
 app.secret_key = os.getenv("WEB_APP_SECRET_KEY", "change-this-secret-in-production")
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
 SERVICE_ACCOUNT_PATH = Path(__file__).parent.parent / "storage" / "credentials" / "service_account.json"
 SHEET_URLS_PATH = Path(os.getenv("SHEET_URLS_PATH", str(Path(__file__).parent.parent / "storage" / "sheet_urls.csv")))
@@ -52,6 +53,19 @@ LOGIN_BOARD_NAME = os.getenv("LOGIN_BOARD_NAME", "Chi Phí Ads Realtime | GDT GR
 @app.context_processor
 def inject_asset_version():
     return {"asset_version": STATIC_ASSET_VERSION}
+
+
+@app.after_request
+def disable_cache_for_web_assets(response):
+    path = request.path or ""
+    content_type = (response.content_type or "").lower()
+
+    should_disable_cache = path.startswith("/static/") or content_type.startswith("text/html")
+    if should_disable_cache:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
 
 # ─────────────────── USER CONFIG ───────────────────
 
