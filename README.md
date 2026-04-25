@@ -123,3 +123,15 @@ Cac cot:
 - `account_id`
 - `owner_name`
 - `spend`
+
+## 5) Lich gui bao cao Telegram bang GitHub Actions
+
+Project da chuyen sang dung GitHub Actions de goi lich gui bao cao Telegram thay vi Render Cron.
+
+Workflow nam o `.github/workflows/telegram-reports.yml` va chay vao cac moc lech `07` va `37` phut de tranh gio cao diem cua scheduler GitHub. Lich duoc dat theo mui gio `Asia/Ho_Chi_Minh` va bao phu tu 6h den 23h moi ngay.
+
+Can cau hinh them 1 repo secret tren GitHub:
+
+- `INTERNAL_CRON_SECRET`: phai trung voi bien moi truong `INTERNAL_CRON_SECRET` dang dat tren Render web service `chi-phi-ads-dashboard`.
+
+Sau khi dat secret, co the test tay trong tab Actions bang `Run workflow` va bat `force=true` neu can bo qua kiem tra slot da gui.

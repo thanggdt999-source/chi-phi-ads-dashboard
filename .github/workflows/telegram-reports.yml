@@ -1,0 +1,41 @@
+name: Telegram Reports
+
+on:
+  schedule:
+    - cron: '7,37 6-22 * * *'
+      timezone: 'Asia/Ho_Chi_Minh'
+    - cron: '7 23 * * *'
+      timezone: 'Asia/Ho_Chi_Minh'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Force a send even if the current time slot was already processed
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: telegram-reports
+  cancel-in-progress: false
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TELEGRAM_REPORT_ENDPOINT: https://ads.hexistoree.click/internal/telegram/reports/run
+      FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
+    steps:
+      - name: Trigger Telegram report job
+        run: |
+          payload='{"force":false}'
+          if [ "$FORCE_RUN" = 'true' ]; then
+            payload='{"force":true}'
+          fi
+
+          curl --fail --show-error --silent \
+            --request POST \
+            --header "Authorization: Bearer ${{ secrets.INTERNAL_CRON_SECRET }}" \
+            --header 'Content-Type: application/json' \
+            --data "$payload" \
+            "$TELEGRAM_REPORT_ENDPOINT"
