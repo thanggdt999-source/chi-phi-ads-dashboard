@@ -601,6 +601,7 @@
             const openGuideBtn = document.getElementById("open-botfather-guide");
             const closeGuideBtn = document.getElementById("close-guide");
             const guideOverlay = document.getElementById("botfather-guide-overlay");
+            let awaitingTokenPaste = false;
 
             // Step wizard helpers
             function setStep(n) {
@@ -789,14 +790,10 @@
                             return fromClip;
                         }
                     } catch (err) {
-                        // ignore clipboard permission errors, continue to prompt fallback
+                        // ignore clipboard permission errors, will ask user to paste once
                     }
                 }
-
-                const manual = window.prompt("Dán Bot Token (hoặc cả đoạn BotFather, hệ thống tự tách token):", "");
-                const fromPrompt = extractBotToken(manual);
-                if (fromPrompt && botTokenInput) botTokenInput.value = fromPrompt;
-                return fromPrompt;
+                return "";
             }
 
             function showAutoFillStatus(message, isError) {
@@ -876,16 +873,44 @@
                 autoFillButton.addEventListener("click", async function () {
                     const token = await resolveTokenForAutofill();
                     if (!token) {
+                        awaitingTokenPaste = true;
+                        setStep(2);
                         showAutoFillStatus(
-                            "Chưa lấy được Bot Token. Hãy copy token từ BotFather rồi bấm lại nút này.",
+                            "Chưa lấy được Bot Token từ clipboard. Hãy copy token ở BotFather rồi <strong>Ctrl+V</strong> vào ô Token, hệ thống sẽ tự kết nối ngay (không cần bấm lại).",
                             true
                         );
-                        if (guideOverlay) guideOverlay.classList.add("open");
+                        if (botTokenInput) botTokenInput.focus();
                         return;
                     }
                     if (/^\d{8,12}:[A-Za-z0-9_-]{35,}$/.test(token)) setStep(3);
+                    awaitingTokenPaste = false;
                     currentToken = token;
                     await doAutofill(false);
+                });
+            }
+
+            if (botTokenInput) {
+                const tryAutoConnectFromInput = async function () {
+                    if (!awaitingTokenPaste) return;
+                    const maybeToken = extractBotToken(botTokenInput.value);
+                    if (!maybeToken) return;
+                    botTokenInput.value = maybeToken;
+                    awaitingTokenPaste = false;
+                    setStep(3);
+                    currentToken = maybeToken;
+                    await doAutofill(false);
+                };
+
+                botTokenInput.addEventListener("paste", function () {
+                    setTimeout(function () {
+                        tryAutoConnectFromInput();
+                    }, 30);
+                });
+
+                botTokenInput.addEventListener("input", function () {
+                    if (awaitingTokenPaste) {
+                        tryAutoConnectFromInput();
+                    }
                 });
             }
 
