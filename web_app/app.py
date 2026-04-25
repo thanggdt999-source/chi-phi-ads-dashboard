@@ -23,6 +23,7 @@ app.secret_key = os.getenv("WEB_APP_SECRET_KEY", "change-this-secret-in-producti
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
 SERVICE_ACCOUNT_PATH = Path(__file__).parent.parent / "storage" / "credentials" / "service_account.json"
+WEB_STATIC_DIR = Path(__file__).parent / "static"
 SHEET_URLS_PATH = Path(os.getenv("SHEET_URLS_PATH", str(Path(__file__).parent.parent / "storage" / "sheet_urls.csv")))
 AUTO_STATE_PATH = Path(os.getenv("AUTO_STATE_PATH", str(Path(__file__).parent.parent / "storage" / "config" / "auto_fill_state.json")))
 USERS_FILE_PATH = Path(os.getenv("USERS_FILE_PATH", str(Path(__file__).parent.parent / "storage" / "config" / "users.json")))
@@ -53,6 +54,14 @@ LOGIN_BOARD_NAME = os.getenv("LOGIN_BOARD_NAME", "Chi Phí Ads Realtime | GDT GR
 @app.context_processor
 def inject_asset_version():
     return {"asset_version": STATIC_ASSET_VERSION}
+
+
+def read_web_static_asset(filename: str) -> str:
+    try:
+        path = WEB_STATIC_DIR / filename
+        return path.read_text(encoding="utf-8")
+    except Exception:
+        return ""
 
 
 @app.after_request
@@ -1143,6 +1152,8 @@ def index():
     can_manage_users = role == "admin"
     accessible_sheets = get_accessible_sheets_for_user(username)
     monthly_sheets = get_user_monthly_sheets(username, fallback_sheet_url=sheet_url)
+    inline_style_css = read_web_static_asset("style.css")
+    inline_script_js = read_web_static_asset("script.js")
     return render_template(
         "index.html",
         role=role,
@@ -1157,6 +1168,8 @@ def index():
         accessible_sheets_count=len(accessible_sheets),
         accessible_sheets_json=json.dumps(accessible_sheets, ensure_ascii=False),
         monthly_sheets_json=json.dumps(monthly_sheets, ensure_ascii=False),
+        inline_style_css=inline_style_css,
+        inline_script_js=inline_script_js,
     )
 
 

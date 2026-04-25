@@ -5,37 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chi Phí Ads - Dashboard</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link id="mainStylesheet" rel="stylesheet" href="{{ url_for('static', filename='style.css', v=asset_version) }}">
-    <script>
-        (function () {
-            function loadStyleFallback() {
-                if (document.getElementById("inlineStyleFallback")) return;
-                fetch("/static/style.css?v=" + Date.now(), { cache: "no-store" })
-                    .then(function (res) { return res.ok ? res.text() : ""; })
-                    .then(function (css) {
-                        if (!css) return;
-                        var style = document.createElement("style");
-                        style.id = "inlineStyleFallback";
-                        style.textContent = css;
-                        document.head.appendChild(style);
-                    })
-                    .catch(function () {});
-            }
-
-            var stylesheet = document.getElementById("mainStylesheet");
-            if (stylesheet) {
-                stylesheet.addEventListener("error", loadStyleFallback);
-            }
-
-            window.__loadDashboardScriptFallback = function () {
-                if (document.getElementById("scriptFallbackLoaded")) return;
-                var script = document.createElement("script");
-                script.id = "scriptFallbackLoaded";
-                script.src = "/static/script.js?v=" + Date.now();
-                document.body.appendChild(script);
-            };
-        })();
-    </script>
+    {% if inline_style_css %}
+    <style id="inline-dashboard-style">{{ inline_style_css | safe }}</style>
+    {% endif %}
     <style>
         .access-toolbar {
             display: flex;
@@ -480,6 +452,8 @@
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
-    <script id="mainDashboardScript" src="{{ url_for('static', filename='script.js', v=asset_version) }}" onerror="window.__loadDashboardScriptFallback()"></script>
+    {% if inline_script_js %}
+    <script id="inline-dashboard-script">{{ inline_script_js | safe }}</script>
+    {% endif %}
 </body>
 </html>
