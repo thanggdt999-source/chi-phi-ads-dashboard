@@ -298,6 +298,7 @@
                     <a class="btn btn-ghost" href="https://t.me/{{ bot_username }}" target="_blank" rel="noopener noreferrer"><i class="fab fa-telegram-plane"></i> Mở bot @{{ bot_username }}</a>
                     {% endif %}
                     {% if personal_bot_mode %}
+                    <a class="btn btn-ghost" href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer"><i class="fab fa-telegram-plane"></i> Mở BotFather lấy Token</a>
                     <button type="button" class="btn btn-ghost" id="auto-fill-telegram"><i class="fas fa-wand-magic-sparkles"></i> Tự lấy từ Telegram</button>
                     {% endif %}
                     <a class="btn btn-ghost" href="https://t.me/userinfobot" target="_blank" rel="noopener noreferrer"><i class="fas fa-circle-info"></i> Mở @userinfobot</a>
@@ -400,6 +401,36 @@
                 autoFillStatus.innerHTML = message;
             }
 
+            function escapeHtml(value) {
+                return String(value || "")
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/\"/g, "&quot;")
+                    .replace(/'/g, "&#39;");
+            }
+
+            function sanitizeTelegramUrl(url) {
+                const value = String(url || "").trim();
+                if (/^https:\/\/t\.me\/[A-Za-z0-9_?=+-]+$/i.test(value)) {
+                    return value;
+                }
+                return "";
+            }
+
+            function openTelegramLink(url) {
+                const safeUrl = sanitizeTelegramUrl(url);
+                if (!safeUrl) {
+                    return false;
+                }
+                try {
+                    const win = window.open(safeUrl, "_blank", "noopener,noreferrer");
+                    return Boolean(win);
+                } catch (err) {
+                    return false;
+                }
+            }
+
             function setManualMode(enabled) {
                 if (!manualToggleButton || !manualFields) {
                     return;
@@ -457,7 +488,15 @@
                 autoFillButton.addEventListener("click", async function () {
                     const token = String(botTokenInput.value || "").trim();
                     if (!token) {
-                        showAutoFillStatus("Vui lòng nhập Bot Token trước khi tự lấy thông tin.", true);
+                        const botFatherUrl = "https://t.me/BotFather";
+                        const opened = openTelegramLink(botFatherUrl);
+                        const openHint = opened
+                            ? "Đã mở BotFather ở tab mới."
+                            : `Bấm vào đây để mở ngay: <a href="${escapeHtml(botFatherUrl)}" target="_blank" rel="noopener noreferrer">@BotFather</a>.`;
+                        showAutoFillStatus(
+                            `Vui lòng nhập Bot Token trước khi tự lấy thông tin.<br>${openHint}<br>Sau khi có token, quay lại dán token rồi bấm lại <strong>Tự lấy từ Telegram</strong>.`,
+                            true
+                        );
                         botTokenInput.focus();
                         return;
                     }
@@ -494,10 +533,16 @@
                             return;
                         }
 
-                        const deepLink = data.deep_link || "#";
+                        const deepLink = sanitizeTelegramUrl(data.deep_link || "");
+                        const opened = deepLink ? openTelegramLink(deepLink) : false;
+                        const openHint = deepLink
+                            ? (opened
+                                ? "Em đã tự mở bot ở tab mới, bạn chỉ cần bấm <strong>Start</strong>."
+                                : `Bấm vào đây để mở bot: <a href="${escapeHtml(deepLink)}" target="_blank" rel="noopener noreferrer">mở bot và bấm Start</a>.`)
+                            : "Không tạo được liên kết mở bot tự động, vui lòng kiểm tra lại Bot Token.";
                         showAutoFillStatus(
                             `Hệ thống đã xác thực bot nhưng chưa thấy lệnh Start đúng mã.<br>` +
-                            `Nhân viên cần làm: <a href="${deepLink}" target="_blank" rel="noopener noreferrer">mở bot và bấm Start</a>, rồi quay lại bấm <strong>Tự lấy từ Telegram</strong> lần nữa.`,
+                            `${openHint}<br>Nhân viên làm xong quay lại bấm <strong>Tự lấy từ Telegram</strong> lần nữa.`,
                             true
                         );
                     } catch (err) {
