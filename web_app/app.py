@@ -176,11 +176,18 @@ def normalize_telegram_username(value: str) -> str:
     return ""
 
 
-def send_telegram_test_message(chat_id: str, display_name: str) -> tuple[bool, str]:
+def get_safe_next_url(raw_next: str) -> str:
+    next_url = (raw_next or "").strip()
+    if next_url.startswith("/") and not next_url.startswith("//"):
+        return next_url
+    return url_for("index")
+
+
+def send_telegram_test_message(chat_id: str, display_name: str) -> tuple[str, str]:
     if not TELEGRAM_BOT_TOKEN:
-        return False, "Bot Telegram của hệ thống chưa được cấu hình."
+        return "not_configured", "Bot Telegram của hệ thống chưa được cấu hình."
     if not chat_id:
-        return False, "Thiếu Telegram Chat ID."
+        return "failed", "Thiếu Telegram Chat ID."
 
     text = (
         f"Xin chao {display_name}!\n\n"
@@ -203,17 +210,17 @@ def send_telegram_test_message(chat_id: str, display_name: str) -> tuple[bool, s
             body = resp.read().decode("utf-8", errors="ignore")
             parsed = json.loads(body) if body else {}
             if parsed.get("ok"):
-                return True, "Đã gửi tin nhắn test Telegram thành công."
-            return False, parsed.get("description", "Telegram từ chối gửi tin nhắn.")
+                return "sent", "Đã gửi tin nhắn test Telegram thành công."
+            return "failed", parsed.get("description", "Telegram từ chối gửi tin nhắn.")
     except urllib_error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="ignore")
         try:
             parsed = json.loads(body) if body else {}
-            return False, parsed.get("description", f"Telegram HTTP {exc.code}")
+            return "failed", parsed.get("description", f"Telegram HTTP {exc.code}")
         except Exception:
-            return False, f"Telegram HTTP {exc.code}"
+            return "failed", f"Telegram HTTP {exc.code}"
     except Exception:
-        return False, "Không thể kết nối Telegram lúc này."
+        return "failed", "Không thể kết nối Telegram lúc này."
 
 
 def normalize_month_key(year: int, month: int) -> str:
@@ -667,6 +674,7 @@ def login():
         if is_logged_in():
             return redirect(url_for("index"))
         success_message = ""
+        next_target = request.args.get("next", "").strip()
         registered = request.args.get("registered", "").strip()
         telegram_ready = request.args.get("telegram_ready", "").strip()
         telegram_test = request.args.get("telegram_test", "").strip()
@@ -694,7 +702,7 @@ def login():
             title="Chi Phi Ads Dashboard",
             subtitle="Ae làm cái này thì sau không cần điền chi phí ads mỗi ngày nữa nè. Phêêêêêêêê...!",
             board_name=LOGIN_BOARD_NAME,
-            form_action=url_for("login"),
+            form_action=url_for("login", next=next_target) if next_target else url_for("login"),
             submit_label="Đăng nhập",
             show_register_link=True,
             show_back_link=False,
@@ -707,7 +715,7 @@ def login():
 
     if user and user.get("password") == password and user.get("role") == "employee":
         set_session_user(username, user, elevated=False)
-        next_url = request.args.get("next") or url_for("index")
+        next_url = get_safe_next_url(request.args.get("next", ""))
         return redirect(next_url)
 
     error_message = "Sai tài khoản hoặc mật khẩu"
@@ -726,7 +734,7 @@ def login():
         title="Chi Phi Ads Dashboard",
         subtitle="Ae làm cái này thì sau không cần điền chi phí ads mỗi ngày nữa nè. Phêêêêêêêê...!",
         board_name=LOGIN_BOARD_NAME,
-        form_action=url_for("login"),
+        form_action=url_for("login", next=request.args.get("next", "").strip()) if request.args.get("next", "").strip() else url_for("login"),
         submit_label="Đăng nhập",
         show_register_link=True,
         show_back_link=False,
@@ -954,13 +962,12 @@ def register_telegram():
         users[pending_username].pop("telegram_username", None)
     save_users_config(users)
 
-    test_ok, test_message = send_telegram_test_message(
+    telegram_test, _test_message = send_telegram_test_message(
         normalized_chat_id,
         user.get("display_name", pending_username),
     )
 
     session.pop("pending_telegram_setup", None)
-    telegram_test = "sent" if test_ok else "not_configured" if "chưa được cấu hình" in test_message else "failed"
     return redirect(url_for("login", registered="1", telegram_ready="1", telegram_test=telegram_test, username=pending_username))
 
 
