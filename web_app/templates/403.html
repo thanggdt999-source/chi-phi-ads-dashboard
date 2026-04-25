@@ -4,16 +4,45 @@
     <meta charset="UTF-8">
     <title>403 – Không có quyền</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; display: flex; align-items: center; justify-content: center; min-height: 100vh; flex-direction: column; gap: 12px; }
+        body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; margin: 0; }
+        .error-shell { min-height: calc(100vh - 110px); display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; }
         h1 { font-size: 4rem; color: #ef4444; }
         p  { color: #94a3b8; font-size: 1.1rem; }
         a  { color: #60a5fa; text-decoration: none; }
         a:hover { text-decoration: underline; }
+
+        .app-footer {
+            margin: 0 auto 24px;
+            width: 100%;
+            max-width: 760px;
+            padding: 6px 16px;
+            text-align: center;
+            color: #eef2ff;
+            transform: translateY(-28px);
+        }
+
+        .app-footer-brand {
+            font-weight: 700;
+            font-size: 0.98rem;
+            margin-bottom: 4px;
+        }
+
+        .app-footer-meta {
+            font-size: 0.82rem;
+            opacity: 0.9;
+            margin-bottom: 10px;
+        }
     </style>
 </head>
 <body>
-    <h1>403</h1>
-    <p>Bạn không có quyền truy cập trang này.</p>
-    <a href="/">← Quay về Dashboard</a>
+    <div class="error-shell">
+        <h1>403</h1>
+        <p>Bạn không có quyền truy cập trang này.</p>
+        <a href="/">← Quay về Dashboard</a>
+    </div>
+    <footer class="app-footer">
+        <div class="app-footer-brand">GDT Group | Chi Phi Ads Dashboard</div>
+        <div class="app-footer-meta">Phat trien phan mem: Nguyen Ba Thang | Version 1.0.0</div>
+    </footer>
 </body>
 </html>

@@ -18,11 +18,33 @@
         }
 
         .register-shell {
-            min-height: 100vh;
+            min-height: calc(100vh - 110px);
             display: flex;
             align-items: center;
             justify-content: center;
             padding: 28px;
+        }
+
+        .app-footer {
+            margin: 0 auto 24px;
+            width: 100%;
+            max-width: 760px;
+            padding: 6px 16px;
+            text-align: center;
+            color: #eef2ff;
+            transform: translateY(-28px);
+        }
+
+        .app-footer-brand {
+            font-weight: 700;
+            font-size: 0.98rem;
+            margin-bottom: 4px;
+        }
+
+        .app-footer-meta {
+            font-size: 0.82rem;
+            opacity: 0.9;
+            margin-bottom: 10px;
         }
 
         .register-card {
@@ -297,5 +319,9 @@
             </section>
         </div>
     </div>
+    <footer class="app-footer">
+        <div class="app-footer-brand">GDT Group | Chi Phi Ads Dashboard</div>
+        <div class="app-footer-meta">Phat trien phan mem: Nguyen Ba Thang | Version 1.0.0</div>
+    </footer>
 </body>
 </html>
