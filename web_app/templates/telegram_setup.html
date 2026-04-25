@@ -183,6 +183,170 @@
             line-height: 1.6;
         }
 
+        /* Step wizard */
+        .step-wizard {
+            display: flex;
+            align-items: flex-start;
+            gap: 0;
+            margin: 0 0 20px;
+        }
+        .step-item {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+        }
+        .step-item:not(:last-child)::after {
+            content: '';
+            position: absolute;
+            top: 15px;
+            left: 50%;
+            width: 100%;
+            height: 2px;
+            background: #cbd5e1;
+            z-index: 0;
+        }
+        .step-item.done:not(:last-child)::after { background: #22c55e; }
+        .step-item.active:not(:last-child)::after { background: #93c5fd; }
+        .step-dot {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: #e2e8f0;
+            border: 2px solid #cbd5e1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 0.85rem;
+            color: #94a3b8;
+            z-index: 1;
+            position: relative;
+        }
+        .step-item.done .step-dot {
+            background: #22c55e;
+            border-color: #16a34a;
+            color: #fff;
+        }
+        .step-item.active .step-dot {
+            background: #3498db;
+            border-color: #2563eb;
+            color: #fff;
+            box-shadow: 0 0 0 4px rgba(37,99,235,0.15);
+        }
+        .step-label {
+            margin-top: 7px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: #94a3b8;
+            text-align: center;
+        }
+        .step-item.done .step-label { color: #16a34a; }
+        .step-item.active .step-label { color: #1767d2; }
+
+        /* Guide modal */
+        .guide-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(15,23,42,0.55);
+            z-index: 999;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .guide-overlay.open {
+            display: flex;
+        }
+        .guide-modal {
+            background: #fff;
+            border-radius: 24px;
+            padding: 28px 28px 24px;
+            max-width: 480px;
+            width: 100%;
+            box-shadow: 0 24px 64px rgba(15,23,42,0.3);
+        }
+        .guide-modal h3 {
+            margin: 0 0 16px;
+            font-size: 1.2rem;
+            color: #1767d2;
+        }
+        .guide-steps {
+            list-style: none;
+            padding: 0;
+            margin: 0 0 20px;
+        }
+        .guide-steps li {
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+            padding: 10px 0;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            color: #334155;
+        }
+        .guide-steps li:last-child { border-bottom: none; }
+        .guide-steps li .num {
+            min-width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: #eff6ff;
+            border: 1.5px solid #bfdbfe;
+            color: #1d4ed8;
+            font-weight: 800;
+            font-size: 0.8rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .guide-steps .cmd {
+            display: inline-block;
+            background: #1e293b;
+            color: #7dd3fc;
+            font-family: monospace;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+        }
+        .polling-banner {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            padding: 14px 16px;
+            border-radius: 14px;
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            color: #15803d;
+            font-weight: 600;
+            margin-bottom: 14px;
+        }
+        .polling-banner.show { display: flex; }
+        .polling-banner .spinner {
+            width: 18px; height: 18px;
+            border: 2.5px solid #86efac;
+            border-top-color: #16a34a;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            flex-shrink: 0;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .success-banner {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            padding: 14px 16px;
+            border-radius: 14px;
+            background: #f0fdf4;
+            border: 1px solid #86efac;
+            color: #15803d;
+            font-weight: 700;
+            margin-bottom: 14px;
+            font-size: 1rem;
+        }
+        .success-banner.show { display: flex; }
+
         .btn {
             display: inline-flex;
             align-items: center;
@@ -293,17 +457,47 @@
                 <div class="alert alert-info">Mã liên kết phiên này: <strong>{{ bind_code }}</strong></div>
                 {% endif %}
 
+                {% if personal_bot_mode %}
+                <!-- Step wizard -->
+                <div class="step-wizard" id="step-wizard">
+                    <div class="step-item active" id="step-1">
+                        <div class="step-dot">1</div>
+                        <div class="step-label">Tạo Bot</div>
+                    </div>
+                    <div class="step-item" id="step-2">
+                        <div class="step-dot">2</div>
+                        <div class="step-label">Điền Token</div>
+                    </div>
+                    <div class="step-item" id="step-3">
+                        <div class="step-dot">3</div>
+                        <div class="step-label">Kết nối</div>
+                    </div>
+                    <div class="step-item" id="step-4">
+                        <div class="step-dot"><i class="fas fa-check" style="font-size:0.7rem"></i></div>
+                        <div class="step-label">Xong!</div>
+                    </div>
+                </div>
+                {% endif %}
+
                 <div class="quick-actions">
                     {% if bot_username and not personal_bot_mode %}
                     <a class="btn btn-ghost" href="https://t.me/{{ bot_username }}" target="_blank" rel="noopener noreferrer"><i class="fab fa-telegram-plane"></i> Mở bot @{{ bot_username }}</a>
                     {% endif %}
                     {% if personal_bot_mode %}
-                    <a class="btn btn-ghost" href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer"><i class="fab fa-telegram-plane"></i> Mở BotFather lấy Token</a>
+                    <button type="button" class="btn btn-ghost" id="open-botfather-guide"><i class="fab fa-telegram-plane"></i> Hướng dẫn tạo Bot</button>
                     <button type="button" class="btn btn-ghost" id="auto-fill-telegram"><i class="fas fa-wand-magic-sparkles"></i> Tự lấy từ Telegram</button>
                     {% endif %}
                     <a class="btn btn-ghost" href="https://t.me/userinfobot" target="_blank" rel="noopener noreferrer"><i class="fas fa-circle-info"></i> Mở @userinfobot</a>
                 </div>
 
+                <div id="polling-banner" class="polling-banner">
+                    <div class="spinner"></div>
+                    <span id="polling-text">Đang chờ bạn bấm Start trong bot... (tự kiểm tra sau <span id="poll-countdown">5</span>s)</span>
+                </div>
+                <div id="success-banner" class="success-banner">
+                    <i class="fas fa-circle-check" style="font-size:1.2rem"></i>
+                    <span id="success-text">Đã lấy Chat ID thành công! Bấm Hoàn tất để tiếp tục.</span>
+                </div>
                 <div id="auto-fill-status" class="alert alert-info" style="display:none;"></div>
 
                 <form method="post" action="{{ form_action or '' }}" id="telegram-setup-form">
@@ -354,6 +548,43 @@
         </div>
     </div>
 
+    <!-- BotFather guide modal -->
+    <div class="guide-overlay" id="botfather-guide-overlay">
+        <div class="guide-modal">
+            <h3><i class="fab fa-telegram-plane"></i> Cách tạo Bot Telegram</h3>
+            <ol class="guide-steps">
+                <li>
+                    <span class="num">1</span>
+                    <span>Mở <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer" style="color:#1767d2;font-weight:700">@BotFather</a> trong Telegram và bấm <strong>Start</strong>.</span>
+                </li>
+                <li>
+                    <span class="num">2</span>
+                    <span>Gửi lệnh: <span class="cmd">/newbot</span></span>
+                </li>
+                <li>
+                    <span class="num">3</span>
+                    <span>BotFather hỏi <em>"Alright, a new bot. How are we going to call it?"</em> → nhập <strong>tên bot</strong>, ví dụ: <code>Ads Bot Linh</code></span>
+                </li>
+                <li>
+                    <span class="num">4</span>
+                    <span>BotFather hỏi username → nhập <strong>username</strong> phải kết thúc bằng <code>bot</code>, ví dụ: <code>linhnd_ads_bot</code></span>
+                </li>
+                <li>
+                    <span class="num">5</span>
+                    <span>BotFather trả về <strong>token</strong> dạng <code>1234567890:AABBcc...</code> — <strong>copy toàn bộ dòng đó</strong>.</span>
+                </li>
+                <li>
+                    <span class="num">6</span>
+                    <span>Quay lại đây, dán token vào ô <strong>Telegram Bot Token</strong> rồi bấm <strong>Tự lấy từ Telegram</strong>.</span>
+                </li>
+            </ol>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+                <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="flex:1"><i class="fab fa-telegram-plane"></i> Mở BotFather ngay</a>
+                <button type="button" class="btn btn-ghost" id="close-guide" style="flex:1">Đã hiểu, đóng lại</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         (function () {
             const chatIdInput = document.getElementById("telegram-chat-id");
@@ -363,29 +594,179 @@
             const pasteButton = document.getElementById("paste-chat-id");
             const autoFillButton = document.getElementById("auto-fill-telegram");
             const autoFillStatus = document.getElementById("auto-fill-status");
+            const pollingBanner = document.getElementById("polling-banner");
+            const pollCountdown = document.getElementById("poll-countdown");
+            const successBanner = document.getElementById("success-banner");
+            const successText = document.getElementById("success-text");
             const form = document.getElementById("telegram-setup-form");
             const submitButton = document.getElementById("submit-btn");
             const manualToggleButton = document.getElementById("toggle-manual-mode");
             const manualFields = document.getElementById("manual-fields");
+            const openGuideBtn = document.getElementById("open-botfather-guide");
+            const closeGuideBtn = document.getElementById("close-guide");
+            const guideOverlay = document.getElementById("botfather-guide-overlay");
+
+            // Step wizard helpers
+            function setStep(n) {
+                for (let i = 1; i <= 4; i++) {
+                    const el = document.getElementById("step-" + i);
+                    if (!el) continue;
+                    el.classList.remove("active", "done");
+                    if (i < n) el.classList.add("done");
+                    else if (i === n) el.classList.add("active");
+                }
+            }
+
+            // Guide modal
+            if (openGuideBtn && guideOverlay) {
+                openGuideBtn.addEventListener("click", function () {
+                    guideOverlay.classList.add("open");
+                });
+            }
+            if (closeGuideBtn && guideOverlay) {
+                closeGuideBtn.addEventListener("click", function () {
+                    guideOverlay.classList.remove("open");
+                    if (botTokenInput) botTokenInput.focus();
+                    setStep(2);
+                });
+            }
+            if (guideOverlay) {
+                guideOverlay.addEventListener("click", function (e) {
+                    if (e.target === guideOverlay) guideOverlay.classList.remove("open");
+                });
+            }
+
+            // Auto-detect token paste → advance wizard
+            if (botTokenInput) {
+                botTokenInput.addEventListener("input", function () {
+                    const v = botTokenInput.value.trim();
+                    if (/^\d{8,12}:[A-Za-z0-9_-]{35,}$/.test(v)) setStep(3);
+                    else if (v) setStep(2);
+                    else setStep(1);
+                });
+                // Advance step if token already pre-filled
+                if (botTokenInput.value.trim()) setStep(3);
+            }
+
+            // Polling state
+            let pollingInterval = null;
+            let pollTimer = null;
+            let currentDeepLink = "";
+            let currentToken = "";
+
+            function stopPolling() {
+                if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
+                if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+                if (pollingBanner) pollingBanner.classList.remove("show");
+            }
+
+            function startPolling(token, deepLink) {
+                stopPolling();
+                currentToken = token;
+                currentDeepLink = deepLink;
+                if (pollingBanner) pollingBanner.classList.add("show");
+
+                let secs = 5;
+                if (pollCountdown) pollCountdown.textContent = secs;
+
+                pollTimer = setInterval(function () {
+                    secs--;
+                    if (pollCountdown) pollCountdown.textContent = Math.max(secs, 0);
+                    if (secs <= 0) {
+                        secs = 8; // next interval longer
+                        doAutofill(true);
+                    }
+                }, 1000);
+            }
+
+            async function doAutofill(isPolling) {
+                const token = currentToken || (botTokenInput ? botTokenInput.value.trim() : "");
+                if (!token) return;
+
+                if (!isPolling) {
+                    autoFillButton.disabled = true;
+                    autoFillButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang lấy...';
+                    showAutoFillStatus("Đang xác thực Bot Token và tìm Chat ID...", false);
+                }
+
+                try {
+                    const res = await fetch("/api/telegram/autofill", {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify({telegram_bot_token: token}),
+                    });
+                    const data = await res.json();
+
+                    if (!res.ok || !data.success) {
+                        stopPolling();
+                        showAutoFillStatus(data.error || "Không thể tự lấy thông tin Telegram.", true);
+                        return;
+                    }
+
+                    if (botUsernameInput && data.bot_username) {
+                        botUsernameInput.value = data.bot_username;
+                    }
+
+                    if (data.found) {
+                        stopPolling();
+                        if (chatIdInput && data.telegram_chat_id) {
+                            chatIdInput.value = data.telegram_chat_id;
+                            setManualMode(true);
+                        }
+                        if (usernameInput && data.telegram_username && !usernameInput.value) {
+                            usernameInput.value = data.telegram_username;
+                        }
+                        if (autoFillStatus) autoFillStatus.style.display = "none";
+                        if (successBanner) {
+                            successBanner.classList.add("show");
+                            if (successText) successText.textContent = "✅ Đã lấy Chat ID thành công! Kiểm tra lại rồi bấm Hoàn tất.";
+                        }
+                        setStep(4);
+                        return;
+                    }
+
+                    // not found yet
+                    if (!isPolling) {
+                        // First time: open deep link + start polling
+                        const deepLink = sanitizeTelegramUrl(data.deep_link || "");
+                        currentToken = token;
+                        if (deepLink) {
+                            openTelegramLink(deepLink);
+                            showAutoFillStatus(
+                                `Bot đã xác thực! Hệ thống đã mở bot ở tab mới — hãy bấm <strong>Start</strong> trong Telegram.<br>` +
+                                `Hoặc bấm vào đây: <a href="${escapeHtml(deepLink)}" target="_blank" rel="noopener noreferrer">mở bot và bấm Start</a>.<br>` +
+                                `<em>Hệ thống sẽ tự kiểm tra mỗi 8 giây, bạn không cần bấm lại.</em>`,
+                                false
+                            );
+                            startPolling(token, deepLink);
+                            setStep(3);
+                        } else {
+                            showAutoFillStatus("Không tạo được liên kết mở bot. Hãy kiểm tra lại Bot Token.", true);
+                        }
+                    }
+                    // if isPolling and not found, continue waiting silently
+                } catch (err) {
+                    if (!isPolling) showAutoFillStatus("Lỗi kết nối khi tự lấy thông tin Telegram.", true);
+                } finally {
+                    if (!isPolling && autoFillButton) {
+                        autoFillButton.disabled = false;
+                        autoFillButton.innerHTML = '<i class="fas fa-wand-magic-sparkles"></i> Tự lấy từ Telegram';
+                    }
+                }
+            }
 
             function normalizeChatId(raw) {
                 const value = String(raw || "").trim();
-                if (!value) {
-                    return "";
-                }
+                if (!value) return "";
                 const compact = value.replace(/\s+/g, "");
-                if (/^-?\d{6,20}$/.test(compact)) {
-                    return compact;
-                }
+                if (/^-?\d{6,20}$/.test(compact)) return compact;
                 const match = value.match(/-?\d{6,20}/);
                 return match ? match[0] : value;
             }
 
             function normalizeUsername(raw) {
                 let value = String(raw || "").trim();
-                if (!value) {
-                    return "";
-                }
+                if (!value) return "";
                 if (value.includes("/")) {
                     value = value.replace(/\/+$/, "").split("/").pop() || value;
                 }
@@ -393,9 +774,7 @@
             }
 
             function showAutoFillStatus(message, isError) {
-                if (!autoFillStatus) {
-                    return;
-                }
+                if (!autoFillStatus) return;
                 autoFillStatus.style.display = "block";
                 autoFillStatus.className = isError ? "alert alert-error" : "alert alert-info";
                 autoFillStatus.innerHTML = message;
@@ -403,38 +782,27 @@
 
             function escapeHtml(value) {
                 return String(value || "")
-                    .replace(/&/g, "&amp;")
-                    .replace(/</g, "&lt;")
-                    .replace(/>/g, "&gt;")
-                    .replace(/\"/g, "&quot;")
-                    .replace(/'/g, "&#39;");
+                    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+                    .replace(/\"/g, "&quot;").replace(/'/g, "&#39;");
             }
 
             function sanitizeTelegramUrl(url) {
                 const value = String(url || "").trim();
-                if (/^https:\/\/t\.me\/[A-Za-z0-9_?=+-]+$/i.test(value)) {
-                    return value;
-                }
+                if (/^https:\/\/t\.me\/[A-Za-z0-9_?=+-]+$/i.test(value)) return value;
                 return "";
             }
 
             function openTelegramLink(url) {
                 const safeUrl = sanitizeTelegramUrl(url);
-                if (!safeUrl) {
-                    return false;
-                }
+                if (!safeUrl) return false;
                 try {
                     const win = window.open(safeUrl, "_blank", "noopener,noreferrer");
                     return Boolean(win);
-                } catch (err) {
-                    return false;
-                }
+                } catch (err) { return false; }
             }
 
             function setManualMode(enabled) {
-                if (!manualToggleButton || !manualFields) {
-                    return;
-                }
+                if (!manualToggleButton || !manualFields) return;
                 manualFields.classList.toggle("open", enabled);
                 manualFields.setAttribute("aria-hidden", enabled ? "false" : "true");
                 manualToggleButton.setAttribute("aria-expanded", enabled ? "true" : "false");
@@ -450,13 +818,10 @@
                     (botUsernameInput && String(botUsernameInput.value || "").trim())
                 );
                 setManualMode(defaultManual);
-
                 manualToggleButton.addEventListener("click", function () {
                     const current = manualToggleButton.getAttribute("aria-expanded") === "true";
                     setManualMode(!current);
-                    if (!current && chatIdInput) {
-                        chatIdInput.focus();
-                    }
+                    if (!current && chatIdInput) chatIdInput.focus();
                 });
             }
 
@@ -465,7 +830,6 @@
                     chatIdInput.value = normalizeChatId(chatIdInput.value);
                 });
             }
-
             if (usernameInput) {
                 usernameInput.addEventListener("blur", function () {
                     usernameInput.value = normalizeUsername(usernameInput.value);
@@ -478,9 +842,7 @@
                         const text = await navigator.clipboard.readText();
                         chatIdInput.value = normalizeChatId(text);
                         chatIdInput.focus();
-                    } catch (err) {
-                        chatIdInput.focus();
-                    }
+                    } catch (err) { chatIdInput.focus(); }
                 });
             }
 
@@ -488,90 +850,27 @@
                 autoFillButton.addEventListener("click", async function () {
                     const token = String(botTokenInput.value || "").trim();
                     if (!token) {
-                        const botFatherUrl = "https://t.me/BotFather";
-                        const opened = openTelegramLink(botFatherUrl);
-                        const openHint = opened
-                            ? "Đã mở BotFather ở tab mới."
-                            : `Bấm vào đây để mở ngay: <a href="${escapeHtml(botFatherUrl)}" target="_blank" rel="noopener noreferrer">@BotFather</a>.`;
-                        showAutoFillStatus(
-                            `Vui lòng nhập Bot Token trước khi tự lấy thông tin.<br>${openHint}<br>Sau khi có token, quay lại dán token rồi bấm lại <strong>Tự lấy từ Telegram</strong>.`,
-                            true
-                        );
-                        botTokenInput.focus();
+                        guideOverlay && guideOverlay.classList.add("open");
                         return;
                     }
-
-                    autoFillButton.disabled = true;
-                    autoFillButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang lấy...';
-                    showAutoFillStatus("Đang xác thực Bot Token và tìm Chat ID...", false);
-
-                    try {
-                        const res = await fetch("/api/telegram/autofill", {
-                            method: "POST",
-                            headers: {"Content-Type": "application/json"},
-                            body: JSON.stringify({telegram_bot_token: token}),
-                        });
-                        const data = await res.json();
-
-                        if (!res.ok || !data.success) {
-                            showAutoFillStatus(data.error || "Không thể tự lấy thông tin Telegram.", true);
-                            return;
-                        }
-
-                        if (botUsernameInput && data.bot_username) {
-                            botUsernameInput.value = data.bot_username;
-                        }
-
-                        if (data.found) {
-                            if (chatIdInput && data.telegram_chat_id) {
-                                chatIdInput.value = data.telegram_chat_id;
-                            }
-                            if (usernameInput && data.telegram_username && !usernameInput.value) {
-                                usernameInput.value = data.telegram_username;
-                            }
-                            showAutoFillStatus("Đã tự lấy Chat ID thành công. Bạn chỉ cần bấm Hoàn tất và gửi tin test.", false);
-                            return;
-                        }
-
-                        const deepLink = sanitizeTelegramUrl(data.deep_link || "");
-                        const opened = deepLink ? openTelegramLink(deepLink) : false;
-                        const openHint = deepLink
-                            ? (opened
-                                ? "Em đã tự mở bot ở tab mới, bạn chỉ cần bấm <strong>Start</strong>."
-                                : `Bấm vào đây để mở bot: <a href="${escapeHtml(deepLink)}" target="_blank" rel="noopener noreferrer">mở bot và bấm Start</a>.`)
-                            : "Không tạo được liên kết mở bot tự động, vui lòng kiểm tra lại Bot Token.";
-                        showAutoFillStatus(
-                            `Hệ thống đã xác thực bot nhưng chưa thấy lệnh Start đúng mã.<br>` +
-                            `${openHint}<br>Nhân viên làm xong quay lại bấm <strong>Tự lấy từ Telegram</strong> lần nữa.`,
-                            true
-                        );
-                    } catch (err) {
-                        showAutoFillStatus("Lỗi kết nối khi tự lấy thông tin Telegram.", true);
-                    } finally {
-                        autoFillButton.disabled = false;
-                        autoFillButton.innerHTML = '<i class="fas fa-wand-magic-sparkles"></i> Tự lấy từ Telegram';
-                    }
+                    currentToken = token;
+                    await doAutofill(false);
                 });
             }
 
             if (form && submitButton) {
                 form.addEventListener("submit", function (event) {
-                    if (chatIdInput) {
-                        chatIdInput.value = normalizeChatId(chatIdInput.value);
-                    }
-                    if (usernameInput) {
-                        usernameInput.value = normalizeUsername(usernameInput.value);
-                    }
+                    stopPolling();
+                    if (chatIdInput) chatIdInput.value = normalizeChatId(chatIdInput.value);
+                    if (usernameInput) usernameInput.value = normalizeUsername(usernameInput.value);
                     if (!chatIdInput || !chatIdInput.value) {
                         event.preventDefault();
                         setManualMode(true);
                         showAutoFillStatus(
-                            "Chưa có Chat ID. Hãy bấm Tự lấy từ Telegram hoặc mở chế độ nhập tay để điền Chat ID.",
+                            "Chưa có Chat ID. Hãy bấm <strong>Tự lấy từ Telegram</strong> hoặc bật chế độ nhập tay để điền Chat ID.",
                             true
                         );
-                        if (chatIdInput) {
-                            chatIdInput.focus();
-                        }
+                        if (chatIdInput) chatIdInput.focus();
                         return;
                     }
                     submitButton.disabled = true;
