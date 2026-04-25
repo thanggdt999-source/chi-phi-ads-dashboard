@@ -28,11 +28,16 @@ body {
     color: var(--gray-dark);
     min-height: 100vh;
     padding: 20px;
+    display: flex;
+    flex-direction: column;
 }
 
 .container {
     max-width: 1200px;
     margin: 0 auto;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
 }
 
 /* Header */

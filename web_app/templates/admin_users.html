@@ -7,21 +7,20 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+        body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; display: flex; flex-direction: column; }
         a { color: #60a5fa; text-decoration: none; }
         a:hover { text-decoration: underline; }
 
         /* ── Layout ── */
-        .page-wrapper { max-width: 1100px; margin: 0 auto; padding: 24px 16px 40px; min-height: calc(100vh - 110px); }
+        .page-wrapper { max-width: 1100px; margin: 0 auto; padding: 24px 16px 40px; flex: 1; }
 
         .app-footer {
-            margin: 0 auto 24px;
+            margin: 0 auto;
             width: 100%;
             max-width: 760px;
-            padding: 6px 16px;
+            padding: 16px;
             text-align: center;
             color: #eef2ff;
-            transform: translateY(-28px);
         }
 
         .app-footer-brand {

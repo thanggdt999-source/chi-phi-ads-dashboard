@@ -9,6 +9,8 @@
         body {
             margin: 0;
             min-height: 100vh;
+            display: flex;
+            flex-direction: column;
             font-family: "Segoe UI", sans-serif;
             background:
                 radial-gradient(circle at top left, rgba(255,255,255,0.18), transparent 28%),
@@ -18,7 +20,7 @@
         }
 
         .shell {
-            min-height: calc(100vh - 110px);
+            flex: 1;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -26,13 +28,12 @@
         }
 
         .app-footer {
-            margin: 0 auto 24px;
+            margin: 0 auto;
             width: 100%;
             max-width: 760px;
-            padding: 6px 16px;
+            padding: 16px;
             text-align: center;
             color: #eef2ff;
-            transform: translateY(-28px);
         }
 
         .app-footer-brand {
