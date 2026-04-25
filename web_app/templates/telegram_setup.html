@@ -247,7 +247,7 @@
 
                 <div class="alert alert-info">
                     {% if personal_bot_mode %}
-                    <strong>Thông tin cần điền:</strong> Telegram Chat ID + Bot username + Bot token đều bắt buộc. Khi bấm hoàn tất, hệ thống sẽ gửi 1 tin nhắn test bằng bot của chính bạn.
+                    <strong>Thông tin cần điền:</strong> Bot token là bắt buộc. Bot username và Chat ID có thể để hệ thống tự lấy sau khi bấm <strong>Tự lấy từ Telegram</strong>.
                     {% else %}
                     <strong>Thông tin cần điền:</strong> Telegram Chat ID là bắt buộc. Telegram username chỉ để đối soát, có thể bỏ trống. Khi bấm hoàn tất, hệ thống sẽ tự gửi 1 tin nhắn test.
                     {% endif %}
@@ -255,30 +255,39 @@
 
                 <ol class="guide-list">
                     {% if personal_bot_mode %}
-                    <li>Mở bot riêng của bạn trên Telegram và nhắn <strong>/start</strong>.</li>
+                    <li>Nhập bot token rồi bấm <strong>Tự lấy từ Telegram</strong>.</li>
+                    <li>Nếu hệ thống chưa thấy Chat ID: mở bot theo link, bấm <strong>Start</strong> (hoặc gửi <strong>/start {{ bind_code }}</strong>) rồi quay lại bấm nút tự lấy lần nữa.</li>
                     {% elif bot_username %}
                     <li>Mở bot <span class="bot-badge"><i class="fab fa-telegram-plane"></i> @{{ bot_username }}</span> và nhắn <strong>/start</strong>.</li>
                     {% else %}
                     <li>Nhắn <strong>/start</strong> cho bot Telegram của hệ thống.</li>
                     {% endif %}
-                    <li>Mở <strong>@userinfobot</strong> để lấy <strong>Chat ID</strong>.</li>
-                    <li>Dán Chat ID vào form bên dưới để hoàn tất nhận báo cáo tự động.</li>
+                    <li>Nếu auto chưa được thì mở <strong>@userinfobot</strong> để lấy <strong>Chat ID</strong> và điền thủ công.</li>
                 </ol>
+
+                {% if personal_bot_mode and bind_code %}
+                <div class="alert alert-info">Mã liên kết phiên này: <strong>{{ bind_code }}</strong></div>
+                {% endif %}
 
                 <div class="quick-actions">
                     {% if bot_username and not personal_bot_mode %}
                     <a class="btn btn-ghost" href="https://t.me/{{ bot_username }}" target="_blank" rel="noopener noreferrer"><i class="fab fa-telegram-plane"></i> Mở bot @{{ bot_username }}</a>
                     {% endif %}
+                    {% if personal_bot_mode %}
+                    <button type="button" class="btn btn-ghost" id="auto-fill-telegram"><i class="fas fa-wand-magic-sparkles"></i> Tự lấy từ Telegram</button>
+                    {% endif %}
                     <a class="btn btn-ghost" href="https://t.me/userinfobot" target="_blank" rel="noopener noreferrer"><i class="fas fa-circle-info"></i> Mở @userinfobot</a>
                     <button type="button" class="btn btn-ghost" id="paste-chat-id"><i class="fas fa-paste"></i> Dán Chat ID</button>
                 </div>
+
+                <div id="auto-fill-status" class="alert alert-info" style="display:none;"></div>
 
                 <form method="post" action="{{ form_action or '' }}" id="telegram-setup-form">
                     <div class="form-grid">
                         <div class="field full">
                             <label>Telegram Bot Username</label>
-                            <input type="text" id="telegram-bot-username" name="telegram_bot_username" value="{{ form_values.telegram_bot_username }}" placeholder="vd: my_team_bot hoặc @my_team_bot" required autocomplete="off" autocapitalize="none" spellcheck="false">
-                            <small>Username bot riêng của bạn (không phải username cá nhân).</small>
+                            <input type="text" id="telegram-bot-username" name="telegram_bot_username" value="{{ form_values.telegram_bot_username }}" placeholder="vd: my_team_bot hoặc @my_team_bot" autocomplete="off" autocapitalize="none" spellcheck="false">
+                            <small>Có thể để trống, hệ thống sẽ tự đọc từ token.</small>
                         </div>
                         <div class="field full">
                             <label>Telegram Bot Token</label>
@@ -309,7 +318,11 @@
         (function () {
             const chatIdInput = document.getElementById("telegram-chat-id");
             const usernameInput = document.getElementById("telegram-username");
+            const botUsernameInput = document.getElementById("telegram-bot-username");
+            const botTokenInput = document.getElementById("telegram-bot-token");
             const pasteButton = document.getElementById("paste-chat-id");
+            const autoFillButton = document.getElementById("auto-fill-telegram");
+            const autoFillStatus = document.getElementById("auto-fill-status");
             const form = document.getElementById("telegram-setup-form");
             const submitButton = document.getElementById("submit-btn");
 
@@ -337,6 +350,15 @@
                 return value.replace(/^@+/, "");
             }
 
+            function showAutoFillStatus(message, isError) {
+                if (!autoFillStatus) {
+                    return;
+                }
+                autoFillStatus.style.display = "block";
+                autoFillStatus.className = isError ? "alert alert-error" : "alert alert-info";
+                autoFillStatus.innerHTML = message;
+            }
+
             if (chatIdInput) {
                 chatIdInput.addEventListener("blur", function () {
                     chatIdInput.value = normalizeChatId(chatIdInput.value);
@@ -357,6 +379,62 @@
                         chatIdInput.focus();
                     } catch (err) {
                         chatIdInput.focus();
+                    }
+                });
+            }
+
+            if (autoFillButton && botTokenInput) {
+                autoFillButton.addEventListener("click", async function () {
+                    const token = String(botTokenInput.value || "").trim();
+                    if (!token) {
+                        showAutoFillStatus("Vui lòng nhập Bot Token trước khi auto-fill.", true);
+                        botTokenInput.focus();
+                        return;
+                    }
+
+                    autoFillButton.disabled = true;
+                    autoFillButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang lấy...';
+                    showAutoFillStatus("Đang xác thực bot token và tìm Chat ID...", false);
+
+                    try {
+                        const res = await fetch("/api/telegram/autofill", {
+                            method: "POST",
+                            headers: {"Content-Type": "application/json"},
+                            body: JSON.stringify({telegram_bot_token: token}),
+                        });
+                        const data = await res.json();
+
+                        if (!res.ok || !data.success) {
+                            showAutoFillStatus(data.error || "Không thể tự lấy thông tin Telegram.", true);
+                            return;
+                        }
+
+                        if (botUsernameInput && data.bot_username) {
+                            botUsernameInput.value = data.bot_username;
+                        }
+
+                        if (data.found) {
+                            if (chatIdInput && data.telegram_chat_id) {
+                                chatIdInput.value = data.telegram_chat_id;
+                            }
+                            if (usernameInput && data.telegram_username && !usernameInput.value) {
+                                usernameInput.value = data.telegram_username;
+                            }
+                            showAutoFillStatus("Đã tự lấy Chat ID thành công. Bạn chỉ cần bấm Hoàn tất và gửi test.", false);
+                            return;
+                        }
+
+                        const deepLink = data.deep_link || "#";
+                        showAutoFillStatus(
+                            `Hệ thống đã xác thực bot nhưng chưa thấy lệnh Start đúng mã.<br>` +
+                            `Nhân viên cần làm: <a href="${deepLink}" target="_blank" rel="noopener noreferrer">mở bot và bấm Start</a>, rồi quay lại bấm <strong>Tự lấy từ Telegram</strong> lần nữa.",
+                            true
+                        );
+                    } catch (err) {
+                        showAutoFillStatus("Lỗi kết nối khi tự lấy thông tin Telegram.", true);
+                    } finally {
+                        autoFillButton.disabled = false;
+                        autoFillButton.innerHTML = '<i class="fas fa-wand-magic-sparkles"></i> Tự lấy từ Telegram';
                     }
                 });
             }
