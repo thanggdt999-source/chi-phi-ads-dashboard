@@ -271,7 +271,7 @@
 
                 <div class="alert alert-info">
                     {% if personal_bot_mode %}
-                    <strong>Thông tin cần điền:</strong> Bot token là bắt buộc. Bot username và Chat ID có thể để hệ thống tự lấy sau khi bấm <strong>Tự lấy từ Telegram</strong>.
+                    <strong>Thông tin cần điền:</strong> Bot Token là bắt buộc. Bot Username và Chat ID có thể để hệ thống tự lấy sau khi bấm <strong>Tự lấy từ Telegram</strong>.
                     {% else %}
                     <strong>Thông tin cần điền:</strong> Telegram Chat ID là bắt buộc. Telegram username chỉ để đối soát, có thể bỏ trống. Khi bấm hoàn tất, hệ thống sẽ tự gửi 1 tin nhắn test.
                     {% endif %}
@@ -279,7 +279,7 @@
 
                 <ol class="guide-list">
                     {% if personal_bot_mode %}
-                    <li>Nhập bot token rồi bấm <strong>Tự lấy từ Telegram</strong>.</li>
+                    <li>Nhập Bot Token rồi bấm <strong>Tự lấy từ Telegram</strong>.</li>
                     <li>Nếu hệ thống chưa thấy Chat ID: mở bot theo link, bấm <strong>Start</strong> (hoặc gửi <strong>/start {{ bind_code }}</strong>) rồi quay lại bấm nút tự lấy lần nữa.</li>
                     {% elif bot_username %}
                     <li>Mở bot <span class="bot-badge"><i class="fab fa-telegram-plane"></i> @{{ bot_username }}</span> và nhắn <strong>/start</strong>.</li>
@@ -457,14 +457,14 @@
                 autoFillButton.addEventListener("click", async function () {
                     const token = String(botTokenInput.value || "").trim();
                     if (!token) {
-                        showAutoFillStatus("Vui lòng nhập Bot Token trước khi auto-fill.", true);
+                        showAutoFillStatus("Vui lòng nhập Bot Token trước khi tự lấy thông tin.", true);
                         botTokenInput.focus();
                         return;
                     }
 
                     autoFillButton.disabled = true;
                     autoFillButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang lấy...';
-                    showAutoFillStatus("Đang xác thực bot token và tìm Chat ID...", false);
+                    showAutoFillStatus("Đang xác thực Bot Token và tìm Chat ID...", false);
 
                     try {
                         const res = await fetch("/api/telegram/autofill", {
@@ -490,7 +490,7 @@
                             if (usernameInput && data.telegram_username && !usernameInput.value) {
                                 usernameInput.value = data.telegram_username;
                             }
-                            showAutoFillStatus("Đã tự lấy Chat ID thành công. Bạn chỉ cần bấm Hoàn tất và gửi test.", false);
+                            showAutoFillStatus("Đã tự lấy Chat ID thành công. Bạn chỉ cần bấm Hoàn tất và gửi tin test.", false);
                             return;
                         }
 

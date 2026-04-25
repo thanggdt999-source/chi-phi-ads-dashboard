@@ -1162,9 +1162,9 @@ def login():
                 (
                     f'Đăng ký thành công cho tài khoản "{registered_username}". Telegram đã lưu và gửi test thành công. Vui lòng đăng nhập để vào hệ thống.'
                     if telegram_test == "sent"
-                    else f'Đăng ký thành công cho tài khoản "{registered_username}". Telegram đã lưu nhưng chưa gửi được tin test: bot token riêng chưa hợp lệ.'
+                    else f'Đăng ký thành công cho tài khoản "{registered_username}". Telegram đã lưu nhưng chưa gửi được tin test: Bot Token chưa hợp lệ.'
                     if telegram_test == "not_configured"
-                    else f'Đăng ký thành công cho tài khoản "{registered_username}". Telegram đã lưu nhưng gửi test chưa thành công. Hãy kiểm tra lại Chat ID hoặc nhắn /start cho bot.'
+                    else f'Đăng ký thành công cho tài khoản "{registered_username}". Telegram đã lưu nhưng gửi test chưa thành công. Hãy kiểm tra Bot Token, bấm Start cho bot rồi thử lại.'
                     if telegram_test == "failed"
                     else f'Đăng ký thành công cho tài khoản "{registered_username}" và đã lưu Telegram. Vui lòng đăng nhập để vào hệ thống.'
                 )
@@ -1512,9 +1512,9 @@ def register_telegram():
 
     if telegram_test != "sent":
         failed_msg = (
-            "Bot token riêng của bạn chưa hợp lệ. Hãy kiểm tra lại token bot và thử lại."
+            "Bot Token của bạn chưa hợp lệ. Hãy kiểm tra lại Bot Token rồi thử lại."
             if telegram_test == "not_configured"
-            else "Gửi tin test chưa thành công. Hãy đảm bảo bạn đã nhắn /start cho bot rồi bấm thử lại."
+            else "Gửi tin test chưa thành công. Hãy bấm Start cho bot rồi thử lại."
         )
         return render_template(
             "telegram_setup.html",
@@ -1691,9 +1691,9 @@ def employee_telegram_connect():
 
     if telegram_test != "sent":
         failed_msg = (
-            "Bot token riêng của bạn chưa hợp lệ. Hãy kiểm tra lại token bot và thử lại."
+            "Bot Token của bạn chưa hợp lệ. Hãy kiểm tra lại Bot Token rồi thử lại."
             if telegram_test == "not_configured"
-            else "Gửi tin test chưa thành công. Hãy đảm bảo bạn đã nhắn /start cho bot rồi bấm thử lại."
+            else "Gửi tin test chưa thành công. Hãy bấm Start cho bot rồi thử lại."
         )
         return render_template(
             "telegram_setup.html",
