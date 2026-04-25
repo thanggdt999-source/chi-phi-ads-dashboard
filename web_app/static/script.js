@@ -114,6 +114,8 @@ async function loadAllData() {
         if (spinner) spinner.style.display = "none";
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-layer-group"></i> Tải báo cáo tổng'; }
 
+        if (handleTelegramSetupGate(data, res.status)) return;
+
         if (!data.success) { showError("❌ " + (data.error || "Không thể tải dữ liệu tổng")); return; }
         if (!data.data || data.data.length === 0) { showError("⚠️ Chưa có dữ liệu trong các sheet."); return; }
 
@@ -143,6 +145,8 @@ async function fetchAndRender(sheetUrl, shouldAutoSave = true) {
         const res  = await fetch("/api/fetch-data", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sheet_url: sheetUrl }) });
         const data = await res.json();
         if (spinner) spinner.style.display = "none";
+
+        if (handleTelegramSetupGate(data, res.status)) return;
 
         if (!data.success) { showError("❌ " + (data.error || "Không thể tải dữ liệu")); return; }
         if (!data.data || data.data.length === 0) { showError("⚠️ Sheet không có dữ liệu trong tab 'Chi phí ADS'"); return; }
@@ -228,16 +232,21 @@ function renderData() {
     if (!currentData.rows || currentData.rows.length === 0) { showError("Không có dữ liệu trong sheet"); return; }
     filteredRows = [...currentData.rows];
     currentPage = 1;
-    renderStats(filteredRows);
-    renderRankings();
-    renderTable(filteredRows);
-    renderCharts(filteredRows);
-
     document.getElementById("statsSection").style.display = "block";
     document.getElementById("tableSection").style.display = "block";
     document.getElementById("chartsSection").style.display = "grid";
     const rankSec = document.getElementById("rankingsSection");
     if (rankSec) rankSec.style.display = currentData.memberSummaries.length ? "block" : "none";
+
+    // Keep core data visible even if a secondary renderer (e.g. chart CDN) fails.
+    try { renderStats(filteredRows); } catch (_) {}
+    try { renderRankings(); } catch (_) {}
+    try { renderTable(filteredRows); } catch (_) {}
+    try { renderCharts(filteredRows); } catch (_) {
+        const chartSection = document.getElementById("chartsSection");
+        if (chartSection) chartSection.style.display = "none";
+        showToast("⚠️ Không tải được biểu đồ. Dữ liệu bảng vẫn hiển thị bình thường.");
+    }
 }
 
 function renderStats(rows) {
@@ -348,6 +357,16 @@ function changePageSize(value) {
 }
 
 function renderCharts(rows) {
+    if (typeof Chart === "undefined") {
+        throw new Error("Chart.js not available");
+    }
+
+    const dateCanvas = document.getElementById("spendByDateChart");
+    const productCanvas = document.getElementById("spendByProductChart");
+    if (!dateCanvas || !productCanvas) {
+        throw new Error("Chart canvas missing");
+    }
+
     // Date chart
     const spendByDate = {};
     rows.forEach(row => {
@@ -358,7 +377,7 @@ function renderCharts(rows) {
         const da = parseViDate(a), db = parseViDate(b);
         return (da && db) ? da - db : a.localeCompare(b);
     });
-    const ctx1 = document.getElementById("spendByDateChart").getContext("2d");
+    const ctx1 = dateCanvas.getContext("2d");
     if (charts.spendByDate) charts.spendByDate.destroy();
     charts.spendByDate = new Chart(ctx1, {
         type: "line",
@@ -374,7 +393,7 @@ function renderCharts(rows) {
     });
     const pLabels = Object.keys(spendByProduct);
     const colors  = ["#3498db","#e74c3c","#2ecc71","#f39c12","#9b59b6","#1abc9c","#34495e","#e67e22","#c0392b","#27ae60"];
-    const ctx2 = document.getElementById("spendByProductChart").getContext("2d");
+    const ctx2 = productCanvas.getContext("2d");
     if (charts.spendByProduct) charts.spendByProduct.destroy();
     charts.spendByProduct = new Chart(ctx2, {
         type: "doughnut",
@@ -543,4 +562,16 @@ function showToast(message) {
     }
     t.textContent = message; t.style.opacity = "1";
     clearTimeout(t._timeout); t._timeout = setTimeout(() => { t.style.opacity = "0"; }, 3500);
+}
+
+function handleTelegramSetupGate(data, statusCode) {
+    const setupUrl = (data && data.setup_url) ? data.setup_url : "";
+    if (statusCode === 428 || setupUrl) {
+        showError("⚠️ Bạn cần hoàn tất kết nối Telegram trước khi xem dashboard. Hệ thống đang chuyển đến màn kết nối...");
+        setTimeout(() => {
+            window.location.href = setupUrl || "/telegram/connect";
+        }, 1200);
+        return true;
+    }
+    return false;
 }
