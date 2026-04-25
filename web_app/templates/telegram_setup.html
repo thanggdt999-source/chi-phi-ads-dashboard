@@ -443,7 +443,7 @@
 
                 <ol class="guide-list">
                     {% if personal_bot_mode %}
-                    <li>Nhập Bot Token rồi bấm <strong>Tự lấy từ Telegram</strong>.</li>
+                    <li>Bấm <strong>Lấy token + tự kết nối</strong>. Hệ thống sẽ tự đọc token từ clipboard nếu bạn vừa copy từ BotFather.</li>
                     <li>Nếu hệ thống chưa thấy Chat ID: mở bot theo link, bấm <strong>Start</strong> (hoặc gửi <strong>/start {{ bind_code }}</strong>) rồi quay lại bấm nút tự lấy lần nữa.</li>
                     {% elif bot_username %}
                     <li>Mở bot <span class="bot-badge"><i class="fab fa-telegram-plane"></i> @{{ bot_username }}</span> và nhắn <strong>/start</strong>.</li>
@@ -485,7 +485,7 @@
                     {% endif %}
                     {% if personal_bot_mode %}
                     <button type="button" class="btn btn-ghost" id="open-botfather-guide"><i class="fab fa-telegram-plane"></i> Hướng dẫn tạo Bot</button>
-                    <button type="button" class="btn btn-ghost" id="auto-fill-telegram"><i class="fas fa-wand-magic-sparkles"></i> Tự lấy từ Telegram</button>
+                    <button type="button" class="btn btn-ghost" id="auto-fill-telegram"><i class="fas fa-wand-magic-sparkles"></i> Lấy token + tự kết nối</button>
                     {% endif %}
                     <a class="btn btn-ghost" href="https://t.me/userinfobot" target="_blank" rel="noopener noreferrer"><i class="fas fa-circle-info"></i> Mở @userinfobot</a>
                 </div>
@@ -563,19 +563,15 @@
                 </li>
                 <li>
                     <span class="num">3</span>
-                    <span>BotFather hỏi <em>"Alright, a new bot. How are we going to call it?"</em> → nhập <strong>tên bot</strong>, ví dụ: <code>Ads Bot Linh</code></span>
+                    <span>BotFather sẽ hỏi liên tiếp: tên bot rồi username bot. Hãy nhập <strong>tên bot</strong> (vd: <code>Ads Bot Linh</code>) và <strong>username kết thúc bằng bot</strong> (vd: <code>linhnd_ads_bot</code>).</span>
                 </li>
                 <li>
                     <span class="num">4</span>
-                    <span>BotFather hỏi username → nhập <strong>username</strong> phải kết thúc bằng <code>bot</code>, ví dụ: <code>linhnd_ads_bot</code></span>
-                </li>
-                <li>
-                    <span class="num">5</span>
                     <span>BotFather trả về <strong>token</strong> dạng <code>1234567890:AABBcc...</code> — <strong>copy toàn bộ dòng đó</strong>.</span>
                 </li>
                 <li>
-                    <span class="num">6</span>
-                    <span>Quay lại đây, dán token vào ô <strong>Telegram Bot Token</strong> rồi bấm <strong>Tự lấy từ Telegram</strong>.</span>
+                    <span class="num">5</span>
+                    <span>Quay lại đây và bấm <strong>Lấy token + tự kết nối</strong> (không cần dán tay nếu token đang ở clipboard).</span>
                 </li>
             </ol>
             <div style="display:flex;gap:10px;flex-wrap:wrap">
@@ -773,6 +769,36 @@
                 return value.replace(/^@+/, "");
             }
 
+            function extractBotToken(raw) {
+                const text = String(raw || "").trim();
+                if (!text) return "";
+                const match = text.match(/\b(\d{8,12}:[A-Za-z0-9_-]{30,100})\b/);
+                return match ? match[1] : "";
+            }
+
+            async function resolveTokenForAutofill() {
+                const typed = String(botTokenInput ? botTokenInput.value : "").trim();
+                if (typed) return typed;
+
+                if (navigator.clipboard && navigator.clipboard.readText) {
+                    try {
+                        const clip = await navigator.clipboard.readText();
+                        const fromClip = extractBotToken(clip);
+                        if (fromClip) {
+                            if (botTokenInput) botTokenInput.value = fromClip;
+                            return fromClip;
+                        }
+                    } catch (err) {
+                        // ignore clipboard permission errors, continue to prompt fallback
+                    }
+                }
+
+                const manual = window.prompt("Dán Bot Token (hoặc cả đoạn BotFather, hệ thống tự tách token):", "");
+                const fromPrompt = extractBotToken(manual);
+                if (fromPrompt && botTokenInput) botTokenInput.value = fromPrompt;
+                return fromPrompt;
+            }
+
             function showAutoFillStatus(message, isError) {
                 if (!autoFillStatus) return;
                 autoFillStatus.style.display = "block";
@@ -848,11 +874,16 @@
 
             if (autoFillButton && botTokenInput) {
                 autoFillButton.addEventListener("click", async function () {
-                    const token = String(botTokenInput.value || "").trim();
+                    const token = await resolveTokenForAutofill();
                     if (!token) {
-                        guideOverlay && guideOverlay.classList.add("open");
+                        showAutoFillStatus(
+                            "Chưa lấy được Bot Token. Hãy copy token từ BotFather rồi bấm lại nút này.",
+                            true
+                        );
+                        if (guideOverlay) guideOverlay.classList.add("open");
                         return;
                     }
+                    if (/^\d{8,12}:[A-Za-z0-9_-]{35,}$/.test(token)) setStep(3);
                     currentToken = token;
                     await doAutofill(false);
                 });
