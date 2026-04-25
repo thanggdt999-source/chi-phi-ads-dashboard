@@ -8,6 +8,8 @@ from functools import wraps
 from datetime import datetime
 import json
 from typing import Optional
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 app = Flask(__name__)
 app.secret_key = os.getenv("WEB_APP_SECRET_KEY", "change-this-secret-in-production")
@@ -19,6 +21,7 @@ USERS_FILE_PATH = Path(os.getenv("USERS_FILE_PATH", str(Path(__file__).parent.pa
 MONTHLY_SHEETS_ROOT = Path(os.getenv("MONTHLY_SHEETS_ROOT", str(Path(__file__).parent.parent / "storage" / "monthly_sheets")))
 STATIC_ASSET_VERSION = os.getenv("STATIC_ASSET_VERSION", str(int(datetime.now().timestamp())))
 TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "").strip().lstrip("@")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 
 ROLE_LEVELS = {"admin": 3, "lead": 2, "employee": 1}
 TEAM_CODES = ["TEAM_1", "TEAM_2", "TEAM_3", "TEAM_4", "TEAM_5", "Fanmen"]
@@ -171,6 +174,46 @@ def normalize_telegram_username(value: str) -> str:
     if re.fullmatch(r"[A-Za-z0-9_]{5,32}", username):
         return username
     return ""
+
+
+def send_telegram_test_message(chat_id: str, display_name: str) -> tuple[bool, str]:
+    if not TELEGRAM_BOT_TOKEN:
+        return False, "Bot Telegram của hệ thống chưa được cấu hình."
+    if not chat_id:
+        return False, "Thiếu Telegram Chat ID."
+
+    text = (
+        f"Xin chao {display_name}!\n\n"
+        "Day la tin nhan test tu he thong Chi Phi Ads Dashboard.\n"
+        "Neu ban nhan duoc tin nay, bao cao sau nay se duoc gui ve dung Telegram nay."
+    )
+    payload = json.dumps({
+        "chat_id": chat_id,
+        "text": text,
+    }).encode("utf-8")
+    req = urllib_request.Request(
+        url=f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urllib_request.urlopen(req, timeout=15) as resp:
+            body = resp.read().decode("utf-8", errors="ignore")
+            parsed = json.loads(body) if body else {}
+            if parsed.get("ok"):
+                return True, "Đã gửi tin nhắn test Telegram thành công."
+            return False, parsed.get("description", "Telegram từ chối gửi tin nhắn.")
+    except urllib_error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="ignore")
+        try:
+            parsed = json.loads(body) if body else {}
+            return False, parsed.get("description", f"Telegram HTTP {exc.code}")
+        except Exception:
+            return False, f"Telegram HTTP {exc.code}"
+    except Exception:
+        return False, "Không thể kết nối Telegram lúc này."
 
 
 def normalize_month_key(year: int, month: int) -> str:
@@ -626,10 +669,19 @@ def login():
         success_message = ""
         registered = request.args.get("registered", "").strip()
         telegram_ready = request.args.get("telegram_ready", "").strip()
+        telegram_test = request.args.get("telegram_test", "").strip()
         registered_username = request.args.get("username", "").strip()
         if registered == "1":
             success_message = (
-                f'Đăng ký thành công cho tài khoản "{registered_username}" và đã lưu Telegram. Vui lòng đăng nhập để vào hệ thống.'
+                (
+                    f'Đăng ký thành công cho tài khoản "{registered_username}". Telegram đã lưu và gửi test thành công. Vui lòng đăng nhập để vào hệ thống.'
+                    if telegram_test == "sent"
+                    else f'Đăng ký thành công cho tài khoản "{registered_username}". Telegram đã lưu nhưng chưa gửi được tin test: bot hệ thống chưa cấu hình.'
+                    if telegram_test == "not_configured"
+                    else f'Đăng ký thành công cho tài khoản "{registered_username}". Telegram đã lưu nhưng gửi test chưa thành công. Hãy kiểm tra lại Chat ID hoặc nhắn /start cho bot.'
+                    if telegram_test == "failed"
+                    else f'Đăng ký thành công cho tài khoản "{registered_username}" và đã lưu Telegram. Vui lòng đăng nhập để vào hệ thống.'
+                )
                 if registered_username and telegram_ready == "1"
                 else f'Đăng ký thành công cho tài khoản "{registered_username}". Vui lòng đăng nhập để vào hệ thống.'
                 if registered_username
@@ -902,8 +954,14 @@ def register_telegram():
         users[pending_username].pop("telegram_username", None)
     save_users_config(users)
 
+    test_ok, test_message = send_telegram_test_message(
+        normalized_chat_id,
+        user.get("display_name", pending_username),
+    )
+
     session.pop("pending_telegram_setup", None)
-    return redirect(url_for("login", registered="1", telegram_ready="1", username=pending_username))
+    telegram_test = "sent" if test_ok else "not_configured" if "chưa được cấu hình" in test_message else "failed"
+    return redirect(url_for("login", registered="1", telegram_ready="1", telegram_test=telegram_test, username=pending_username))
 
 
 @app.route("/logout", methods=["GET"])
@@ -1056,12 +1114,17 @@ def api_admin_list_users():
     users = load_users_config()
     result = []
     for uname, udata in users.items():
+        telegram_chat_id = udata.get("telegram_chat_id", "")
+        telegram_username = udata.get("telegram_username", "")
         result.append({
             "username": uname,
             "role": udata.get("role", "employee"),
             "team": udata.get("team", ""),
             "display_name": udata.get("display_name", uname),
             "sheet_url": udata.get("sheet_url", ""),
+            "telegram_chat_id": telegram_chat_id,
+            "telegram_username": telegram_username,
+            "telegram_connected": bool(telegram_chat_id),
         })
     return jsonify({"success": True, "users": result})
 

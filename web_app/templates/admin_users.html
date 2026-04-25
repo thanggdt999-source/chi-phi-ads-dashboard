@@ -50,6 +50,10 @@
         .badge-admin    { background: #7c3aed22; color: #a78bfa; border: 1px solid #7c3aed44; }
         .badge-lead     { background: #0369a122; color: #38bdf8; border: 1px solid #0369a144; }
         .badge-employee { background: #16a34a22; color: #86efac; border: 1px solid #16a34a44; }
+        .badge-telegram-on  { background: #0f766e22; color: #5eead4; border: 1px solid #0f766e55; }
+        .badge-telegram-off { background: #47556922; color: #cbd5e1; border: 1px solid #47556955; }
+        .telegram-meta { display: grid; gap: 3px; }
+        .telegram-meta small { color: #94a3b8; }
 
         /* ── Empty state ── */
         .empty-state { text-align: center; padding: 48px; color: #64748b; }
@@ -152,6 +156,7 @@
                         <th>Vai trò</th>
                         <th>Team</th>
                         <th>Sheet URL</th>
+                        <th>Telegram</th>
                         <th></th>
                     </tr>
                 </thead>
@@ -241,7 +246,7 @@
 
 <script>
     const TEAM_CODES = {{ team_codes | tojson }};
-    let usersData = {{ users_json | safe }};  // {username: {role, team, display_name, sheet_url}}
+    let usersData = {{ users_json | safe }};  // {username: {role, team, display_name, sheet_url, telegram_*}}
     let editingUsername = null;  // null = create mode
 
     // ── Render table ──────────────────────────────────────────────────
@@ -255,9 +260,13 @@
             const u = usersData[uname];
             const roleClass = `badge-${u.role}`;
             const roleLabel = u.role === 'admin' ? 'Admin' : u.role === 'lead' ? 'Lead' : 'Employee';
+            const telegramConnected = Boolean(u.telegram_connected || u.telegram_chat_id);
             const sheetCell = u.sheet_url
                 ? `<a href="${u.sheet_url}" target="_blank" title="${u.sheet_url}"><i class="fas fa-external-link-alt"></i> Xem sheet</a>`
                 : '<span style="color:#475569">—</span>';
+            const telegramCell = telegramConnected
+                ? `<div class="telegram-meta"><span class="badge badge-telegram-on">Đã kết nối</span><small>${u.telegram_username ? '@' + u.telegram_username : 'Chat ID: ' + u.telegram_chat_id}</small></div>`
+                : '<span class="badge badge-telegram-off">Chưa kết nối</span>';
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td><strong>${uname}</strong></td>
@@ -265,6 +274,7 @@
                 <td><span class="badge ${roleClass}">${roleLabel}</span></td>
                 <td>${u.team || '—'}</td>
                 <td>${sheetCell}</td>
+                <td>${telegramCell}</td>
                 <td>
                     <div class="td-actions">
                         <button class="btn btn-ghost" style="padding:6px 12px;font-size:0.8rem;" onclick="openEditModal('${uname}')">
@@ -435,6 +445,9 @@
                         team: u.team,
                         display_name: u.display_name,
                         sheet_url: u.sheet_url,
+                        telegram_chat_id: u.telegram_chat_id,
+                        telegram_username: u.telegram_username,
+                        telegram_connected: u.telegram_connected,
                     };
                 });
                 renderTable();
