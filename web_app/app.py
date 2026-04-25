@@ -28,7 +28,6 @@ USERS_FILE_PATH = Path(os.getenv("USERS_FILE_PATH", str(Path(__file__).parent.pa
 MONTHLY_SHEETS_ROOT = Path(os.getenv("MONTHLY_SHEETS_ROOT", str(Path(__file__).parent.parent / "storage" / "monthly_sheets")))
 STATIC_ASSET_VERSION = os.getenv("STATIC_ASSET_VERSION", str(int(datetime.now().timestamp())))
 TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "").strip().lstrip("@")
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 INTERNAL_CRON_SECRET = os.getenv("INTERNAL_CRON_SECRET", "").strip()
 TELEGRAM_REPORT_ENDPOINT = os.getenv(
     "TELEGRAM_REPORT_ENDPOINT",
@@ -412,9 +411,9 @@ def parse_row_date(value: str) -> Optional[date]:
 
 
 def send_telegram_message(chat_id: str, text: str, bot_token: str = "") -> tuple[bool, str]:
-    effective_token = (bot_token or TELEGRAM_BOT_TOKEN or "").strip()
+    effective_token = normalize_telegram_bot_token(bot_token)
     if not effective_token:
-        return False, "Bot Telegram của hệ thống chưa được cấu hình."
+        return False, "Bot token riêng của nhân viên chưa được cấu hình hợp lệ."
     if not chat_id:
         return False, "Thiếu Telegram Chat ID."
 
@@ -473,11 +472,12 @@ def send_telegram_test_message(chat_id: str, display_name: str, bot_token: str =
         "Day la tin nhan test tu he thong Chi Phi Ads Dashboard.\n"
         "Neu ban nhan duoc tin nay, bao cao sau nay se duoc gui ve dung Telegram nay."
     )
+    if not normalize_telegram_bot_token(bot_token):
+        return "not_configured", "Bot token riêng của nhân viên chưa hợp lệ hoặc còn thiếu."
+
     ok, message = send_telegram_message(chat_id, text, bot_token=bot_token)
     if ok:
         return "sent", "Đã gửi tin nhắn test Telegram thành công."
-    if not (bot_token or TELEGRAM_BOT_TOKEN):
-        return "not_configured", message
     return "failed", message
 
 
@@ -1162,7 +1162,7 @@ def login():
                 (
                     f'Đăng ký thành công cho tài khoản "{registered_username}". Telegram đã lưu và gửi test thành công. Vui lòng đăng nhập để vào hệ thống.'
                     if telegram_test == "sent"
-                    else f'Đăng ký thành công cho tài khoản "{registered_username}". Telegram đã lưu nhưng chưa gửi được tin test: bot hệ thống chưa cấu hình.'
+                    else f'Đăng ký thành công cho tài khoản "{registered_username}". Telegram đã lưu nhưng chưa gửi được tin test: bot token riêng chưa hợp lệ.'
                     if telegram_test == "not_configured"
                     else f'Đăng ký thành công cho tài khoản "{registered_username}". Telegram đã lưu nhưng gửi test chưa thành công. Hãy kiểm tra lại Chat ID hoặc nhắn /start cho bot.'
                     if telegram_test == "failed"
@@ -1512,7 +1512,7 @@ def register_telegram():
 
     if telegram_test != "sent":
         failed_msg = (
-            "Bot Telegram của hệ thống chưa được cấu hình. Hãy báo admin kiểm tra TELEGRAM_BOT_TOKEN rồi thử lại."
+            "Bot token riêng của bạn chưa hợp lệ. Hãy kiểm tra lại token bot và thử lại."
             if telegram_test == "not_configured"
             else "Gửi tin test chưa thành công. Hãy đảm bảo bạn đã nhắn /start cho bot rồi bấm thử lại."
         )
@@ -1691,7 +1691,7 @@ def employee_telegram_connect():
 
     if telegram_test != "sent":
         failed_msg = (
-            "Bot Telegram của hệ thống chưa được cấu hình. Hãy báo admin kiểm tra TELEGRAM_BOT_TOKEN rồi thử lại."
+            "Bot token riêng của bạn chưa hợp lệ. Hãy kiểm tra lại token bot và thử lại."
             if telegram_test == "not_configured"
             else "Gửi tin test chưa thành công. Hãy đảm bảo bạn đã nhắn /start cho bot rồi bấm thử lại."
         )

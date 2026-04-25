@@ -159,6 +159,30 @@
             margin: 14px 0 18px;
         }
 
+        .manual-toggle {
+            margin: 8px 0 14px;
+        }
+
+        .manual-panel {
+            display: none;
+            margin-top: 14px;
+            padding: 14px;
+            border-radius: 14px;
+            border: 1px dashed #bfdbfe;
+            background: #f8fbff;
+        }
+
+        .manual-panel.open {
+            display: block;
+        }
+
+        .manual-note {
+            color: #475569;
+            font-size: 0.9rem;
+            margin: 0 0 12px;
+            line-height: 1.6;
+        }
+
         .btn {
             display: inline-flex;
             align-items: center;
@@ -277,7 +301,6 @@
                     <button type="button" class="btn btn-ghost" id="auto-fill-telegram"><i class="fas fa-wand-magic-sparkles"></i> Tự lấy từ Telegram</button>
                     {% endif %}
                     <a class="btn btn-ghost" href="https://t.me/userinfobot" target="_blank" rel="noopener noreferrer"><i class="fas fa-circle-info"></i> Mở @userinfobot</a>
-                    <button type="button" class="btn btn-ghost" id="paste-chat-id"><i class="fas fa-paste"></i> Dán Chat ID</button>
                 </div>
 
                 <div id="auto-fill-status" class="alert alert-info" style="display:none;"></div>
@@ -285,24 +308,40 @@
                 <form method="post" action="{{ form_action or '' }}" id="telegram-setup-form">
                     <div class="form-grid">
                         <div class="field full">
-                            <label>Telegram Bot Username</label>
-                            <input type="text" id="telegram-bot-username" name="telegram_bot_username" value="{{ form_values.telegram_bot_username }}" placeholder="vd: my_team_bot hoặc @my_team_bot" autocomplete="off" autocapitalize="none" spellcheck="false">
-                            <small>Có thể để trống, hệ thống sẽ tự đọc từ token.</small>
-                        </div>
-                        <div class="field full">
                             <label>Telegram Bot Token</label>
                             <input type="password" id="telegram-bot-token" name="telegram_bot_token" value="{{ form_values.telegram_bot_token }}" placeholder="vd: 123456789:AA..." required autocomplete="off" spellcheck="false">
                             <small>Token bot riêng do BotFather cấp.</small>
                         </div>
-                        <div class="field">
-                            <label>Telegram Chat ID</label>
-                            <input type="text" id="telegram-chat-id" name="telegram_chat_id" value="{{ form_values.telegram_chat_id }}" placeholder="vd: 123456789 hoặc -1001234567890" required inputmode="numeric" autocomplete="off" autofocus>
-                            <small>Đây là khóa chính để hệ thống gửi báo cáo đúng cho bạn.</small>
+                    </div>
+
+                    <div class="manual-toggle">
+                        <button type="button" class="btn btn-ghost" id="toggle-manual-mode" aria-expanded="false">
+                            <i class="fas fa-sliders"></i>
+                            Bật chế độ nhập tay
+                        </button>
+                    </div>
+
+                    <div id="manual-fields" class="manual-panel" aria-hidden="true">
+                        <p class="manual-note">Chỉ dùng khi tự lấy chưa được. Nếu auto-fill thành công thì không cần điền thêm.</p>
+                        <div class="form-grid">
+                            <div class="field full">
+                                <label>Telegram Bot Username</label>
+                                <input type="text" id="telegram-bot-username" name="telegram_bot_username" value="{{ form_values.telegram_bot_username }}" placeholder="vd: my_team_bot hoặc @my_team_bot" autocomplete="off" autocapitalize="none" spellcheck="false">
+                                <small>Có thể để trống, hệ thống sẽ tự đọc từ token.</small>
+                            </div>
+                            <div class="field">
+                                <label>Telegram Chat ID</label>
+                                <input type="text" id="telegram-chat-id" name="telegram_chat_id" value="{{ form_values.telegram_chat_id }}" placeholder="vd: 123456789 hoặc -1001234567890" inputmode="numeric" autocomplete="off" autofocus>
+                                <small>Đây là khóa chính để hệ thống gửi báo cáo đúng cho bạn.</small>
+                            </div>
+                            <div class="field">
+                                <label>Telegram Username (không bắt buộc)</label>
+                                <input type="text" id="telegram-username" name="telegram_username" value="{{ form_values.telegram_username }}" placeholder="vd: nguyenthang_ads hoặc @nguyenthang_ads" autocomplete="off" autocapitalize="none" spellcheck="false">
+                                <small>Dùng để admin đối chiếu khi cần, không thay thế được Chat ID.</small>
+                            </div>
                         </div>
-                        <div class="field">
-                            <label>Telegram Username (không bắt buộc)</label>
-                            <input type="text" id="telegram-username" name="telegram_username" value="{{ form_values.telegram_username }}" placeholder="vd: nguyenthang_ads hoặc @nguyenthang_ads" autocomplete="off" autocapitalize="none" spellcheck="false">
-                            <small>Dùng để admin đối chiếu khi cần, không thay thế được Chat ID.</small>
+                        <div class="quick-actions" style="margin-bottom:0;">
+                            <button type="button" class="btn btn-ghost" id="paste-chat-id"><i class="fas fa-paste"></i> Dán Chat ID</button>
                         </div>
                     </div>
 
@@ -325,6 +364,8 @@
             const autoFillStatus = document.getElementById("auto-fill-status");
             const form = document.getElementById("telegram-setup-form");
             const submitButton = document.getElementById("submit-btn");
+            const manualToggleButton = document.getElementById("toggle-manual-mode");
+            const manualFields = document.getElementById("manual-fields");
 
             function normalizeChatId(raw) {
                 const value = String(raw || "").trim();
@@ -357,6 +398,35 @@
                 autoFillStatus.style.display = "block";
                 autoFillStatus.className = isError ? "alert alert-error" : "alert alert-info";
                 autoFillStatus.innerHTML = message;
+            }
+
+            function setManualMode(enabled) {
+                if (!manualToggleButton || !manualFields) {
+                    return;
+                }
+                manualFields.classList.toggle("open", enabled);
+                manualFields.setAttribute("aria-hidden", enabled ? "false" : "true");
+                manualToggleButton.setAttribute("aria-expanded", enabled ? "true" : "false");
+                manualToggleButton.innerHTML = enabled
+                    ? '<i class="fas fa-eye-slash"></i> Ẩn chế độ nhập tay'
+                    : '<i class="fas fa-sliders"></i> Bật chế độ nhập tay';
+            }
+
+            if (manualToggleButton && manualFields) {
+                const defaultManual = Boolean(
+                    (chatIdInput && String(chatIdInput.value || "").trim()) ||
+                    (usernameInput && String(usernameInput.value || "").trim()) ||
+                    (botUsernameInput && String(botUsernameInput.value || "").trim())
+                );
+                setManualMode(defaultManual);
+
+                manualToggleButton.addEventListener("click", function () {
+                    const current = manualToggleButton.getAttribute("aria-expanded") === "true";
+                    setManualMode(!current);
+                    if (!current && chatIdInput) {
+                        chatIdInput.focus();
+                    }
+                });
             }
 
             if (chatIdInput) {
@@ -440,12 +510,24 @@
             }
 
             if (form && submitButton) {
-                form.addEventListener("submit", function () {
+                form.addEventListener("submit", function (event) {
                     if (chatIdInput) {
                         chatIdInput.value = normalizeChatId(chatIdInput.value);
                     }
                     if (usernameInput) {
                         usernameInput.value = normalizeUsername(usernameInput.value);
+                    }
+                    if (!chatIdInput || !chatIdInput.value) {
+                        event.preventDefault();
+                        setManualMode(true);
+                        showAutoFillStatus(
+                            "Chưa có Chat ID. Hãy bấm Tự lấy từ Telegram hoặc mở chế độ nhập tay để điền Chat ID.",
+                            true
+                        );
+                        if (chatIdInput) {
+                            chatIdInput.focus();
+                        }
+                        return;
                     }
                     submitButton.disabled = true;
                     submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang hoàn tất...';
