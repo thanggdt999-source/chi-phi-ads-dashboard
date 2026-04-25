@@ -337,11 +337,6 @@ def employee_requires_telegram_setup(username: str, user: Optional[dict] = None)
 
     bot_username = normalize_telegram_bot_username(str(target_user.get("telegram_bot_username", "")))
     bot_token = normalize_telegram_bot_token(str(target_user.get("telegram_bot_token", "")))
-    # Fallback to system bot credentials so employees don't need to provide personal bot token.
-    if not bot_username:
-        bot_username = normalize_telegram_bot_username(TELEGRAM_BOT_USERNAME)
-    if not bot_token:
-        bot_token = normalize_telegram_bot_token(TELEGRAM_BOT_TOKEN)
     if not bot_username or not bot_token:
         return True
 
@@ -444,9 +439,9 @@ def parse_row_date(value: str) -> Optional[date]:
 
 
 def send_telegram_message(chat_id: str, text: str, bot_token: str = "") -> tuple[bool, str]:
-    effective_token = normalize_telegram_bot_token(bot_token) or normalize_telegram_bot_token(TELEGRAM_BOT_TOKEN)
+    effective_token = normalize_telegram_bot_token(bot_token)
     if not effective_token:
-        return False, "Bot token hệ thống chưa được cấu hình hợp lệ."
+        return False, "Bot token chưa được cấu hình hợp lệ."
     if not chat_id:
         return False, "Thiếu Telegram Chat ID."
 
@@ -505,9 +500,9 @@ def send_telegram_test_message(chat_id: str, display_name: str, bot_token: str =
         "Đây là tin nhắn test từ hệ thống Chi Phí Ads Dashboard.\n"
         "Nếu bạn nhận được tin này, các báo cáo sau sẽ được gửi đúng về Telegram này."
     )
-    effective_token = normalize_telegram_bot_token(bot_token) or normalize_telegram_bot_token(TELEGRAM_BOT_TOKEN)
+    effective_token = normalize_telegram_bot_token(bot_token)
     if not effective_token:
-        return "not_configured", "Bot token hệ thống chưa hợp lệ hoặc còn thiếu."
+        return "not_configured", "Bot token chưa hợp lệ hoặc còn thiếu."
 
     ok, message = send_telegram_message(chat_id, text, bot_token=effective_token)
     if ok:
@@ -1437,7 +1432,7 @@ def register_telegram():
         "telegram_bot_username": user.get("telegram_bot_username", ""),
         "telegram_bot_token": user.get("telegram_bot_token", ""),
     }
-    personal_bot_mode = not bool(normalize_telegram_bot_token(TELEGRAM_BOT_TOKEN))
+    personal_bot_mode = True
 
     if request.method == "GET":
         bind_code = ensure_telegram_bind_code(pending_username)
@@ -1493,15 +1488,10 @@ def register_telegram():
         )
 
     normalized_bot_token = normalize_telegram_bot_token(telegram_bot_token)
-    using_system_bot = False
-    if not normalized_bot_token:
-        normalized_bot_token = normalize_telegram_bot_token(TELEGRAM_BOT_TOKEN)
-        using_system_bot = bool(normalized_bot_token)
-
     if not normalized_bot_token:
         return render_template(
             "telegram_setup.html",
-            error="Bot token chưa sẵn sàng. Hãy copy token BotFather hoặc liên hệ admin cấu hình token hệ thống.",
+            error="Bot token chưa sẵn sàng. Hãy tạo bot bằng BotFather rồi dán token của bạn vào đây.",
             username=pending_username,
             display_name=user.get("display_name", pending_username),
             bot_username=TELEGRAM_BOT_USERNAME,
@@ -1550,7 +1540,7 @@ def register_telegram():
         chat_id=normalized_chat_id,
         telegram_username=normalized_username,
         bot_username=resolved_bot_username,
-        bot_token="" if using_system_bot else normalized_bot_token,
+        bot_token=normalized_bot_token,
         test_status=telegram_test,
     )
 
@@ -1596,7 +1586,7 @@ def employee_telegram_connect():
         "telegram_bot_username": user.get("telegram_bot_username", ""),
         "telegram_bot_token": user.get("telegram_bot_token", ""),
     }
-    personal_bot_mode = not bool(normalize_telegram_bot_token(TELEGRAM_BOT_TOKEN))
+    personal_bot_mode = True
 
     if request.method == "GET":
         if not employee_requires_telegram_setup(username, user):
@@ -1666,15 +1656,10 @@ def employee_telegram_connect():
         )
 
     normalized_bot_token = normalize_telegram_bot_token(telegram_bot_token)
-    using_system_bot = False
-    if not normalized_bot_token:
-        normalized_bot_token = normalize_telegram_bot_token(TELEGRAM_BOT_TOKEN)
-        using_system_bot = bool(normalized_bot_token)
-
     if not normalized_bot_token:
         return render_template(
             "telegram_setup.html",
-            error="Bot token chưa sẵn sàng. Hãy copy token BotFather hoặc liên hệ admin cấu hình token hệ thống.",
+            error="Bot token chưa sẵn sàng. Hãy tạo bot bằng BotFather rồi dán token của bạn vào đây.",
             username=username,
             display_name=user.get("display_name", username),
             bot_username=TELEGRAM_BOT_USERNAME,
@@ -1735,7 +1720,7 @@ def employee_telegram_connect():
         chat_id=normalized_chat_id,
         telegram_username=normalized_username,
         bot_username=resolved_bot_username,
-        bot_token="" if using_system_bot else normalized_bot_token,
+        bot_token=normalized_bot_token,
         test_status=telegram_test,
     )
 
@@ -1774,9 +1759,7 @@ def api_telegram_autofill():
     raw_bot_token = str(payload.get("telegram_bot_token", "")).strip()
     bot_token = normalize_telegram_bot_token(raw_bot_token)
     if not bot_token:
-        bot_token = normalize_telegram_bot_token(TELEGRAM_BOT_TOKEN)
-    if not bot_token:
-        return jsonify({"success": False, "error": "Bot token chưa sẵn sàng. Hãy copy token BotFather hoặc liên hệ admin cấu hình bot hệ thống."}), 400
+        return jsonify({"success": False, "error": "Bot token chưa sẵn sàng. Hãy copy token từ BotFather rồi thử lại."}), 400
 
     ok, bot_username, err = resolve_bot_username_from_token(bot_token)
     if not ok:
