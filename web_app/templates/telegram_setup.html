@@ -229,7 +229,11 @@
 
                 <div class="title">{{ title_text or 'Bước 2: Kết nối Telegram' }}</div>
                 <p class="subtitle">
+                    {% if personal_bot_mode %}
+                    Mỗi nhân viên dùng bot riêng và token riêng. Hãy nhập đúng bot + token của bạn để hệ thống gửi báo cáo đúng luồng.
+                    {% else %}
                     Bot và token đã được hệ thống cấu hình sẵn. Nhân viên chỉ cần nhập thông tin Telegram cá nhân để hệ thống gửi đúng báo cáo về đúng người.
+                    {% endif %}
                 </p>
 
                 <div class="user-pill">
@@ -242,11 +246,17 @@
                 {% endif %}
 
                 <div class="alert alert-info">
+                    {% if personal_bot_mode %}
+                    <strong>Thông tin cần điền:</strong> Telegram Chat ID + Bot username + Bot token đều bắt buộc. Khi bấm hoàn tất, hệ thống sẽ gửi 1 tin nhắn test bằng bot của chính bạn.
+                    {% else %}
                     <strong>Thông tin cần điền:</strong> Telegram Chat ID là bắt buộc. Telegram username chỉ để đối soát, có thể bỏ trống. Khi bấm hoàn tất, hệ thống sẽ tự gửi 1 tin nhắn test.
+                    {% endif %}
                 </div>
 
                 <ol class="guide-list">
-                    {% if bot_username %}
+                    {% if personal_bot_mode %}
+                    <li>Mở bot riêng của bạn trên Telegram và nhắn <strong>/start</strong>.</li>
+                    {% elif bot_username %}
                     <li>Mở bot <span class="bot-badge"><i class="fab fa-telegram-plane"></i> @{{ bot_username }}</span> và nhắn <strong>/start</strong>.</li>
                     {% else %}
                     <li>Nhắn <strong>/start</strong> cho bot Telegram của hệ thống.</li>
@@ -256,15 +266,25 @@
                 </ol>
 
                 <div class="quick-actions">
-                    {% if bot_username %}
+                    {% if bot_username and not personal_bot_mode %}
                     <a class="btn btn-ghost" href="https://t.me/{{ bot_username }}" target="_blank" rel="noopener noreferrer"><i class="fab fa-telegram-plane"></i> Mở bot @{{ bot_username }}</a>
                     {% endif %}
                     <a class="btn btn-ghost" href="https://t.me/userinfobot" target="_blank" rel="noopener noreferrer"><i class="fas fa-circle-info"></i> Mở @userinfobot</a>
                     <button type="button" class="btn btn-ghost" id="paste-chat-id"><i class="fas fa-paste"></i> Dán Chat ID</button>
                 </div>
 
-                <form method="post" action="{{ url_for('register_telegram') }}" id="telegram-setup-form">
+                <form method="post" action="{{ form_action or '' }}" id="telegram-setup-form">
                     <div class="form-grid">
+                        <div class="field full">
+                            <label>Telegram Bot Username</label>
+                            <input type="text" id="telegram-bot-username" name="telegram_bot_username" value="{{ form_values.telegram_bot_username }}" placeholder="vd: my_team_bot hoặc @my_team_bot" required autocomplete="off" autocapitalize="none" spellcheck="false">
+                            <small>Username bot riêng của bạn (không phải username cá nhân).</small>
+                        </div>
+                        <div class="field full">
+                            <label>Telegram Bot Token</label>
+                            <input type="password" id="telegram-bot-token" name="telegram_bot_token" value="{{ form_values.telegram_bot_token }}" placeholder="vd: 123456789:AA..." required autocomplete="off" spellcheck="false">
+                            <small>Token bot riêng do BotFather cấp.</small>
+                        </div>
                         <div class="field">
                             <label>Telegram Chat ID</label>
                             <input type="text" id="telegram-chat-id" name="telegram_chat_id" value="{{ form_values.telegram_chat_id }}" placeholder="vd: 123456789 hoặc -1001234567890" required inputmode="numeric" autocomplete="off" autofocus>

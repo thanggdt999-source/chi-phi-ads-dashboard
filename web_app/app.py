@@ -206,6 +206,17 @@ def normalize_telegram_username(value: str) -> str:
     return ""
 
 
+def normalize_telegram_bot_username(value: str) -> str:
+    return normalize_telegram_username(value)
+
+
+def normalize_telegram_bot_token(value: str) -> str:
+    token = (value or "").strip()
+    if re.fullmatch(r"\d{6,12}:[A-Za-z0-9_-]{30,80}", token):
+        return token
+    return ""
+
+
 def employee_requires_telegram_setup(username: str, user: Optional[dict] = None) -> bool:
     target_user = user or get_user(username)
     if not target_user or target_user.get("role") != "employee":
@@ -213,6 +224,11 @@ def employee_requires_telegram_setup(username: str, user: Optional[dict] = None)
 
     chat_id = normalize_telegram_chat_id(str(target_user.get("telegram_chat_id", "")))
     if not chat_id:
+        return True
+
+    bot_username = normalize_telegram_bot_username(str(target_user.get("telegram_bot_username", "")))
+    bot_token = normalize_telegram_bot_token(str(target_user.get("telegram_bot_token", "")))
+    if not bot_username or not bot_token:
         return True
 
     # Backward compatibility: old users may not have verified flags but already have a working chat_id.
@@ -229,6 +245,8 @@ def save_employee_telegram_setup(
     *,
     chat_id: str,
     telegram_username: str,
+    bot_username: str,
+    bot_token: str,
     test_status: str,
 ) -> tuple[bool, dict]:
     users = load_users_config()
@@ -241,6 +259,9 @@ def save_employee_telegram_setup(
         user["telegram_username"] = telegram_username
     else:
         user.pop("telegram_username", None)
+
+    user["telegram_bot_username"] = bot_username
+    user["telegram_bot_token"] = bot_token
 
     user["telegram_verified"] = test_status == "sent"
     user["telegram_test_status"] = test_status
@@ -304,8 +325,9 @@ def parse_row_date(value: str) -> Optional[date]:
     return None
 
 
-def send_telegram_message(chat_id: str, text: str) -> tuple[bool, str]:
-    if not TELEGRAM_BOT_TOKEN:
+def send_telegram_message(chat_id: str, text: str, bot_token: str = "") -> tuple[bool, str]:
+    effective_token = (bot_token or TELEGRAM_BOT_TOKEN or "").strip()
+    if not effective_token:
         return False, "Bot Telegram của hệ thống chưa được cấu hình."
     if not chat_id:
         return False, "Thiếu Telegram Chat ID."
@@ -317,7 +339,7 @@ def send_telegram_message(chat_id: str, text: str) -> tuple[bool, str]:
         "disable_web_page_preview": True,
     }).encode("utf-8")
     req = urllib_request.Request(
-        url=f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+        url=f"https://api.telegram.org/bot{effective_token}/sendMessage",
         data=payload,
         headers={"Content-Type": "application/json"},
         method="POST",
@@ -341,16 +363,16 @@ def send_telegram_message(chat_id: str, text: str) -> tuple[bool, str]:
         return False, "Không thể kết nối Telegram lúc này."
 
 
-def send_telegram_test_message(chat_id: str, display_name: str) -> tuple[str, str]:
+def send_telegram_test_message(chat_id: str, display_name: str, bot_token: str = "") -> tuple[str, str]:
     text = (
         f"Xin chao {display_name}!\n\n"
         "Day la tin nhan test tu he thong Chi Phi Ads Dashboard.\n"
         "Neu ban nhan duoc tin nay, bao cao sau nay se duoc gui ve dung Telegram nay."
     )
-    ok, message = send_telegram_message(chat_id, text)
+    ok, message = send_telegram_message(chat_id, text, bot_token=bot_token)
     if ok:
         return "sent", "Đã gửi tin nhắn test Telegram thành công."
-    if not TELEGRAM_BOT_TOKEN:
+    if not (bot_token or TELEGRAM_BOT_TOKEN):
         return "not_configured", message
     return "failed", message
 
@@ -510,7 +532,8 @@ def run_telegram_report_job(*, force: bool = False, dry_run: bool = False, usern
             sent_count += 1
             continue
 
-        send_ok, send_info = send_telegram_message(chat_id, message)
+        personal_bot_token = normalize_telegram_bot_token(str(user.get("telegram_bot_token", "")))
+        send_ok, send_info = send_telegram_message(chat_id, message, bot_token=personal_bot_token)
         results.append({
             "username": username,
             "status": "sent" if send_ok else "failed",
@@ -1269,6 +1292,8 @@ def register_telegram():
     form_values = {
         "telegram_chat_id": user.get("telegram_chat_id", ""),
         "telegram_username": user.get("telegram_username", ""),
+        "telegram_bot_username": user.get("telegram_bot_username", ""),
+        "telegram_bot_token": user.get("telegram_bot_token", ""),
     }
 
     if request.method == "GET":
@@ -1279,13 +1304,18 @@ def register_telegram():
             display_name=user.get("display_name", pending_username),
             bot_username=TELEGRAM_BOT_USERNAME,
             form_values=form_values,
+            personal_bot_mode=True,
         )
 
     telegram_chat_id = request.form.get("telegram_chat_id", "").strip()
     telegram_username = request.form.get("telegram_username", "").strip()
+    telegram_bot_username = request.form.get("telegram_bot_username", "").strip()
+    telegram_bot_token = request.form.get("telegram_bot_token", "").strip()
     form_values = {
         "telegram_chat_id": telegram_chat_id,
         "telegram_username": telegram_username,
+        "telegram_bot_username": telegram_bot_username,
+        "telegram_bot_token": telegram_bot_token,
     }
 
     normalized_chat_id = normalize_telegram_chat_id(telegram_chat_id)
@@ -1297,6 +1327,7 @@ def register_telegram():
             display_name=user.get("display_name", pending_username),
             bot_username=TELEGRAM_BOT_USERNAME,
             form_values=form_values,
+            personal_bot_mode=True,
         )
 
     normalized_username = normalize_telegram_username(telegram_username)
@@ -1308,17 +1339,45 @@ def register_telegram():
             display_name=user.get("display_name", pending_username),
             bot_username=TELEGRAM_BOT_USERNAME,
             form_values=form_values,
+            personal_bot_mode=True,
+        )
+
+    normalized_bot_username = normalize_telegram_bot_username(telegram_bot_username)
+    if not normalized_bot_username:
+        return render_template(
+            "telegram_setup.html",
+            error="Telegram bot username không hợp lệ. Ví dụ: my_team_bot hoặc @my_team_bot.",
+            username=pending_username,
+            display_name=user.get("display_name", pending_username),
+            bot_username=TELEGRAM_BOT_USERNAME,
+            form_values=form_values,
+            personal_bot_mode=True,
+        )
+
+    normalized_bot_token = normalize_telegram_bot_token(telegram_bot_token)
+    if not normalized_bot_token:
+        return render_template(
+            "telegram_setup.html",
+            error="Telegram bot token không hợp lệ. Ví dụ: 123456789:AA....",
+            username=pending_username,
+            display_name=user.get("display_name", pending_username),
+            bot_username=TELEGRAM_BOT_USERNAME,
+            form_values=form_values,
+            personal_bot_mode=True,
         )
 
     telegram_test, _test_message = send_telegram_test_message(
         normalized_chat_id,
         user.get("display_name", pending_username),
+        bot_token=normalized_bot_token,
     )
 
     save_employee_telegram_setup(
         pending_username,
         chat_id=normalized_chat_id,
         telegram_username=normalized_username,
+        bot_username=normalized_bot_username,
+        bot_token=normalized_bot_token,
         test_status=telegram_test,
     )
 
@@ -1358,6 +1417,8 @@ def employee_telegram_connect():
     form_values = {
         "telegram_chat_id": user.get("telegram_chat_id", ""),
         "telegram_username": user.get("telegram_username", ""),
+        "telegram_bot_username": user.get("telegram_bot_username", ""),
+        "telegram_bot_token": user.get("telegram_bot_token", ""),
     }
 
     if request.method == "GET":
@@ -1374,13 +1435,18 @@ def employee_telegram_connect():
             back_text="Đăng xuất",
             submit_label="Lưu và gửi test",
             title_text="Kết nối Telegram trước khi vào hệ thống",
+            personal_bot_mode=True,
         )
 
     telegram_chat_id = request.form.get("telegram_chat_id", "").strip()
     telegram_username = request.form.get("telegram_username", "").strip()
+    telegram_bot_username = request.form.get("telegram_bot_username", "").strip()
+    telegram_bot_token = request.form.get("telegram_bot_token", "").strip()
     form_values = {
         "telegram_chat_id": telegram_chat_id,
         "telegram_username": telegram_username,
+        "telegram_bot_username": telegram_bot_username,
+        "telegram_bot_token": telegram_bot_token,
     }
 
     normalized_chat_id = normalize_telegram_chat_id(telegram_chat_id)
@@ -1396,6 +1462,7 @@ def employee_telegram_connect():
             back_text="Đăng xuất",
             submit_label="Lưu và gửi test",
             title_text="Kết nối Telegram trước khi vào hệ thống",
+            personal_bot_mode=True,
         )
 
     normalized_username = normalize_telegram_username(telegram_username)
@@ -1411,17 +1478,53 @@ def employee_telegram_connect():
             back_text="Đăng xuất",
             submit_label="Lưu và gửi test",
             title_text="Kết nối Telegram trước khi vào hệ thống",
+            personal_bot_mode=True,
+        )
+
+    normalized_bot_username = normalize_telegram_bot_username(telegram_bot_username)
+    if not normalized_bot_username:
+        return render_template(
+            "telegram_setup.html",
+            error="Telegram bot username không hợp lệ. Ví dụ: my_team_bot hoặc @my_team_bot.",
+            username=username,
+            display_name=user.get("display_name", username),
+            bot_username=TELEGRAM_BOT_USERNAME,
+            form_values=form_values,
+            back_url=url_for("logout"),
+            back_text="Đăng xuất",
+            submit_label="Lưu và gửi test",
+            title_text="Kết nối Telegram trước khi vào hệ thống",
+            personal_bot_mode=True,
+        )
+
+    normalized_bot_token = normalize_telegram_bot_token(telegram_bot_token)
+    if not normalized_bot_token:
+        return render_template(
+            "telegram_setup.html",
+            error="Telegram bot token không hợp lệ. Ví dụ: 123456789:AA....",
+            username=username,
+            display_name=user.get("display_name", username),
+            bot_username=TELEGRAM_BOT_USERNAME,
+            form_values=form_values,
+            back_url=url_for("logout"),
+            back_text="Đăng xuất",
+            submit_label="Lưu và gửi test",
+            title_text="Kết nối Telegram trước khi vào hệ thống",
+            personal_bot_mode=True,
         )
 
     telegram_test, _test_message = send_telegram_test_message(
         normalized_chat_id,
         user.get("display_name", username),
+        bot_token=normalized_bot_token,
     )
 
     save_employee_telegram_setup(
         username,
         chat_id=normalized_chat_id,
         telegram_username=normalized_username,
+        bot_username=normalized_bot_username,
+        bot_token=normalized_bot_token,
         test_status=telegram_test,
     )
 
@@ -1442,6 +1545,7 @@ def employee_telegram_connect():
             back_text="Đăng xuất",
             submit_label="Thử gửi test lại",
             title_text="Kết nối Telegram trước khi vào hệ thống",
+            personal_bot_mode=True,
         )
 
     return redirect(next_target)
@@ -1611,6 +1715,7 @@ def api_admin_list_users():
     for uname, udata in users.items():
         telegram_chat_id = udata.get("telegram_chat_id", "")
         telegram_username = udata.get("telegram_username", "")
+        telegram_bot_username = udata.get("telegram_bot_username", "")
         result.append({
             "username": uname,
             "role": udata.get("role", "employee"),
@@ -1619,6 +1724,7 @@ def api_admin_list_users():
             "sheet_url": udata.get("sheet_url", ""),
             "telegram_chat_id": telegram_chat_id,
             "telegram_username": telegram_username,
+            "telegram_bot_username": telegram_bot_username,
             "telegram_connected": bool(telegram_chat_id),
             "telegram_verified": bool(udata.get("telegram_verified", False)),
             "telegram_test_status": udata.get("telegram_test_status", ""),
