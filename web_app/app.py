@@ -206,6 +206,49 @@ def normalize_telegram_username(value: str) -> str:
     return ""
 
 
+def employee_requires_telegram_setup(username: str, user: Optional[dict] = None) -> bool:
+    target_user = user or get_user(username)
+    if not target_user or target_user.get("role") != "employee":
+        return False
+
+    chat_id = normalize_telegram_chat_id(str(target_user.get("telegram_chat_id", "")))
+    if not chat_id:
+        return True
+
+    # Backward compatibility: old users may not have verified flags but already have a working chat_id.
+    if "telegram_verified" not in target_user and "telegram_test_status" not in target_user:
+        return False
+
+    if target_user.get("telegram_test_status") == "sent":
+        return False
+    return not bool(target_user.get("telegram_verified", False))
+
+
+def save_employee_telegram_setup(
+    username: str,
+    *,
+    chat_id: str,
+    telegram_username: str,
+    test_status: str,
+) -> tuple[bool, dict]:
+    users = load_users_config()
+    user = users.get(username)
+    if not user or user.get("role") != "employee":
+        return False, {}
+
+    user["telegram_chat_id"] = chat_id
+    if telegram_username:
+        user["telegram_username"] = telegram_username
+    else:
+        user.pop("telegram_username", None)
+
+    user["telegram_verified"] = test_status == "sent"
+    user["telegram_test_status"] = test_status
+    user["telegram_last_test_at"] = datetime.now().isoformat(timespec="seconds")
+    save_users_config(users)
+    return True, user
+
+
 def get_safe_next_url(raw_next: str) -> str:
     next_url = (raw_next or "").strip()
     if next_url.startswith("/") and not next_url.startswith("//"):
@@ -744,6 +787,15 @@ def login_required(view_func):
     def wrapper(*args, **kwargs):
         if not is_logged_in():
             return redirect(url_for("login", next=request.path))
+
+        username = session.get("username", "")
+        role = session.get("role", "employee")
+        if (
+            role == "employee"
+            and request.endpoint != "employee_telegram_connect"
+            and employee_requires_telegram_setup(username)
+        ):
+            return redirect(url_for("employee_telegram_connect", next=request.path))
         return view_func(*args, **kwargs)
     return wrapper
 
@@ -753,6 +805,15 @@ def api_login_required(view_func):
     def wrapper(*args, **kwargs):
         if not is_logged_in():
             return jsonify({"success": False, "error": "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."}), 401
+
+        username = session.get("username", "")
+        role = session.get("role", "employee")
+        if role == "employee" and employee_requires_telegram_setup(username):
+            return jsonify({
+                "success": False,
+                "error": "Vui lòng kết nối Telegram và gửi test thành công trước khi sử dụng hệ thống.",
+                "setup_url": url_for("employee_telegram_connect"),
+            }), 428
         return view_func(*args, **kwargs)
     return wrapper
 
@@ -1006,6 +1067,8 @@ def login():
     if user and user.get("password") == password and user.get("role") == "employee":
         set_session_user(username, user, elevated=False)
         next_url = get_safe_next_url(request.args.get("next", ""))
+        if employee_requires_telegram_setup(username, user):
+            return redirect(url_for("employee_telegram_connect", next=next_url))
         return redirect(next_url)
 
     error_message = "Sai tài khoản hoặc mật khẩu"
@@ -1177,6 +1240,8 @@ def register_employee():
         "team": team,
         "display_name": display_name,
         "sheet_url": clean_url or sheet_url,
+        "telegram_verified": False,
+        "telegram_test_status": "pending",
     }
     save_users_config(users)
     if clean_url:
@@ -1245,20 +1310,141 @@ def register_telegram():
             form_values=form_values,
         )
 
-    users[pending_username]["telegram_chat_id"] = normalized_chat_id
-    if normalized_username:
-        users[pending_username]["telegram_username"] = normalized_username
-    else:
-        users[pending_username].pop("telegram_username", None)
-    save_users_config(users)
-
     telegram_test, _test_message = send_telegram_test_message(
         normalized_chat_id,
         user.get("display_name", pending_username),
     )
 
+    save_employee_telegram_setup(
+        pending_username,
+        chat_id=normalized_chat_id,
+        telegram_username=normalized_username,
+        test_status=telegram_test,
+    )
+
+    if telegram_test != "sent":
+        failed_msg = (
+            "Bot Telegram của hệ thống chưa được cấu hình. Hãy báo admin kiểm tra TELEGRAM_BOT_TOKEN rồi thử lại."
+            if telegram_test == "not_configured"
+            else "Gửi tin test chưa thành công. Hãy đảm bảo bạn đã nhắn /start cho bot rồi bấm thử lại."
+        )
+        return render_template(
+            "telegram_setup.html",
+            error=failed_msg,
+            username=pending_username,
+            display_name=user.get("display_name", pending_username),
+            bot_username=TELEGRAM_BOT_USERNAME,
+            form_values=form_values,
+            back_url=url_for("register_employee"),
+            back_text="Quay lại đăng ký",
+            submit_label="Thử gửi test lại",
+            title_text="Bước 2: Kết nối Telegram",
+        )
+
     session.pop("pending_telegram_setup", None)
     return redirect(url_for("login", registered="1", telegram_ready="1", telegram_test=telegram_test, username=pending_username))
+
+
+@app.route("/telegram/connect", methods=["GET", "POST"])
+@login_required
+def employee_telegram_connect():
+    username = session.get("username", "")
+    users = load_users_config()
+    user = users.get(username)
+    if not user or user.get("role") != "employee":
+        return redirect(url_for("index"))
+
+    next_target = get_safe_next_url(request.args.get("next", ""))
+    form_values = {
+        "telegram_chat_id": user.get("telegram_chat_id", ""),
+        "telegram_username": user.get("telegram_username", ""),
+    }
+
+    if request.method == "GET":
+        if not employee_requires_telegram_setup(username, user):
+            return redirect(next_target)
+        return render_template(
+            "telegram_setup.html",
+            error="",
+            username=username,
+            display_name=user.get("display_name", username),
+            bot_username=TELEGRAM_BOT_USERNAME,
+            form_values=form_values,
+            back_url=url_for("logout"),
+            back_text="Đăng xuất",
+            submit_label="Lưu và gửi test",
+            title_text="Kết nối Telegram trước khi vào hệ thống",
+        )
+
+    telegram_chat_id = request.form.get("telegram_chat_id", "").strip()
+    telegram_username = request.form.get("telegram_username", "").strip()
+    form_values = {
+        "telegram_chat_id": telegram_chat_id,
+        "telegram_username": telegram_username,
+    }
+
+    normalized_chat_id = normalize_telegram_chat_id(telegram_chat_id)
+    if not normalized_chat_id:
+        return render_template(
+            "telegram_setup.html",
+            error="Telegram Chat ID không hợp lệ. Ví dụ: 123456789 hoặc -1001234567890.",
+            username=username,
+            display_name=user.get("display_name", username),
+            bot_username=TELEGRAM_BOT_USERNAME,
+            form_values=form_values,
+            back_url=url_for("logout"),
+            back_text="Đăng xuất",
+            submit_label="Lưu và gửi test",
+            title_text="Kết nối Telegram trước khi vào hệ thống",
+        )
+
+    normalized_username = normalize_telegram_username(telegram_username)
+    if telegram_username and not normalized_username:
+        return render_template(
+            "telegram_setup.html",
+            error="Telegram username không hợp lệ. Ví dụ: nguyenthang_ads hoặc @nguyenthang_ads.",
+            username=username,
+            display_name=user.get("display_name", username),
+            bot_username=TELEGRAM_BOT_USERNAME,
+            form_values=form_values,
+            back_url=url_for("logout"),
+            back_text="Đăng xuất",
+            submit_label="Lưu và gửi test",
+            title_text="Kết nối Telegram trước khi vào hệ thống",
+        )
+
+    telegram_test, _test_message = send_telegram_test_message(
+        normalized_chat_id,
+        user.get("display_name", username),
+    )
+
+    save_employee_telegram_setup(
+        username,
+        chat_id=normalized_chat_id,
+        telegram_username=normalized_username,
+        test_status=telegram_test,
+    )
+
+    if telegram_test != "sent":
+        failed_msg = (
+            "Bot Telegram của hệ thống chưa được cấu hình. Hãy báo admin kiểm tra TELEGRAM_BOT_TOKEN rồi thử lại."
+            if telegram_test == "not_configured"
+            else "Gửi tin test chưa thành công. Hãy đảm bảo bạn đã nhắn /start cho bot rồi bấm thử lại."
+        )
+        return render_template(
+            "telegram_setup.html",
+            error=failed_msg,
+            username=username,
+            display_name=user.get("display_name", username),
+            bot_username=TELEGRAM_BOT_USERNAME,
+            form_values=form_values,
+            back_url=url_for("logout"),
+            back_text="Đăng xuất",
+            submit_label="Thử gửi test lại",
+            title_text="Kết nối Telegram trước khi vào hệ thống",
+        )
+
+    return redirect(next_target)
 
 
 @app.route("/logout", methods=["GET"])
@@ -1434,6 +1620,8 @@ def api_admin_list_users():
             "telegram_chat_id": telegram_chat_id,
             "telegram_username": telegram_username,
             "telegram_connected": bool(telegram_chat_id),
+            "telegram_verified": bool(udata.get("telegram_verified", False)),
+            "telegram_test_status": udata.get("telegram_test_status", ""),
         })
     return jsonify({"success": True, "users": result})
 
@@ -1472,6 +1660,8 @@ def api_admin_create_user():
     if role == "employee" and sheet_url:
         sheet_name, month_key, clean_url = get_sheet_name_and_month(sheet_url)
         users[username]["sheet_url"] = clean_url or sheet_url
+        users[username]["telegram_verified"] = False
+        users[username]["telegram_test_status"] = "pending"
         if clean_url:
             save_monthly_sheet_record(username, clean_url, sheet_name or username, month_key)
 

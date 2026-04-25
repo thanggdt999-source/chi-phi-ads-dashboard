@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Thiết lập Telegram - Chi Phí Ads Dashboard</title>
+    <title>{{ title_text or 'Thiết lập Telegram' }} - Chi Phí Ads Dashboard</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
         body {
@@ -225,9 +225,9 @@
     <div class="shell">
         <div class="card">
             <section class="wrap">
-                <a href="{{ url_for('register_employee') }}" class="back-link"><i class="fas fa-arrow-left"></i> Quay lại đăng ký</a>
+                <a href="{{ back_url or url_for('register_employee') }}" class="back-link"><i class="fas fa-arrow-left"></i> {{ back_text or 'Quay lại đăng ký' }}</a>
 
-                <div class="title">Bước 2: Kết nối Telegram</div>
+                <div class="title">{{ title_text or 'Bước 2: Kết nối Telegram' }}</div>
                 <p class="subtitle">
                     Bot và token đã được hệ thống cấu hình sẵn. Nhân viên chỉ cần nhập thông tin Telegram cá nhân để hệ thống gửi đúng báo cáo về đúng người.
                 </p>
@@ -278,7 +278,7 @@
                     </div>
 
                     <div class="actions">
-                        <button type="submit" class="btn btn-primary" id="submit-btn"><i class="fas fa-paper-plane"></i> Hoàn tất và gửi tin test</button>
+                        <button type="submit" class="btn btn-primary" id="submit-btn"><i class="fas fa-paper-plane"></i> {{ submit_label or 'Hoàn tất và gửi tin test' }}</button>
                     </div>
                 </form>
             </section>

@@ -261,11 +261,12 @@
             const roleClass = `badge-${u.role}`;
             const roleLabel = u.role === 'admin' ? 'Admin' : u.role === 'lead' ? 'Lead' : 'Employee';
             const telegramConnected = Boolean(u.telegram_connected || u.telegram_chat_id);
+            const telegramVerified = Boolean(u.telegram_verified);
             const sheetCell = u.sheet_url
                 ? `<a href="${u.sheet_url}" target="_blank" title="${u.sheet_url}"><i class="fas fa-external-link-alt"></i> Xem sheet</a>`
                 : '<span style="color:#475569">—</span>';
             const telegramCell = telegramConnected
-                ? `<div class="telegram-meta"><span class="badge badge-telegram-on">Đã kết nối</span><small>${u.telegram_username ? '@' + u.telegram_username : 'Chat ID: ' + u.telegram_chat_id}</small></div>`
+                ? `<div class="telegram-meta"><span class="badge ${telegramVerified ? 'badge-telegram-on' : 'badge-telegram-off'}">${telegramVerified ? 'Đã test OK' : 'Đã lưu, chưa test'}</span><small>${u.telegram_username ? '@' + u.telegram_username : 'Chat ID: ' + u.telegram_chat_id}</small></div>`
                 : '<span class="badge badge-telegram-off">Chưa kết nối</span>';
             const tr = document.createElement('tr');
             tr.innerHTML = `
