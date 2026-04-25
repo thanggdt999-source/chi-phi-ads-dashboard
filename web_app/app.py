@@ -1,3 +1,7 @@
+import argparse
+import html
+import sys
+
 from flask import Flask, render_template, render_template_string, request, jsonify, session, redirect, url_for
 from google.oauth2.service_account import Credentials
 import gspread
@@ -5,11 +9,12 @@ import re
 import os
 from pathlib import Path
 from functools import wraps
-from datetime import datetime
+from datetime import date, datetime
 import json
 from typing import Optional
 from urllib import error as urllib_error
 from urllib import request as urllib_request
+from zoneinfo import ZoneInfo
 
 app = Flask(__name__)
 app.secret_key = os.getenv("WEB_APP_SECRET_KEY", "change-this-secret-in-production")
@@ -22,6 +27,21 @@ MONTHLY_SHEETS_ROOT = Path(os.getenv("MONTHLY_SHEETS_ROOT", str(Path(__file__).p
 STATIC_ASSET_VERSION = os.getenv("STATIC_ASSET_VERSION", str(int(datetime.now().timestamp())))
 TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "").strip().lstrip("@")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+INTERNAL_CRON_SECRET = os.getenv("INTERNAL_CRON_SECRET", "").strip()
+TELEGRAM_REPORT_ENDPOINT = os.getenv(
+    "TELEGRAM_REPORT_ENDPOINT",
+    "https://ads.hexistoree.click/internal/telegram/reports/run",
+).strip()
+TELEGRAM_REPORT_STATE_PATH = Path(
+    os.getenv(
+        "TELEGRAM_REPORT_STATE_PATH",
+        str(Path(__file__).parent.parent / "storage" / "config" / "telegram_report_state.json"),
+    )
+)
+TELEGRAM_REPORT_TIMEZONE = os.getenv("TELEGRAM_REPORT_TIMEZONE", "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
+TELEGRAM_REPORT_START_HOUR = int(os.getenv("TELEGRAM_REPORT_START_HOUR", "6"))
+TELEGRAM_REPORT_END_HOUR = int(os.getenv("TELEGRAM_REPORT_END_HOUR", "23"))
+TELEGRAM_REPORT_MAX_PRODUCTS = max(1, int(os.getenv("TELEGRAM_REPORT_MAX_PRODUCTS", "8")))
 
 ROLE_LEVELS = {"admin": 3, "lead": 2, "employee": 1}
 TEAM_CODES = ["TEAM_1", "TEAM_2", "TEAM_3", "TEAM_4", "TEAM_5", "Fanmen"]
@@ -193,20 +213,65 @@ def get_safe_next_url(raw_next: str) -> str:
     return url_for("index")
 
 
-def send_telegram_test_message(chat_id: str, display_name: str) -> tuple[str, str]:
-    if not TELEGRAM_BOT_TOKEN:
-        return "not_configured", "Bot Telegram của hệ thống chưa được cấu hình."
-    if not chat_id:
-        return "failed", "Thiếu Telegram Chat ID."
+def get_notification_now() -> datetime:
+    try:
+        return datetime.now(ZoneInfo(TELEGRAM_REPORT_TIMEZONE))
+    except Exception:
+        return datetime.now()
 
-    text = (
-        f"Xin chao {display_name}!\n\n"
-        "Day la tin nhan test tu he thong Chi Phi Ads Dashboard.\n"
-        "Neu ban nhan duoc tin nay, bao cao sau nay se duoc gui ve dung Telegram nay."
-    )
+
+def is_notification_window(now: datetime) -> bool:
+    return TELEGRAM_REPORT_START_HOUR <= now.hour <= TELEGRAM_REPORT_END_HOUR
+
+
+def get_notification_slot(now: datetime) -> str:
+    slot_minute = 0 if now.minute < 30 else 30
+    return now.replace(minute=slot_minute, second=0, microsecond=0).strftime("%Y-%m-%d %H:%M")
+
+
+def load_telegram_report_state() -> dict:
+    TELEGRAM_REPORT_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if not TELEGRAM_REPORT_STATE_PATH.exists():
+        return {}
+
+    try:
+        with TELEGRAM_REPORT_STATE_PATH.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_telegram_report_state(state: dict) -> None:
+    TELEGRAM_REPORT_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with TELEGRAM_REPORT_STATE_PATH.open("w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+def parse_row_date(value: str) -> Optional[date]:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+
+    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def send_telegram_message(chat_id: str, text: str) -> tuple[bool, str]:
+    if not TELEGRAM_BOT_TOKEN:
+        return False, "Bot Telegram của hệ thống chưa được cấu hình."
+    if not chat_id:
+        return False, "Thiếu Telegram Chat ID."
+
     payload = json.dumps({
         "chat_id": chat_id,
         "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
     }).encode("utf-8")
     req = urllib_request.Request(
         url=f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
@@ -216,21 +281,236 @@ def send_telegram_test_message(chat_id: str, display_name: str) -> tuple[str, st
     )
 
     try:
-        with urllib_request.urlopen(req, timeout=15) as resp:
+        with urllib_request.urlopen(req, timeout=20) as resp:
             body = resp.read().decode("utf-8", errors="ignore")
             parsed = json.loads(body) if body else {}
             if parsed.get("ok"):
-                return "sent", "Đã gửi tin nhắn test Telegram thành công."
-            return "failed", parsed.get("description", "Telegram từ chối gửi tin nhắn.")
+                return True, "OK"
+            return False, parsed.get("description", "Telegram từ chối gửi tin nhắn.")
     except urllib_error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="ignore")
         try:
             parsed = json.loads(body) if body else {}
-            return "failed", parsed.get("description", f"Telegram HTTP {exc.code}")
+            return False, parsed.get("description", f"Telegram HTTP {exc.code}")
         except Exception:
-            return "failed", f"Telegram HTTP {exc.code}"
+            return False, f"Telegram HTTP {exc.code}"
     except Exception:
-        return "failed", "Không thể kết nối Telegram lúc này."
+        return False, "Không thể kết nối Telegram lúc này."
+
+
+def send_telegram_test_message(chat_id: str, display_name: str) -> tuple[str, str]:
+    text = (
+        f"Xin chao {display_name}!\n\n"
+        "Day la tin nhan test tu he thong Chi Phi Ads Dashboard.\n"
+        "Neu ban nhan duoc tin nay, bao cao sau nay se duoc gui ve dung Telegram nay."
+    )
+    ok, message = send_telegram_message(chat_id, text)
+    if ok:
+        return "sent", "Đã gửi tin nhắn test Telegram thành công."
+    if not TELEGRAM_BOT_TOKEN:
+        return "not_configured", message
+    return "failed", message
+
+
+def aggregate_product_metrics(rows: list) -> list:
+    product_map = {}
+    for row in rows:
+        product_name = (row.get("Tên sản phẩm - VN") or "Chưa rõ sản phẩm").strip() or "Chưa rõ sản phẩm"
+        entry = product_map.setdefault(product_name, {"name": product_name, "spend": 0.0, "data": 0})
+        entry["spend"] += parse_spend(row.get("Số tiền chi tiêu - VND", ""))
+        entry["data"] += parse_int(row.get("Số Data", ""))
+
+    products = []
+    for item in product_map.values():
+        spend = round(item["spend"])
+        data = item["data"]
+        products.append({
+            "name": item["name"],
+            "spend": spend,
+            "data": data,
+            "cost_per_data": round(spend / data) if data > 0 else 0,
+        })
+
+    products.sort(key=lambda item: (item["spend"], item["data"]), reverse=True)
+    return products
+
+
+def build_advice_lines(summary: dict, products: list) -> list:
+    advice = []
+    total_spend = summary.get("total_spend", 0)
+    total_data = summary.get("total_data", 0)
+    average_cost = summary.get("cost_per_data", 0)
+
+    if total_spend > 0 and total_data == 0:
+        advice.append("Chi phí đã phát sinh nhưng chưa có data. Cần kiểm tra ads, form hoặc tracking ngay.")
+
+    zero_data_products = [item for item in products if item["spend"] > 0 and item["data"] == 0]
+    if zero_data_products:
+        names = ", ".join(item["name"] for item in zero_data_products[:3])
+        advice.append(f"Sản phẩm chưa ra data nhưng đã tiêu tiền: {html.escape(names)}.")
+
+    expensive_products = [
+        item for item in products
+        if item["data"] > 0 and average_cost > 0 and item["cost_per_data"] >= average_cost * 1.4
+    ]
+    if expensive_products:
+        top_item = expensive_products[0]
+        advice.append(
+            f"{html.escape(top_item['name'])} đang có chi phí/data cao hơn mặt bằng chung ({top_item['cost_per_data']:,} VND/data)."
+        )
+
+    if products:
+        top_spend = products[0]
+        advice.append(
+            f"Sản phẩm tiêu nhiều nhất hiện tại: {html.escape(top_spend['name'])} ({top_spend['spend']:,} VND)."
+        )
+
+    if not advice:
+        advice.append("Tạm thời chưa phát hiện bất thường rõ ràng. Sẽ bổ sung rule cảnh báo chi tiết ở bước train sau.")
+
+    return advice[:3]
+
+
+def build_employee_report_message(username: str, user: dict, now: datetime) -> tuple[bool, str, str]:
+    sheet_url = (user.get("sheet_url") or "").strip()
+    sheet_id = extract_sheet_id(sheet_url)
+    if not sheet_id:
+        return False, "", "Sheet URL không hợp lệ."
+
+    result = fetch_chi_phi_ads_data(sheet_id)
+    if not result.get("success"):
+        return False, "", result.get("error", "Không đọc được dữ liệu sheet.")
+
+    today = now.date()
+    rows = [row for row in result.get("data", []) if parse_row_date(row.get("Ngày", "")) == today]
+    products = aggregate_product_metrics(rows)
+    total_spend = round(sum(parse_spend(row.get("Số tiền chi tiêu - VND", "")) for row in rows))
+    total_data = sum(parse_int(row.get("Số Data", "")) for row in rows)
+    cost_per_data = round(total_spend / total_data) if total_data > 0 else 0
+    ads_percent = (result.get("ads_percent") or "").strip() or "—"
+    summary = {
+        "total_spend": total_spend,
+        "total_data": total_data,
+        "cost_per_data": cost_per_data,
+        "ads_percent": ads_percent,
+    }
+    advice_lines = build_advice_lines(summary, products)
+
+    display_name = html.escape(user.get("display_name", username))
+    timestamp = html.escape(now.strftime("%H:%M %d/%m/%Y"))
+    product_lines = []
+    for item in products[:TELEGRAM_REPORT_MAX_PRODUCTS]:
+        product_lines.append(
+            f"• <b>{html.escape(item['name'])}</b>: {item['spend']:,} VND | {item['data']:,} data | {item['cost_per_data']:,} VND/data"
+        )
+
+    if not product_lines:
+        product_lines.append("• Chưa có dữ liệu sản phẩm cho hôm nay.")
+
+    if len(products) > TELEGRAM_REPORT_MAX_PRODUCTS:
+        product_lines.append(f"• ... và còn {len(products) - TELEGRAM_REPORT_MAX_PRODUCTS} sản phẩm khác.")
+
+    advice_text = "\n".join(f"• {line}" for line in advice_lines)
+    message = (
+        "<b>📊 Báo cáo Ads realtime</b>\n"
+        f"👤 {display_name}\n"
+        f"🕒 {timestamp}\n\n"
+        "<b>Báo cáo tổng quan</b>\n"
+        f"• Chi tiêu: <b>{total_spend:,} VND</b>\n"
+        f"• Data: <b>{total_data:,}</b>\n"
+        f"• Chi phí/data: <b>{cost_per_data:,} VND</b>\n"
+        f"• % Ads: <b>{html.escape(ads_percent)}</b>\n\n"
+        "<b>Báo cáo theo sản phẩm</b>\n"
+        f"{"\n".join(product_lines)}\n\n"
+        "<b>Cảnh báo / lời khuyên tạm thời</b>\n"
+        f"{advice_text}"
+    )
+    return True, message, "OK"
+
+
+def run_telegram_report_job(*, force: bool = False, dry_run: bool = False, usernames: Optional[list] = None) -> dict:
+    now = get_notification_now()
+    slot = get_notification_slot(now)
+    if not force and not is_notification_window(now):
+        return {"success": True, "slot": slot, "skipped": True, "reason": "outside_window", "results": []}
+
+    state = load_telegram_report_state()
+    last_slot = state.get("last_slot", "")
+    if not force and last_slot == slot:
+        return {"success": True, "slot": slot, "skipped": True, "reason": "already_sent", "results": []}
+
+    users = load_users_config()
+    selected = set(usernames or [])
+    results = []
+    sent_count = 0
+
+    for username, user in users.items():
+        if user.get("role") != "employee":
+            continue
+        if selected and username not in selected:
+            continue
+
+        chat_id = (user.get("telegram_chat_id") or "").strip()
+        sheet_url = (user.get("sheet_url") or "").strip()
+        if not chat_id or not sheet_url:
+            results.append({"username": username, "status": "skipped", "reason": "missing_chat_or_sheet"})
+            continue
+
+        ok, message, info = build_employee_report_message(username, user, now)
+        if not ok:
+            results.append({"username": username, "status": "failed", "reason": info})
+            continue
+
+        if dry_run:
+            print(f"\n===== {username} =====\n{message}\n")
+            results.append({"username": username, "status": "dry_run"})
+            sent_count += 1
+            continue
+
+        send_ok, send_info = send_telegram_message(chat_id, message)
+        results.append({
+            "username": username,
+            "status": "sent" if send_ok else "failed",
+            "reason": send_info,
+        })
+        if send_ok:
+            sent_count += 1
+
+    if sent_count > 0 and not dry_run:
+        state["last_slot"] = slot
+        state["last_run_at"] = now.strftime("%Y-%m-%d %H:%M:%S")
+        save_telegram_report_state(state)
+
+    return {"success": True, "slot": slot, "skipped": False, "results": results, "sent_count": sent_count}
+
+
+def trigger_telegram_report_job_command(force: bool = False) -> int:
+    if not TELEGRAM_REPORT_ENDPOINT:
+        print("Thieu TELEGRAM_REPORT_ENDPOINT.")
+        return 1
+    if not INTERNAL_CRON_SECRET:
+        print("Thieu INTERNAL_CRON_SECRET.")
+        return 1
+
+    payload = json.dumps({"force": bool(force)}).encode("utf-8")
+    req = urllib_request.Request(
+        url=TELEGRAM_REPORT_ENDPOINT,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {INTERNAL_CRON_SECRET}",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib_request.urlopen(req, timeout=60) as resp:
+            body = resp.read().decode("utf-8", errors="ignore")
+            print(body)
+            return 0
+    except Exception as exc:
+        print(f"Trigger job that bai: {exc}")
+        return 1
 
 
 def normalize_month_key(year: int, month: int) -> str:
@@ -1087,6 +1367,18 @@ def list_sheets():
     sheets = [{"name": s["name"], "url": s["url"], "team": s.get("team", "")} for s in accessible]
     return jsonify({"success": True, "sheets": sheets})
 
+
+@app.route("/internal/telegram/reports/run", methods=["POST"])
+def run_internal_telegram_reports():
+    auth_header = request.headers.get("Authorization", "")
+    expected = f"Bearer {INTERNAL_CRON_SECRET}" if INTERNAL_CRON_SECRET else ""
+    if not expected or auth_header != expected:
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+
+    payload = request.get_json(silent=True) or {}
+    result = run_telegram_report_job(force=bool(payload.get("force", False)))
+    return jsonify(result)
+
 # ─────────────────── ADMIN USER MANAGEMENT ───────────────────
 
 def save_users_config(config: dict) -> None:
@@ -1379,7 +1671,50 @@ def view_month_folder(month_key):
         entries=entries,
     )
 
+def build_cli_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Chi Phi Ads web app utility commands")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    reports_parser = subparsers.add_parser(
+        "send-telegram-reports",
+        help="Build and send realtime Telegram report messages for employees",
+    )
+    reports_parser.add_argument("--username", action="append", help="Chi gui cho 1 user cu the. Co the lap lai flag nay.")
+    reports_parser.add_argument("--dry-run", action="store_true", help="In noi dung tin nhan ra terminal, khong gui that")
+    reports_parser.add_argument("--force", action="store_true", help="Bo qua gio gui va check duplicate slot")
+
+    trigger_parser = subparsers.add_parser(
+        "trigger-telegram-reports",
+        help="Call the internal cron endpoint to run Telegram reports on the live web service",
+    )
+    trigger_parser.add_argument("--force", action="store_true", help="Gui kem force=true cho internal cron endpoint")
+    return parser
+
+
+def main_cli() -> int:
+    parser = build_cli_parser()
+    args = parser.parse_args()
+
+    if args.command == "send-telegram-reports":
+        result = run_telegram_report_job(
+            force=bool(args.force),
+            dry_run=bool(args.dry_run),
+            usernames=args.username,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "trigger-telegram-reports":
+        return trigger_telegram_report_job_command(force=bool(args.force))
+
+    parser.print_help()
+    return 1
+
+
 if __name__ == "__main__":
+    if len(sys.argv) > 1:
+        raise SystemExit(main_cli())
+
     port = int(os.getenv("PORT", "5000"))
     debug = os.getenv("FLASK_DEBUG", "1") == "1"
     app.run(debug=debug, host="0.0.0.0", port=port)

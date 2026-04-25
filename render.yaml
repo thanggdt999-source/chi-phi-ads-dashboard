@@ -19,3 +19,21 @@ services:
         sync: false
       - key: TELEGRAM_BOT_USERNAME
         sync: false
+      - key: INTERNAL_CRON_SECRET
+        generateValue: true
+
+  - type: cron
+    name: chi-phi-ads-telegram-reports
+    runtime: python
+    rootDir: web_app
+    schedule: "*/30 * * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py trigger-telegram-reports
+    envVars:
+      - key: TELEGRAM_REPORT_ENDPOINT
+        value: https://ads.hexistoree.click/internal/telegram/reports/run
+      - key: INTERNAL_CRON_SECRET
+        fromService:
+          name: chi-phi-ads-dashboard
+          type: web
+          envVarKey: INTERNAL_CRON_SECRET
