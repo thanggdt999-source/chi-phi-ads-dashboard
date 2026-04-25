@@ -148,7 +148,11 @@ async function fetchAndRender(sheetUrl, shouldAutoSave = true) {
 
         if (handleTelegramSetupGate(data, res.status)) return;
 
-        if (!data.success) { showError("❌ " + (data.error || "Không thể tải dữ liệu")); return; }
+        if (!data.success) {
+            const detail = buildSheetAccessHint(data);
+            showError("❌ " + (data.error || "Không thể tải dữ liệu") + (detail ? `\n${detail}` : ""));
+            return;
+        }
         if (!data.data || data.data.length === 0) { showError("⚠️ Sheet không có dữ liệu trong tab 'Chi phí ADS'"); return; }
 
         currentData  = { rows: data.data, headers: data.headers, ads_percent: data.ads_percent || "", memberSummaries: [] };
@@ -500,6 +504,12 @@ function renderAutoToggle() {
 async function saveSheetUrl(sheetUrl) {
     try {
         const data = await (await fetch("/api/save-sheet", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sheet_url: sheetUrl }) })).json();
+        if (!data.success) {
+            const detail = buildSheetAccessHint(data);
+            showError("⚠️ " + (data.error || "Không lưu được link sheet") + (detail ? `\n${detail}` : ""));
+            return;
+        }
+
         if (data.success) {
             if (!data.already_exists) showToast("✅ " + data.message);
             if (ROLE === "employee" && data.month_key) {
@@ -551,7 +561,22 @@ function escapeHtml(value) {
 function showError(message) {
     const div = document.getElementById("errorMessage");
     div.textContent = message;
+    div.style.whiteSpace = "pre-line";
     div.style.display = "block";
+}
+
+function buildSheetAccessHint(data) {
+    if (!data) return "";
+
+    if (Array.isArray(data.help_steps) && data.help_steps.length > 0) {
+        return data.help_steps.map((step, idx) => `${idx + 1}. ${step}`).join("\n");
+    }
+
+    if (typeof data.help === "string" && data.help.trim()) {
+        return data.help.trim();
+    }
+
+    return "";
 }
 function showToast(message) {
     let t = document.getElementById("toastNotification");

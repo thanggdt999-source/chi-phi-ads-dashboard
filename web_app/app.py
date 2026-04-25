@@ -781,6 +781,114 @@ def detect_month_key_from_text(text: str) -> str:
     return current_month_key()
 
 
+def get_service_account_client_email() -> str:
+    service_account_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
+    if service_account_json:
+        try:
+            service_account_info = json.loads(service_account_json)
+            return str(service_account_info.get("client_email", "")).strip()
+        except Exception:
+            return ""
+
+    if SERVICE_ACCOUNT_PATH.exists():
+        try:
+            with SERVICE_ACCOUNT_PATH.open("r", encoding="utf-8") as f:
+                service_account_info = json.load(f)
+            return str(service_account_info.get("client_email", "")).strip()
+        except Exception:
+            return ""
+
+    return ""
+
+
+def build_sheet_access_help(service_email: str) -> tuple[str, list]:
+    share_target = service_email or "email service account của hệ thống"
+    help_text = (
+        f"Mở Google Sheet > Chia sẻ > thêm {share_target} (quyền Người chỉnh sửa hoặc Người xem), "
+        "sau đó bấm tải lại."
+    )
+    steps = [
+        "Mở Google Sheet bạn vừa nhập.",
+        "Bấm nút Chia sẻ ở góc phải trên.",
+        f"Thêm {share_target} với quyền Người chỉnh sửa hoặc Người xem.",
+        "Bấm Xong, quay lại dashboard và tải lại link sheet.",
+    ]
+    return help_text, steps
+
+
+def inspect_sheet_access(sheet_url: str) -> dict:
+    sheet_id = extract_sheet_id(sheet_url)
+    if not sheet_id:
+        return {
+            "success": False,
+            "error": "URL Google Sheet không hợp lệ.",
+            "help": "Vui lòng dùng link dạng https://docs.google.com/spreadsheets/d/...",
+            "help_steps": [],
+            "service_account_email": get_service_account_client_email(),
+        }
+
+    clean_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit"
+    service_email = get_service_account_client_email()
+
+    try:
+        client = get_gspread_client()
+        spreadsheet = client.open_by_key(sheet_id)
+        sheet_name = spreadsheet.title or sheet_id
+        month_key = detect_month_key_from_text(sheet_name)
+        return {
+            "success": True,
+            "sheet_name": sheet_name,
+            "month_key": month_key,
+            "clean_url": clean_url,
+            "sheet_id": sheet_id,
+            "service_account_email": service_email,
+            "auto_connected": True,
+        }
+    except FileNotFoundError:
+        return {
+            "success": False,
+            "error": "Hệ thống chưa được cấu hình service account Google Sheets.",
+            "help": "Liên hệ quản trị viên để cấu hình GOOGLE_SERVICE_ACCOUNT_JSON hoặc file service_account.json.",
+            "help_steps": [],
+            "service_account_email": service_email,
+        }
+    except gspread.exceptions.SpreadsheetNotFound:
+        help_text, steps = build_sheet_access_help(service_email)
+        return {
+            "success": False,
+            "error": "Hệ thống chưa có quyền truy cập sheet này.",
+            "help": help_text,
+            "help_steps": steps,
+            "service_account_email": service_email,
+            "clean_url": clean_url,
+            "sheet_id": sheet_id,
+        }
+    except Exception as e:
+        raw_error = str(e)
+        lower_error = raw_error.lower()
+        if "permission" in lower_error or "forbidden" in lower_error or "<response [403]>" in lower_error:
+            help_text, steps = build_sheet_access_help(service_email)
+            return {
+                "success": False,
+                "error": "Sheet chưa cấp quyền cho hệ thống.",
+                "help": help_text,
+                "help_steps": steps,
+                "service_account_email": service_email,
+                "clean_url": clean_url,
+                "sheet_id": sheet_id,
+            }
+
+        return {
+            "success": False,
+            "error": raw_error,
+            "help": "Vui lòng kiểm tra lại link sheet và thử lại.",
+            "help_steps": [],
+            "service_account_email": service_email,
+            "clean_url": clean_url,
+            "sheet_id": sheet_id,
+        }
+
+
 def get_sheet_name_and_month(sheet_url: str) -> tuple[str, str, str]:
     sheet_id = extract_sheet_id(sheet_url)
     if not sheet_id:
@@ -1145,17 +1253,25 @@ def fetch_chi_phi_ads_data(sheet_id):
     except Exception as e:
         raw_error = str(e)
         lower_error = raw_error.lower()
+        service_email = get_service_account_client_email()
+        help_text, steps = build_sheet_access_help(service_email)
 
         if "<response [404]>" in lower_error:
             return {
                 "success": False,
-                "error": "Không tìm thấy sheet hoặc service account chưa được cấp quyền truy cập."
+                "error": "Không tìm thấy sheet hoặc hệ thống chưa được cấp quyền truy cập.",
+                "help": help_text,
+                "help_steps": steps,
+                "service_account_email": service_email,
             }
 
         if "permission" in lower_error or "forbidden" in lower_error or "<response [403]>" in lower_error:
             return {
                 "success": False,
-                "error": "Sheet chưa chia sẻ cho service account (Editor)."
+                "error": "Sheet chưa chia sẻ cho service account (Editor/Viewer).",
+                "help": help_text,
+                "help_steps": steps,
+                "service_account_email": service_email,
             }
 
         if "worksheetnotfound" in lower_error:
@@ -1421,7 +1537,22 @@ def register_employee():
             form_values=form_values,
         )
 
-    sheet_name, month_key, clean_url = get_sheet_name_and_month(sheet_url)
+    access = inspect_sheet_access(sheet_url)
+    if not access.get("success"):
+        register_error = access.get("error", "Không thể kết nối Google Sheet.")
+        register_help = access.get("help", "")
+        return render_template(
+            "register.html",
+            error=f"{register_error} {register_help}".strip(),
+            board_name=LOGIN_BOARD_NAME,
+            team_codes=TEAM_CODES,
+            form_values=form_values,
+        )
+
+    sheet_name = access.get("sheet_name", "")
+    month_key = access.get("month_key", current_month_key())
+    clean_url = access.get("clean_url", "")
+
     users[username] = {
         "password": password,
         "role": "employee",
@@ -2081,7 +2212,19 @@ def save_sheet():
 
     username = session.get("username", "")
     role = session.get("role", "employee")
-    sheet_name, month_key, clean_url = get_sheet_name_and_month(sheet_url)
+    access = inspect_sheet_access(sheet_url)
+    if not access.get("success"):
+        return jsonify({
+            "success": False,
+            "error": access.get("error", "Không thể kết nối Google Sheet."),
+            "help": access.get("help", ""),
+            "help_steps": access.get("help_steps", []),
+            "service_account_email": access.get("service_account_email", ""),
+        }), 400
+
+    sheet_name = access.get("sheet_name", "")
+    month_key = access.get("month_key", current_month_key())
+    clean_url = access.get("clean_url", "")
     if not clean_url:
         return jsonify({"success": False, "error": "URL không hợp lệ"}), 400
 
@@ -2115,6 +2258,7 @@ def save_sheet():
         "month_key": month_key,
         "month_label": month_label(month_key),
         "clean_url": clean_url,
+        "service_account_email": access.get("service_account_email", ""),
         "folder_url": url_for("view_month_folder", month_key=month_key),
     })
 
