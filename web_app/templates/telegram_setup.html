@@ -152,6 +152,13 @@
             justify-content: flex-start;
         }
 
+        .quick-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin: 14px 0 18px;
+        }
+
         .btn {
             display: inline-flex;
             align-items: center;
@@ -170,6 +177,17 @@
             background: linear-gradient(135deg, #3498db, #2563eb);
             color: #fff;
             box-shadow: 0 16px 34px rgba(37, 99, 235, 0.22);
+        }
+
+        .btn-ghost {
+            background: #eef2ff;
+            color: #1e40af;
+            border: 1px solid #c7d2fe;
+        }
+
+        .btn[disabled] {
+            opacity: 0.7;
+            cursor: wait;
         }
 
         .bot-badge {
@@ -237,26 +255,105 @@
                     <li>Dán Chat ID vào form bên dưới để hoàn tất nhận báo cáo tự động.</li>
                 </ol>
 
-                <form method="post" action="{{ url_for('register_telegram') }}">
+                <div class="quick-actions">
+                    {% if bot_username %}
+                    <a class="btn btn-ghost" href="https://t.me/{{ bot_username }}" target="_blank" rel="noopener noreferrer"><i class="fab fa-telegram-plane"></i> Mở bot @{{ bot_username }}</a>
+                    {% endif %}
+                    <a class="btn btn-ghost" href="https://t.me/userinfobot" target="_blank" rel="noopener noreferrer"><i class="fas fa-circle-info"></i> Mở @userinfobot</a>
+                    <button type="button" class="btn btn-ghost" id="paste-chat-id"><i class="fas fa-paste"></i> Dán Chat ID</button>
+                </div>
+
+                <form method="post" action="{{ url_for('register_telegram') }}" id="telegram-setup-form">
                     <div class="form-grid">
                         <div class="field">
                             <label>Telegram Chat ID</label>
-                            <input type="text" name="telegram_chat_id" value="{{ form_values.telegram_chat_id }}" placeholder="vd: 123456789 hoặc -1001234567890" required inputmode="numeric" autocomplete="off">
+                            <input type="text" id="telegram-chat-id" name="telegram_chat_id" value="{{ form_values.telegram_chat_id }}" placeholder="vd: 123456789 hoặc -1001234567890" required inputmode="numeric" autocomplete="off" autofocus>
                             <small>Đây là khóa chính để hệ thống gửi báo cáo đúng cho bạn.</small>
                         </div>
                         <div class="field">
                             <label>Telegram Username (không bắt buộc)</label>
-                            <input type="text" name="telegram_username" value="{{ form_values.telegram_username }}" placeholder="vd: nguyenthang_ads hoặc @nguyenthang_ads" autocomplete="off">
+                            <input type="text" id="telegram-username" name="telegram_username" value="{{ form_values.telegram_username }}" placeholder="vd: nguyenthang_ads hoặc @nguyenthang_ads" autocomplete="off" autocapitalize="none" spellcheck="false">
                             <small>Dùng để admin đối chiếu khi cần, không thay thế được Chat ID.</small>
                         </div>
                     </div>
 
                     <div class="actions">
-                        <button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane"></i> Hoàn tất và gửi tin test</button>
+                        <button type="submit" class="btn btn-primary" id="submit-btn"><i class="fas fa-paper-plane"></i> Hoàn tất và gửi tin test</button>
                     </div>
                 </form>
             </section>
         </div>
     </div>
+
+    <script>
+        (function () {
+            const chatIdInput = document.getElementById("telegram-chat-id");
+            const usernameInput = document.getElementById("telegram-username");
+            const pasteButton = document.getElementById("paste-chat-id");
+            const form = document.getElementById("telegram-setup-form");
+            const submitButton = document.getElementById("submit-btn");
+
+            function normalizeChatId(raw) {
+                const value = String(raw || "").trim();
+                if (!value) {
+                    return "";
+                }
+                const compact = value.replace(/\s+/g, "");
+                if (/^-?\d{6,20}$/.test(compact)) {
+                    return compact;
+                }
+                const match = value.match(/-?\d{6,20}/);
+                return match ? match[0] : value;
+            }
+
+            function normalizeUsername(raw) {
+                let value = String(raw || "").trim();
+                if (!value) {
+                    return "";
+                }
+                if (value.includes("/")) {
+                    value = value.replace(/\/+$/, "").split("/").pop() || value;
+                }
+                return value.replace(/^@+/, "");
+            }
+
+            if (chatIdInput) {
+                chatIdInput.addEventListener("blur", function () {
+                    chatIdInput.value = normalizeChatId(chatIdInput.value);
+                });
+            }
+
+            if (usernameInput) {
+                usernameInput.addEventListener("blur", function () {
+                    usernameInput.value = normalizeUsername(usernameInput.value);
+                });
+            }
+
+            if (pasteButton && chatIdInput && navigator.clipboard && navigator.clipboard.readText) {
+                pasteButton.addEventListener("click", async function () {
+                    try {
+                        const text = await navigator.clipboard.readText();
+                        chatIdInput.value = normalizeChatId(text);
+                        chatIdInput.focus();
+                    } catch (err) {
+                        chatIdInput.focus();
+                    }
+                });
+            }
+
+            if (form && submitButton) {
+                form.addEventListener("submit", function () {
+                    if (chatIdInput) {
+                        chatIdInput.value = normalizeChatId(chatIdInput.value);
+                    }
+                    if (usernameInput) {
+                        usernameInput.value = normalizeUsername(usernameInput.value);
+                    }
+                    submitButton.disabled = true;
+                    submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang hoàn tất...';
+                });
+            }
+        })();
+    </script>
 </body>
 </html>

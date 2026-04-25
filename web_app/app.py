@@ -161,14 +161,24 @@ def is_valid_sheet_url(sheet_url: str) -> bool:
 
 def normalize_telegram_chat_id(value: str) -> str:
     chat_id = (value or "").strip()
+    compact = re.sub(r"\s+", "", chat_id)
+
     # Telegram private/group chat IDs are numeric (group IDs can be negative).
-    if re.fullmatch(r"-?\d{6,20}", chat_id):
-        return chat_id
+    if re.fullmatch(r"-?\d{6,20}", compact):
+        return compact
+
+    # Support pasted text from helpers like @userinfobot (e.g. "ID: 123456789").
+    match = re.search(r"-?\d{6,20}", chat_id)
+    if match:
+        return match.group(0)
     return ""
 
 
 def normalize_telegram_username(value: str) -> str:
-    username = (value or "").strip().lstrip("@")
+    username = (value or "").strip()
+    if "/" in username:
+        username = username.rstrip("/").split("/")[-1]
+    username = username.lstrip("@")
     if not username:
         return ""
     if re.fullmatch(r"[A-Za-z0-9_]{5,32}", username):
