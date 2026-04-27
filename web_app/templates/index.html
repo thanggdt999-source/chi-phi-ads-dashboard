@@ -220,7 +220,6 @@
         window.APP_SHEETS    = {{ accessible_sheets_json | safe }};
         window.APP_MONTHLY_SHEETS = {{ monthly_sheets_json | safe }};
         window.APP_MONTHLY_PERFORMANCE_SHEETS = {{ monthly_performance_sheets_json | safe }};
-        window.APP_MONTHLY_GROSS_PROFIT_SHEETS = {{ monthly_gross_profit_sheets_json | safe }};
         window.APP_SESSION_TIMEOUT_SECONDS = {{ session_timeout_seconds | tojson }};
     </script>
 
@@ -308,7 +307,6 @@
                             <div class="input-group">
                                 <input type="text" id="sheetUrl" placeholder="Link chi phí ads" autocomplete="off" required>
                                 <input type="text" id="performanceSheetUrl" placeholder="Link bảng hiệu suất" autocomplete="off">
-                                <input type="text" id="grossProfitSheetUrl" placeholder="Link bảng lợi nhuận gộp" autocomplete="off">
                                 <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Tải Dữ Liệu</button>
                             </div>
                             <div id="sheetSuggestions" class="sheet-suggestions" style="display:none;"></div>
@@ -329,7 +327,6 @@
                             <div class="input-group">
                                 <input type="text" id="sheetUrl" placeholder="Link chi phí ads" autocomplete="off" value="{{ sheet_url or '' }}" required>
                                 <input type="text" id="performanceSheetUrl" placeholder="Link bảng hiệu suất" autocomplete="off" value="{{ performance_sheet_url or '' }}">
-                                <input type="text" id="grossProfitSheetUrl" placeholder="Link bảng lợi nhuận gộp" autocomplete="off" value="{{ gross_profit_sheet_url or '' }}">
                                 <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Đọc dữ liệu</button>
                             </div>
                             <div id="sheetSuggestions" class="sheet-suggestions" style="display:none;"></div>

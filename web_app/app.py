@@ -1021,8 +1021,6 @@ def save_monthly_sheet_record(
     month_key: str,
     performance_sheet_url: str = "",
     performance_sheet_name: str = "",
-    gross_profit_sheet_url: str = "",
-    gross_profit_sheet_name: str = "",
 ) -> None:
     month_dir = MONTHLY_SHEETS_ROOT / month_key
     month_dir.mkdir(parents=True, exist_ok=True)
@@ -1058,23 +1056,13 @@ def save_monthly_sheet_record(
         if performance_sheet_name:
             record["performance_sheet_name"] = performance_sheet_name
     elif existing_idx >= 0 and isinstance(entries[existing_idx], dict):
+        # Keep the previously saved performance URL when user only updates ads sheet.
         prev_perf_url = (entries[existing_idx].get("performance_sheet_url") or "").strip()
         if prev_perf_url:
             record["performance_sheet_url"] = prev_perf_url
             prev_perf_name = (entries[existing_idx].get("performance_sheet_name") or "").strip()
             if prev_perf_name:
                 record["performance_sheet_name"] = prev_perf_name
-    if gross_profit_sheet_url:
-        record["gross_profit_sheet_url"] = gross_profit_sheet_url
-        if gross_profit_sheet_name:
-            record["gross_profit_sheet_name"] = gross_profit_sheet_name
-    elif existing_idx >= 0 and isinstance(entries[existing_idx], dict):
-        prev_gp_url = (entries[existing_idx].get("gross_profit_sheet_url") or "").strip()
-        if prev_gp_url:
-            record["gross_profit_sheet_url"] = prev_gp_url
-            prev_gp_name = (entries[existing_idx].get("gross_profit_sheet_name") or "").strip()
-            if prev_gp_name:
-                record["gross_profit_sheet_name"] = prev_gp_name
     if existing_idx >= 0:
         entries[existing_idx] = record
     else:
@@ -1106,14 +1094,10 @@ def get_user_monthly_sheets(username: str, fallback_sheet_url: str = "") -> list
                 latest = entries[-1]
                 perf_url = (latest.get("performance_sheet_url") or "").strip()
                 perf_name = (latest.get("performance_sheet_name") or "").strip()
+                # Backward-compat: old records may have URL but no title.
                 if perf_url and not perf_name:
                     guessed_name, _, _ = get_sheet_name_and_month(perf_url)
                     perf_name = guessed_name or "Bảng hiệu suất"
-                gp_url = (latest.get("gross_profit_sheet_url") or "").strip()
-                gp_name = (latest.get("gross_profit_sheet_name") or "").strip()
-                if gp_url and not gp_name:
-                    guessed_name, _, _ = get_sheet_name_and_month(gp_url)
-                    gp_name = guessed_name or "Bảng lợi nhuận gộp"
                 result.append({
                     "month_key": month_key,
                     "month_label": month_label(month_key),
@@ -1121,8 +1105,6 @@ def get_user_monthly_sheets(username: str, fallback_sheet_url: str = "") -> list
                     "sheet_url": latest.get("sheet_url", ""),
                     "performance_sheet_url": perf_url,
                     "performance_sheet_name": perf_name,
-                    "gross_profit_sheet_url": gp_url,
-                    "gross_profit_sheet_name": gp_name,
                     "folder_url": url_for("view_month_folder", month_key=month_key),
                 })
             except Exception:
@@ -1139,8 +1121,6 @@ def get_user_monthly_sheets(username: str, fallback_sheet_url: str = "") -> list
             "sheet_url": fallback_sheet_url,
             "performance_sheet_url": "",
             "performance_sheet_name": "",
-            "gross_profit_sheet_url": "",
-            "gross_profit_sheet_name": "",
             "folder_url": url_for("view_month_folder", month_key=mk),
         })
 
@@ -1155,7 +1135,6 @@ def set_session_user(username: str, user: dict, *, elevated: bool = False) -> No
     session["display_name"] = user.get("display_name", username)
     session["sheet_url"] = user.get("sheet_url", "")
     session["performance_sheet_url"] = user.get("performance_sheet_url", "")
-    session["gross_profit_sheet_url"] = user.get("gross_profit_sheet_url", "")
     session["is_elevated"] = elevated
     session["last_activity"] = datetime.now().timestamp()
     if user.get("role") == "employee" and not elevated:
@@ -1568,7 +1547,6 @@ def index():
     team = session.get("team", "")
     sheet_url = session.get("sheet_url", "")
     performance_sheet_url = session.get("performance_sheet_url", "")
-    gross_profit_sheet_url = session.get("gross_profit_sheet_url", "")
     is_elevated = bool(session.get("is_elevated", False))
     base_employee = get_base_employee_session()
     can_elevate = role == "employee" and not is_elevated
@@ -1595,24 +1573,6 @@ def index():
             "sheet_name": current_perf_name or "Bảng hiệu suất hiện tại",
             "sheet_url": performance_sheet_url,
         })
-    monthly_gross_profit_sheets = [
-        {
-            "month_key": m["month_key"],
-            "month_label": m["month_label"],
-            "sheet_name": m.get("gross_profit_sheet_name", "") or "Bảng lợi nhuận gộp",
-            "sheet_url": m.get("gross_profit_sheet_url", ""),
-        }
-        for m in monthly_sheets
-        if m.get("gross_profit_sheet_url", "")
-    ]
-    if gross_profit_sheet_url and not any(item.get("sheet_url") == gross_profit_sheet_url for item in monthly_gross_profit_sheets):
-        current_gp_name, _, _ = get_sheet_name_and_month(gross_profit_sheet_url)
-        monthly_gross_profit_sheets.insert(0, {
-            "month_key": current_month_key(),
-            "month_label": month_label(current_month_key()),
-            "sheet_name": current_gp_name or "Bảng lợi nhuận gộp hiện tại",
-            "sheet_url": gross_profit_sheet_url,
-        })
     inline_style_css = read_web_static_asset("style.css")
     inline_script_js = read_web_static_asset("script.js")
     return render_template(
@@ -1622,7 +1582,6 @@ def index():
         team=team,
         sheet_url=sheet_url,
         performance_sheet_url=performance_sheet_url,
-        gross_profit_sheet_url=gross_profit_sheet_url,
         session_timeout_seconds=SESSION_TIMEOUT_SECONDS,
         is_elevated=is_elevated,
         base_employee=base_employee,
@@ -1633,7 +1592,6 @@ def index():
         accessible_sheets_json=json.dumps(accessible_sheets, ensure_ascii=False),
         monthly_sheets_json=json.dumps(monthly_sheets, ensure_ascii=False),
         monthly_performance_sheets_json=json.dumps(monthly_performance_sheets, ensure_ascii=False),
-        monthly_gross_profit_sheets_json=json.dumps(monthly_gross_profit_sheets, ensure_ascii=False),
         inline_style_css=inline_style_css,
         inline_script_js=inline_script_js,
     )
@@ -2525,9 +2483,7 @@ def save_sheet():
     data = request.get_json()
     sheet_url = (data.get("sheet_url") or "").strip()
     performance_sheet_url = (data.get("performance_sheet_url") or "").strip()
-    gross_profit_sheet_url = (data.get("gross_profit_sheet_url") or "").strip()
     performance_sheet_name = ""
-    gross_profit_sheet_name = ""
     sheet_id = extract_sheet_id(sheet_url)
     if not sheet_id:
         return jsonify({
@@ -2554,19 +2510,6 @@ def save_sheet():
         perf_name, _, perf_clean_url = get_sheet_name_and_month(performance_sheet_url)
         performance_sheet_name = perf_name or ""
         performance_sheet_url = perf_clean_url or performance_sheet_url
-    if gross_profit_sheet_url and not extract_sheet_id(gross_profit_sheet_url):
-        return jsonify({
-            "success": False,
-            "error": "URL Link bảng lợi nhuận gộp không hợp lệ.",
-            "help_steps": [
-                "Mở đúng file Google Sheet lợi nhuận gộp cần dùng.",
-                "Copy link trên thanh địa chỉ (dạng /spreadsheets/d/... hoặc /spreadsheets/u/1/d/...).",
-            ],
-        }), 400
-    if gross_profit_sheet_url:
-        gp_name, _, gp_clean_url = get_sheet_name_and_month(gross_profit_sheet_url)
-        gross_profit_sheet_name = gp_name or ""
-        gross_profit_sheet_url = gp_clean_url or gross_profit_sheet_url
 
     username = session.get("username", "")
     role = session.get("role", "employee")
@@ -2610,8 +2553,6 @@ def save_sheet():
             month_key,
             performance_sheet_url=performance_sheet_url,
             performance_sheet_name=performance_sheet_name,
-            gross_profit_sheet_url=gross_profit_sheet_url,
-            gross_profit_sheet_name=gross_profit_sheet_name,
         )
 
         if role == "employee":
@@ -2619,11 +2560,9 @@ def save_sheet():
             if username in users:
                 users[username]["sheet_url"] = clean_url
                 users[username]["performance_sheet_url"] = performance_sheet_url
-                users[username]["gross_profit_sheet_url"] = gross_profit_sheet_url
                 save_users_config(users)
             session["sheet_url"] = clean_url
             session["performance_sheet_url"] = performance_sheet_url
-            session["gross_profit_sheet_url"] = gross_profit_sheet_url
 
     msg = f'Đã lưu sheet "{sheet_name}" vào thư mục tháng {month_label(month_key)}.'
     return jsonify({
