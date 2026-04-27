@@ -3,6 +3,7 @@ import html
 import secrets
 import sys
 import tempfile
+import unicodedata
 
 from flask import Flask, render_template, render_template_string, request, jsonify, session, redirect, url_for
 from google.oauth2.service_account import Credentials
@@ -1338,12 +1339,51 @@ def parse_int(val: str) -> int:
 
 DISPLAY_COLUMNS = ["Ngày", "Tên tài khoản", "Tên sản phẩm - VN", "Số Data", "Số tiền chi tiêu - VND"]
 
+
+def normalize_sheet_tab_name(value: str) -> str:
+    text = unicodedata.normalize("NFD", str(value or ""))
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    text = text.lower()
+    return re.sub(r"[^a-z0-9]", "", text)
+
+
+def resolve_ads_worksheet(spreadsheet):
+    # Try strict names first to preserve current behavior.
+    preferred_titles = [
+        "Chi phí ADS",
+        "Chi phí Ads",
+        "Chi Phi ADS",
+        "Chi Phi Ads",
+        "Chi phi ADS",
+        "Chi phi Ads",
+    ]
+    for title in preferred_titles:
+        try:
+            return spreadsheet.worksheet(title)
+        except Exception:
+            continue
+
+    # Fuzzy fallback: match tabs that look like "chi phi ads".
+    candidates = []
+    try:
+        for ws in spreadsheet.worksheets():
+            norm = normalize_sheet_tab_name(ws.title)
+            if ("chiphi" in norm or "chiph" in norm) and "ads" in norm:
+                candidates.append(ws)
+    except Exception:
+        candidates = []
+
+    if candidates:
+        return candidates[0]
+
+    raise gspread.exceptions.WorksheetNotFound("Chi phí ADS")
+
 def fetch_chi_phi_ads_data(sheet_id):
     """Fetch all data from 'Chi phí ADS' tab."""
     try:
         client = get_gspread_client()
         spreadsheet = client.open_by_key(sheet_id)
-        worksheet = spreadsheet.worksheet("Chi phí ADS")
+        worksheet = resolve_ads_worksheet(spreadsheet)
         
         all_values = worksheet.get_all_values()
         
@@ -1425,10 +1465,22 @@ def fetch_chi_phi_ads_data(sheet_id):
                 "can_auto_open_sheet": True,
             }
 
-        if "worksheetnotfound" in lower_error:
+        if (
+            isinstance(e, gspread.exceptions.WorksheetNotFound)
+            or "worksheetnotfound" in lower_error
+            or (
+                ("chiphi" in normalize_sheet_tab_name(raw_error) or "chiph" in normalize_sheet_tab_name(raw_error))
+                and "ads" in normalize_sheet_tab_name(raw_error)
+            )
+        ):
             return {
                 "success": False,
-                "error": "Không tìm thấy tab 'Chi phí ADS' trong sheet này."
+                "error": "Không tìm thấy tab dữ liệu 'Chi phí ADS' trong sheet này.",
+                "help_steps": [
+                    "Mở file Google Sheet và kiểm tra tên tab chứa dữ liệu chi phí.",
+                    "Đổi tên tab thành 'Chi phí ADS' (hoặc tên gần giống có chứa 'chi phí' và 'ads').",
+                    "Đảm bảo các cột bắt buộc có trong tab: Ngày, Tên tài khoản, Tên sản phẩm - VN, Số Data, Số tiền chi tiêu - VND.",
+                ],
             }
 
         return {"success": False, "error": raw_error}
