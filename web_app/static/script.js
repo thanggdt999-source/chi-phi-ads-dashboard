@@ -142,14 +142,60 @@ async function fetchAndRender(sheetUrl, shouldAutoSave = true) {
     if (spinner) spinner.style.display = "block";
 
     try {
+
+function copyTextSafe(text) {
+    const value = String(text || "").trim();
+    if (!value) return Promise.resolve(false);
+    if (!navigator.clipboard || !navigator.clipboard.writeText) return Promise.resolve(false);
+    return navigator.clipboard.writeText(value).then(() => true).catch(() => false);
+}
+
+function maybeAutoOpenSheetForAccess(data) {
+    if (!data || !data.can_auto_open_sheet) return;
+    const sheetId = String(data.sheet_id || "").trim();
+    if (!sheetId) return;
+
+    const storageKey = `sheet_access_opened_${sheetId}`;
+    if (sessionStorage.getItem(storageKey) === "1") return;
+
+    const targetUrl = (data.share_url || data.request_access_url || data.clean_url || "").trim();
+    if (!targetUrl) return;
+
+    sessionStorage.setItem(storageKey, "1");
+    try {
+        window.open(targetUrl, "_blank", "noopener,noreferrer");
+        showToast("Đã mở Google Sheet để bạn cấp quyền hoặc gửi yêu cầu truy cập.");
+    } catch (_) {}
+
+    const serviceEmail = String(data.service_account_email || "").trim();
+    if (serviceEmail) {
+        copyTextSafe(serviceEmail).then((copied) => {
+            if (copied) {
+                showToast("Đã copy email service account để bạn dán vào ô Chia sẻ.");
+            }
+        });
+    }
+}
         const res  = await fetch("/api/fetch-data", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sheet_url: sheetUrl }) });
         const data = await res.json();
         if (spinner) spinner.style.display = "none";
+
+    const extraLines = [];
+    if (data.service_account_email) {
+        extraLines.push(`Email service account: ${data.service_account_email}`);
+    }
+    if (data.share_url) {
+        extraLines.push(`Mở nhanh để Chia sẻ: ${data.share_url}`);
+    }
+    if (data.request_access_url) {
+        extraLines.push(`Link yêu cầu quyền truy cập: ${data.request_access_url}`);
+    }
 
         if (handleTelegramSetupGate(data, res.status)) return;
 
         if (!data.success) {
             const detail = buildSheetAccessHint(data);
+            maybeAutoOpenSheetForAccess(data);
             showError("❌ " + (data.error || "Không thể tải dữ liệu") + (detail ? `\n${detail}` : ""));
             return;
         }
@@ -506,6 +552,7 @@ async function saveSheetUrl(sheetUrl) {
         const data = await (await fetch("/api/save-sheet", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sheet_url: sheetUrl }) })).json();
         if (!data.success) {
             const detail = buildSheetAccessHint(data);
+            maybeAutoOpenSheetForAccess(data);
             showError("⚠️ " + (data.error || "Không lưu được link sheet") + (detail ? `\n${detail}` : ""));
             return;
         }

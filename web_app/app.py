@@ -801,19 +801,40 @@ def get_service_account_client_email() -> str:
     return ""
 
 
-def build_sheet_access_help(service_email: str) -> tuple[str, list]:
+def build_sheet_access_links(sheet_id: str) -> dict:
+    clean_sheet_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit"
+    share_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit?usp=sharing"
+    request_access_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit?usp=drivesdk"
+    return {
+        "clean_url": clean_sheet_url,
+        "share_url": share_url,
+        "request_access_url": request_access_url,
+    }
+
+
+def build_sheet_access_help(service_email: str, sheet_id: str = "") -> tuple[str, list, dict]:
     share_target = service_email or "email service account của hệ thống"
+    links = build_sheet_access_links(sheet_id) if sheet_id else {}
+
+    sheet_hint = ""
+    if links.get("share_url"):
+        sheet_hint = f" Mở nhanh: {links['share_url']}"
+
     help_text = (
         f"Mở Google Sheet > Chia sẻ > thêm {share_target} (quyền Người chỉnh sửa hoặc Người xem), "
-        "sau đó bấm tải lại."
+        f"sau đó bấm tải lại.{sheet_hint}"
     )
     steps = [
         "Mở Google Sheet bạn vừa nhập.",
-        "Bấm nút Chia sẻ ở góc phải trên.",
+        "Bấm nút Chia sẻ ở góc phải trên (hoặc dùng link Mở nhanh nếu có).",
         f"Thêm {share_target} với quyền Người chỉnh sửa hoặc Người xem.",
         "Bấm Xong, quay lại dashboard và tải lại link sheet.",
     ]
-    return help_text, steps
+
+    if links.get("request_access_url"):
+        steps.append("Nếu bạn không phải chủ sheet: bấm link Yêu cầu quyền truy cập để gửi yêu cầu cho chủ sở hữu.")
+
+    return help_text, steps, links
 
 
 def inspect_sheet_access(sheet_url: str) -> dict:
@@ -827,7 +848,8 @@ def inspect_sheet_access(sheet_url: str) -> dict:
             "service_account_email": get_service_account_client_email(),
         }
 
-    clean_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit"
+    access_links = build_sheet_access_links(sheet_id)
+    clean_url = access_links.get("clean_url", "")
     service_email = get_service_account_client_email()
 
     try:
@@ -843,6 +865,8 @@ def inspect_sheet_access(sheet_url: str) -> dict:
             "sheet_id": sheet_id,
             "service_account_email": service_email,
             "auto_connected": True,
+            "share_url": access_links.get("share_url", ""),
+            "request_access_url": access_links.get("request_access_url", ""),
         }
     except FileNotFoundError:
         return {
@@ -853,7 +877,7 @@ def inspect_sheet_access(sheet_url: str) -> dict:
             "service_account_email": service_email,
         }
     except gspread.exceptions.SpreadsheetNotFound:
-        help_text, steps = build_sheet_access_help(service_email)
+        help_text, steps, links = build_sheet_access_help(service_email, sheet_id)
         return {
             "success": False,
             "error": "Hệ thống chưa có quyền truy cập sheet này.",
@@ -862,12 +886,15 @@ def inspect_sheet_access(sheet_url: str) -> dict:
             "service_account_email": service_email,
             "clean_url": clean_url,
             "sheet_id": sheet_id,
+            "share_url": links.get("share_url", ""),
+            "request_access_url": links.get("request_access_url", ""),
+            "can_auto_open_sheet": True,
         }
     except Exception as e:
         raw_error = str(e)
         lower_error = raw_error.lower()
         if "permission" in lower_error or "forbidden" in lower_error or "<response [403]>" in lower_error:
-            help_text, steps = build_sheet_access_help(service_email)
+            help_text, steps, links = build_sheet_access_help(service_email, sheet_id)
             return {
                 "success": False,
                 "error": "Sheet chưa cấp quyền cho hệ thống.",
@@ -876,6 +903,9 @@ def inspect_sheet_access(sheet_url: str) -> dict:
                 "service_account_email": service_email,
                 "clean_url": clean_url,
                 "sheet_id": sheet_id,
+                "share_url": links.get("share_url", ""),
+                "request_access_url": links.get("request_access_url", ""),
+                "can_auto_open_sheet": True,
             }
 
         return {
@@ -886,6 +916,8 @@ def inspect_sheet_access(sheet_url: str) -> dict:
             "service_account_email": service_email,
             "clean_url": clean_url,
             "sheet_id": sheet_id,
+            "share_url": access_links.get("share_url", ""),
+            "request_access_url": access_links.get("request_access_url", ""),
         }
 
 
@@ -1253,8 +1285,9 @@ def fetch_chi_phi_ads_data(sheet_id):
     except Exception as e:
         raw_error = str(e)
         lower_error = raw_error.lower()
+        access_links = build_sheet_access_links(sheet_id)
         service_email = get_service_account_client_email()
-        help_text, steps = build_sheet_access_help(service_email)
+        help_text, steps, _ = build_sheet_access_help(service_email, sheet_id)
 
         if "<response [404]>" in lower_error:
             return {
@@ -1263,6 +1296,11 @@ def fetch_chi_phi_ads_data(sheet_id):
                 "help": help_text,
                 "help_steps": steps,
                 "service_account_email": service_email,
+                "sheet_id": sheet_id,
+                "clean_url": access_links.get("clean_url", ""),
+                "share_url": access_links.get("share_url", ""),
+                "request_access_url": access_links.get("request_access_url", ""),
+                "can_auto_open_sheet": True,
             }
 
         if "permission" in lower_error or "forbidden" in lower_error or "<response [403]>" in lower_error:
@@ -1272,6 +1310,11 @@ def fetch_chi_phi_ads_data(sheet_id):
                 "help": help_text,
                 "help_steps": steps,
                 "service_account_email": service_email,
+                "sheet_id": sheet_id,
+                "clean_url": access_links.get("clean_url", ""),
+                "share_url": access_links.get("share_url", ""),
+                "request_access_url": access_links.get("request_access_url", ""),
+                "can_auto_open_sheet": True,
             }
 
         if "worksheetnotfound" in lower_error:
@@ -2220,6 +2263,11 @@ def save_sheet():
             "help": access.get("help", ""),
             "help_steps": access.get("help_steps", []),
             "service_account_email": access.get("service_account_email", ""),
+            "sheet_id": access.get("sheet_id", ""),
+            "clean_url": access.get("clean_url", ""),
+            "share_url": access.get("share_url", ""),
+            "request_access_url": access.get("request_access_url", ""),
+            "can_auto_open_sheet": bool(access.get("can_auto_open_sheet", False)),
         }), 400
 
     sheet_name = access.get("sheet_name", "")
