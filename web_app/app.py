@@ -50,6 +50,13 @@ TELEGRAM_REPORT_START_HOUR = int(os.getenv("TELEGRAM_REPORT_START_HOUR", "6"))
 TELEGRAM_REPORT_END_HOUR = int(os.getenv("TELEGRAM_REPORT_END_HOUR", "23"))
 TELEGRAM_REPORT_MAX_PRODUCTS = max(1, int(os.getenv("TELEGRAM_REPORT_MAX_PRODUCTS", "8")))
 SESSION_TIMEOUT_SECONDS = int(os.getenv("SESSION_TIMEOUT_SECONDS", "600"))  # 10 minutes
+META_GRAPH_VERSION = os.getenv("META_GRAPH_VERSION", "v20.0").strip() or "v20.0"
+META_ACCESS_TOKEN_PATH = Path(
+    os.getenv(
+        "META_ACCESS_TOKEN_PATH",
+        str(Path(__file__).parent.parent / "storage" / "credentials" / "meta_access_token.json"),
+    )
+)
 
 ROLE_LEVELS = {"admin": 3, "lead": 2, "employee": 1}
 TEAM_CODES = ["TEAM_1", "TEAM_2", "TEAM_3", "TEAM_4", "TEAM_5", "Fanmen"]
@@ -1378,6 +1385,219 @@ def parse_int(val: str) -> int:
     cleaned = re.sub(r"[^\d]", "", val)
     return int(cleaned) if cleaned else 0
 
+
+def normalize_account_id(raw_id: str) -> str:
+    value = (raw_id or "").strip()
+    if value.startswith("act_"):
+        value = value[4:]
+    return re.sub(r"[^\d]", "", value)
+
+
+def resolve_settings_worksheet(spreadsheet):
+    preferred_titles = [
+        "Cài đặt",
+        "Cai dat",
+        "Thiết lập",
+        "Thiet lap",
+        "Settings",
+        "SETTING",
+    ]
+    for title in preferred_titles:
+        try:
+            return spreadsheet.worksheet(title)
+        except Exception:
+            continue
+
+    try:
+        for ws in spreadsheet.worksheets():
+            norm = normalize_sheet_tab_name(ws.title)
+            if "setting" in norm or "caidat" in norm or "thietlap" in norm:
+                return ws
+    except Exception:
+        pass
+
+    raise gspread.exceptions.WorksheetNotFound("Cài đặt")
+
+
+def extract_accounts_from_settings_rows(rows: list) -> list:
+    entries = []
+    seen = set()
+
+    for row in rows:
+        candidate = row[6].strip() if len(row) > 6 else ""
+        if not candidate:
+            continue
+
+        account_id = ""
+        match_parenthesis = re.search(r"\((act_?\d+)\)", candidate, re.IGNORECASE)
+        if match_parenthesis:
+            account_id = normalize_account_id(match_parenthesis.group(1))
+        if not account_id:
+            match_act = re.search(r"\bact_(\d+)\b", candidate, re.IGNORECASE)
+            if match_act:
+                account_id = normalize_account_id(match_act.group(1))
+        if not account_id:
+            match_digits = re.search(r"\b(\d{8,})\b", candidate)
+            if match_digits:
+                account_id = normalize_account_id(match_digits.group(1))
+
+        if not account_id or account_id in seen:
+            continue
+
+        name = candidate
+        if "(" in name:
+            name = name.split("(", 1)[0].strip()
+        if not name:
+            name = f"act_{account_id}"
+
+        seen.add(account_id)
+        entries.append({
+            "account_id": account_id,
+            "account_name": name,
+        })
+
+    return entries
+
+
+def load_meta_access_token() -> str:
+    token_from_env = (os.getenv("META_ACCESS_TOKEN", "") or "").strip()
+    if token_from_env:
+        return token_from_env
+
+    if not META_ACCESS_TOKEN_PATH.exists():
+        return ""
+
+    try:
+        with META_ACCESS_TOKEN_PATH.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+        if isinstance(payload, dict):
+            for key in ("access_token", "token", "meta_access_token"):
+                val = str(payload.get(key, "") or "").strip()
+                if val:
+                    return val
+        if isinstance(payload, str):
+            return payload.strip()
+    except Exception:
+        return ""
+
+    return ""
+
+
+def fetch_meta_account_status(account_id: str, access_token: str) -> dict:
+    if not access_token:
+        return {
+            "status": "not_connected",
+            "status_label": "Chưa kết nối API",
+            "spend_today": 0.0,
+            "hint": "Hệ thống chưa có Meta access token. Quản trị chỉ cần cập nhật token một lần để web tự chạy.",
+        }
+
+    endpoint = f"https://graph.facebook.com/{META_GRAPH_VERSION}/act_{account_id}/insights"
+    query = urllib_parse.urlencode(
+        {
+            "fields": "spend",
+            "date_preset": "today",
+            "limit": 1,
+            "access_token": access_token,
+        }
+    )
+    url = f"{endpoint}?{query}"
+
+    try:
+        with urllib_request.urlopen(url, timeout=20) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        data = payload.get("data", []) if isinstance(payload, dict) else []
+        spend = 0.0
+        if data and isinstance(data, list):
+            first = data[0] if isinstance(data[0], dict) else {}
+            spend = float(first.get("spend") or 0)
+
+        if spend > 0:
+            return {
+                "status": "has_spend",
+                "status_label": "Có chi tiêu",
+                "spend_today": spend,
+                "hint": "Đã kết nối API và ghi nhận chi tiêu hôm nay.",
+            }
+
+        return {
+            "status": "no_spend",
+            "status_label": "Đã kết nối - chưa chi tiêu",
+            "spend_today": 0.0,
+            "hint": "API hoạt động bình thường, hôm nay chưa phát sinh chi tiêu.",
+        }
+    except urllib_error.HTTPError as e:
+        error_message = ""
+        try:
+            body = e.read().decode("utf-8")
+            payload = json.loads(body)
+            error_message = str((payload.get("error") or {}).get("message") or "")
+        except Exception:
+            error_message = ""
+
+        hint = "Web chưa thể tự kết nối tài khoản này. Nhân viên chỉ cần vào Business Manager cấp quyền ads_read cho token hiện tại."
+        if "access token" in error_message.lower() or "oauth" in error_message.lower():
+            hint = "Token Meta đã hết hạn hoặc thiếu quyền. Quản trị cập nhật lại token để web tự chạy lại toàn bộ."
+
+        return {
+            "status": "not_connected",
+            "status_label": "Chưa kết nối API",
+            "spend_today": 0.0,
+            "hint": hint,
+            "error": error_message or f"HTTP {e.code}",
+        }
+    except Exception as e:
+        return {
+            "status": "not_connected",
+            "status_label": "Chưa kết nối API",
+            "spend_today": 0.0,
+            "hint": "Web chưa thể tự kết nối tài khoản này. Vui lòng kiểm tra lại quyền truy cập tài khoản quảng cáo.",
+            "error": str(e),
+        }
+
+
+def get_sheet_account_statuses(sheet_id: str) -> dict:
+    client = get_gspread_client()
+    spreadsheet = client.open_by_key(sheet_id)
+    settings_ws = resolve_settings_worksheet(spreadsheet)
+    rows = settings_ws.get_all_values()
+    accounts = extract_accounts_from_settings_rows(rows)
+
+    token = load_meta_access_token()
+    results = []
+    summary = {
+        "total": 0,
+        "has_spend": 0,
+        "no_spend": 0,
+        "not_connected": 0,
+    }
+
+    status_weight = {"has_spend": 0, "no_spend": 1, "not_connected": 2}
+    for entry in accounts:
+        status_data = fetch_meta_account_status(entry["account_id"], token)
+        status = status_data.get("status", "not_connected")
+        summary["total"] += 1
+        summary[status] = summary.get(status, 0) + 1
+        results.append(
+            {
+                "account_id": entry["account_id"],
+                "account_name": entry["account_name"],
+                "status": status,
+                "status_label": status_data.get("status_label", "Chưa rõ"),
+                "spend_today": float(status_data.get("spend_today") or 0),
+                "hint": status_data.get("hint", ""),
+                "error": status_data.get("error", ""),
+            }
+        )
+
+    results.sort(key=lambda item: (status_weight.get(item.get("status", ""), 9), -float(item.get("spend_today", 0))))
+    return {
+        "success": True,
+        "summary": summary,
+        "accounts": results,
+        "has_token": bool(token),
+    }
+
 DISPLAY_COLUMNS = ["Ngày", "Tên tài khoản", "Tên sản phẩm - VN", "Số Data", "Số tiền chi tiêu - VND"]
 
 
@@ -2264,6 +2484,40 @@ def fetch_all_data():
         "member_summaries": member_summaries,
         "errors": errors,
     })
+
+
+@app.route("/api/account-status", methods=["POST"])
+@api_login_required
+def account_status():
+    data = request.get_json(silent=True) or {}
+    sheet_url = (data.get("sheet_url") or "").strip()
+    if not sheet_url:
+        return jsonify({"success": False, "error": "Thiếu Link chi phí ads."}), 400
+
+    sheet_id = extract_sheet_id(sheet_url)
+    if not sheet_id:
+        return jsonify({"success": False, "error": "Link chi phí ads không hợp lệ."}), 400
+
+    role = session.get("role", "employee")
+    username = session.get("username", "")
+    if role in {"employee", "lead"}:
+        accessible_ids = {extract_sheet_id(s["url"]) for s in get_accessible_sheets_for_user(username) if s.get("url")}
+        if sheet_id not in accessible_ids:
+            return jsonify({"success": False, "error": "Bạn không có quyền xem trạng thái tài khoản của sheet này."}), 403
+
+    try:
+        result = get_sheet_account_statuses(sheet_id)
+        return jsonify(result)
+    except gspread.exceptions.WorksheetNotFound:
+        return jsonify(
+            {
+                "success": False,
+                "error": "Không thấy tab Cài đặt/Settings để lấy danh sách tài khoản quảng cáo.",
+                "hint": "Nhân viên chỉ cần tạo tab Cài đặt và điền cột tài khoản quảng cáo như mẫu cũ (cột G).",
+            }
+        ), 400
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Không lấy được trạng thái tài khoản: {str(e)}"}), 500
 
 
 @app.route("/api/auto-fill-status", methods=["GET"])

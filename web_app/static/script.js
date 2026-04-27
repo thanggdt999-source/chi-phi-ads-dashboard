@@ -134,6 +134,7 @@ async function loadAllData() {
         filteredRows = [...currentData.rows];
         resetDateInputs();
         renderData();
+        hideAccountStatusPanel();
 
         if (data.errors && data.errors.length) {
             showToast("⚠️ Không tải được: " + data.errors.map(e => e.name).join(", "));
@@ -211,12 +212,17 @@ function maybeAutoOpenSheetForAccess(data) {
             showError("❌ " + (data.error || "Không thể tải dữ liệu") + (detail ? `\n${detail}` : ""));
             return;
         }
-        if (!data.data || data.data.length === 0) { showError("⚠️ Sheet không có dữ liệu trong tab 'Chi phí ADS'"); return; }
+        if (!data.data || data.data.length === 0) {
+            hideAccountStatusPanel();
+            showError("⚠️ Sheet không có dữ liệu trong tab 'Chi phí ADS'");
+            return;
+        }
 
         currentData  = { rows: data.data, headers: data.headers, ads_percent: data.ads_percent || "", memberSummaries: [] };
         filteredRows = [...currentData.rows];
         resetDateInputs();
         renderData();
+        await loadAccountStatuses(sheetUrl);
 
         if (shouldAutoSave) saveSheetUrl(sheetUrl);
     } catch (e) {
@@ -366,6 +372,80 @@ function renderRankings() {
             <td>${formatCurrency(m.cost_per_data)}</td>
         </tr>`;
     }).join("");
+}
+
+async function loadAccountStatuses(sheetUrl) {
+    if (!sheetUrl) {
+        hideAccountStatusPanel();
+        return;
+    }
+
+    try {
+        const res = await fetch("/api/account-status", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sheet_url: sheetUrl }),
+        });
+        if (await handleSessionExpiredGateFromResponse(res)) return;
+
+        const data = await res.json();
+        if (!data.success) {
+            hideAccountStatusPanel();
+            if (data.error) showToast(`⚠️ ${data.error}`);
+            return;
+        }
+
+        renderAccountStatuses(data);
+    } catch (_) {
+        hideAccountStatusPanel();
+    }
+}
+
+function hideAccountStatusPanel() {
+    const section = document.getElementById("accountStatusSection");
+    if (section) section.style.display = "none";
+}
+
+function renderAccountStatuses(payload) {
+    const section = document.getElementById("accountStatusSection");
+    const tbody = document.getElementById("accountStatusBody");
+    if (!section || !tbody) return;
+
+    const summary = payload.summary || {};
+    const accounts = Array.isArray(payload.accounts) ? payload.accounts : [];
+
+    const totalEl = document.getElementById("accountStatusTotal");
+    const hasSpendEl = document.getElementById("accountStatusHasSpend");
+    const noSpendEl = document.getElementById("accountStatusNoSpend");
+    const notConnectedEl = document.getElementById("accountStatusNotConnected");
+
+    if (totalEl) totalEl.textContent = String(summary.total || accounts.length || 0);
+    if (hasSpendEl) hasSpendEl.textContent = String(summary.has_spend || 0);
+    if (noSpendEl) noSpendEl.textContent = String(summary.no_spend || 0);
+    if (notConnectedEl) notConnectedEl.textContent = String(summary.not_connected || 0);
+
+    if (!accounts.length) {
+        tbody.innerHTML = '<tr><td class="account-status-empty" colspan="5">Không tìm thấy tài khoản quảng cáo trong tab Cài đặt.</td></tr>';
+        section.style.display = "block";
+        return;
+    }
+
+    tbody.innerHTML = accounts.map((acc) => {
+        const status = String(acc.status || "not_connected");
+        const statusLabel = escapeHtml(acc.status_label || "Chưa rõ");
+        const hint = escapeHtml(acc.hint || "");
+        const spend = Number(acc.spend_today || 0);
+        const spendLabel = spend > 0 ? formatCurrency(spend) : "0 VND";
+        return `<tr>
+            <td>${escapeHtml(acc.account_name || "—")}</td>
+            <td>act_${escapeHtml(acc.account_id || "")}</td>
+            <td class="spend-cell">${spendLabel}</td>
+            <td><span class="account-status-badge ${status.replace(/_/g, "-")}">${statusLabel}</span></td>
+            <td class="account-hint">${hint || "—"}</td>
+        </tr>`;
+    }).join("");
+
+    section.style.display = "block";
 }
 
 function renderTable(rows) {

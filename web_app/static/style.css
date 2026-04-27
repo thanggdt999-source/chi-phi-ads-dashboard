@@ -238,6 +238,96 @@ body {
     font-size: 0.88em;
 }
 
+.account-status-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+}
+
+.account-status-head h2 {
+    margin-bottom: 0;
+}
+
+.account-status-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.account-pill {
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    border: 1px solid transparent;
+}
+
+.account-pill.total {
+    background: #eef2ff;
+    color: #4338ca;
+    border-color: #c7d2fe;
+}
+
+.account-pill.has-spend {
+    background: #dcfce7;
+    color: #166534;
+    border-color: #86efac;
+}
+
+.account-pill.no-spend {
+    background: #fef9c3;
+    color: #854d0e;
+    border-color: #fde047;
+}
+
+.account-pill.not-connected {
+    background: #fee2e2;
+    color: #991b1b;
+    border-color: #fca5a5;
+}
+
+.account-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 999px;
+    padding: 5px 10px;
+    font-size: 0.76rem;
+    font-weight: 700;
+}
+
+.account-status-badge.has-spend {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.account-status-badge.no-spend {
+    background: #fef9c3;
+    color: #854d0e;
+}
+
+.account-status-badge.not-connected {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.account-status-table td.account-hint {
+    min-width: 220px;
+    max-width: 360px;
+    line-height: 1.45;
+    color: #475569;
+}
+
+.account-status-empty {
+    text-align: center;
+    color: #64748b;
+    font-style: italic;
+    padding: 12px;
+}
+
 .input-group {
     display: flex;
     gap: 10px;
