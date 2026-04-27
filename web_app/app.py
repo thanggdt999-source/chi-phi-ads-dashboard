@@ -1297,7 +1297,10 @@ def get_gspread_client():
 
 def extract_sheet_id(url):
     """Extract sheet ID from Google Sheets URL."""
-    match = re.search(r'/spreadsheets/d/([a-zA-Z0-9_-]+)', url)
+    # Accept both:
+    # - https://docs.google.com/spreadsheets/d/<id>/edit
+    # - https://docs.google.com/spreadsheets/u/1/d/<id>/edit
+    match = re.search(r'/spreadsheets/(?:u/\d+/)?d/([a-zA-Z0-9_-]+)', url)
     return match.group(1) if match else None
 
 
