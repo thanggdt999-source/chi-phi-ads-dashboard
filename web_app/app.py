@@ -1296,12 +1296,30 @@ def get_gspread_client():
     return gspread.authorize(creds)
 
 def extract_sheet_id(url):
-    """Extract sheet ID from Google Sheets URL."""
-    # Accept both:
-    # - https://docs.google.com/spreadsheets/d/<id>/edit
-    # - https://docs.google.com/spreadsheets/u/1/d/<id>/edit
-    match = re.search(r'/spreadsheets/(?:u/\d+/)?d/([a-zA-Z0-9_-]+)', url)
-    return match.group(1) if match else None
+    """Extract sheet ID from common Google Sheets URL formats or raw ID."""
+    raw = str(url or "")
+    if not raw:
+        return None
+
+    # Remove angle brackets/quotes from copied text and normalize hidden chars.
+    cleaned = raw.strip().strip("<>'\"")
+    cleaned = urllib_parse.unquote(cleaned)
+    cleaned = re.sub(r"[\u200b\u200c\u200d\ufeff]", "", cleaned)
+    cleaned = re.sub(r"\s+", "", cleaned)
+
+    # Raw ID only (user may paste just the sheet key).
+    if re.fullmatch(r"[a-zA-Z0-9_-]{20,}", cleaned):
+        return cleaned
+
+    patterns = [
+        r"/spreadsheets/(?:u/\d+/)?d/([a-zA-Z0-9_-]{20,})",
+        r"[?&]id=([a-zA-Z0-9_-]{20,})",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, cleaned)
+        if match:
+            return match.group(1)
+    return None
 
 
 def parse_spend(val: str) -> float:
@@ -2068,7 +2086,15 @@ def fetch_data():
     
     sheet_id = extract_sheet_id(sheet_url)
     if not sheet_id:
-        return jsonify({"success": False, "error": "URL sheet không hợp lệ"}), 400
+        return jsonify({
+            "success": False,
+            "error": "URL sheet không hợp lệ.",
+            "help_steps": [
+                "Mở đúng file Google Sheet cần đọc dữ liệu.",
+                "Copy link trên thanh địa chỉ (dạng /spreadsheets/d/... hoặc /spreadsheets/u/1/d/...).",
+                "Hoặc dán trực tiếp mã Sheet ID (chuỗi dài phía sau /d/).",
+            ],
+        }), 400
     
     role = session.get("role", "employee")
     username = session.get("username", "")
@@ -2367,7 +2393,15 @@ def save_sheet():
     sheet_url = data.get("sheet_url", "").strip()
     sheet_id = extract_sheet_id(sheet_url)
     if not sheet_id:
-        return jsonify({"success": False, "error": "URL không hợp lệ"}), 400
+        return jsonify({
+            "success": False,
+            "error": "URL sheet không hợp lệ.",
+            "help_steps": [
+                "Mở đúng file Google Sheet cần đọc dữ liệu.",
+                "Copy link trên thanh địa chỉ (dạng /spreadsheets/d/... hoặc /spreadsheets/u/1/d/...).",
+                "Hoặc dán trực tiếp mã Sheet ID (chuỗi dài phía sau /d/).",
+            ],
+        }), 400
 
     username = session.get("username", "")
     role = session.get("role", "employee")
