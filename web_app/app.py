@@ -1014,7 +1014,14 @@ def get_sheet_name_and_month(sheet_url: str) -> tuple[str, str, str]:
     return sheet_name, month_key, clean_url
 
 
-def save_monthly_sheet_record(username: str, sheet_url: str, sheet_name: str, month_key: str, performance_sheet_url: str = "") -> None:
+def save_monthly_sheet_record(
+    username: str,
+    sheet_url: str,
+    sheet_name: str,
+    month_key: str,
+    performance_sheet_url: str = "",
+    performance_sheet_name: str = "",
+) -> None:
     month_dir = MONTHLY_SHEETS_ROOT / month_key
     month_dir.mkdir(parents=True, exist_ok=True)
     user_file = month_dir / f"{username}.json"
@@ -1046,11 +1053,16 @@ def save_monthly_sheet_record(username: str, sheet_url: str, sheet_name: str, mo
     }
     if performance_sheet_url:
         record["performance_sheet_url"] = performance_sheet_url
+        if performance_sheet_name:
+            record["performance_sheet_name"] = performance_sheet_name
     elif existing_idx >= 0 and isinstance(entries[existing_idx], dict):
         # Keep the previously saved performance URL when user only updates ads sheet.
         prev_perf_url = (entries[existing_idx].get("performance_sheet_url") or "").strip()
         if prev_perf_url:
             record["performance_sheet_url"] = prev_perf_url
+            prev_perf_name = (entries[existing_idx].get("performance_sheet_name") or "").strip()
+            if prev_perf_name:
+                record["performance_sheet_name"] = prev_perf_name
     if existing_idx >= 0:
         entries[existing_idx] = record
     else:
@@ -1080,12 +1092,19 @@ def get_user_monthly_sheets(username: str, fallback_sheet_url: str = "") -> list
                 if not entries:
                     continue
                 latest = entries[-1]
+                perf_url = (latest.get("performance_sheet_url") or "").strip()
+                perf_name = (latest.get("performance_sheet_name") or "").strip()
+                # Backward-compat: old records may have URL but no title.
+                if perf_url and not perf_name:
+                    guessed_name, _, _ = get_sheet_name_and_month(perf_url)
+                    perf_name = guessed_name or "Bảng hiệu suất"
                 result.append({
                     "month_key": month_key,
                     "month_label": month_label(month_key),
                     "sheet_name": latest.get("sheet_name", ""),
                     "sheet_url": latest.get("sheet_url", ""),
-                    "performance_sheet_url": latest.get("performance_sheet_url", ""),
+                    "performance_sheet_url": perf_url,
+                    "performance_sheet_name": perf_name,
                     "folder_url": url_for("view_month_folder", month_key=month_key),
                 })
             except Exception:
@@ -1101,6 +1120,7 @@ def get_user_monthly_sheets(username: str, fallback_sheet_url: str = "") -> list
             "sheet_name": "Sheet hiện tại",
             "sheet_url": fallback_sheet_url,
             "performance_sheet_url": "",
+            "performance_sheet_name": "",
             "folder_url": url_for("view_month_folder", month_key=mk),
         })
 
@@ -1539,17 +1559,18 @@ def index():
         {
             "month_key": m["month_key"],
             "month_label": m["month_label"],
-            "sheet_name": m.get("performance_sheet_url", "").split("/")[-1][:30] or "Bảng hiệu suất",
+            "sheet_name": m.get("performance_sheet_name", "") or "Bảng hiệu suất",
             "sheet_url": m.get("performance_sheet_url", ""),
         }
         for m in monthly_sheets
         if m.get("performance_sheet_url", "")
     ]
     if performance_sheet_url and not any(item.get("sheet_url") == performance_sheet_url for item in monthly_performance_sheets):
+        current_perf_name, _, _ = get_sheet_name_and_month(performance_sheet_url)
         monthly_performance_sheets.insert(0, {
             "month_key": current_month_key(),
             "month_label": month_label(current_month_key()),
-            "sheet_name": "Bảng hiệu suất hiện tại",
+            "sheet_name": current_perf_name or "Bảng hiệu suất hiện tại",
             "sheet_url": performance_sheet_url,
         })
     inline_style_css = read_web_static_asset("style.css")
@@ -2462,6 +2483,7 @@ def save_sheet():
     data = request.get_json()
     sheet_url = (data.get("sheet_url") or "").strip()
     performance_sheet_url = (data.get("performance_sheet_url") or "").strip()
+    performance_sheet_name = ""
     sheet_id = extract_sheet_id(sheet_url)
     if not sheet_id:
         return jsonify({
@@ -2484,6 +2506,10 @@ def save_sheet():
                 "Hoặc dán trực tiếp mã Sheet ID (chuỗi dài phía sau /d/).",
             ],
         }), 400
+    if performance_sheet_url:
+        perf_name, _, perf_clean_url = get_sheet_name_and_month(performance_sheet_url)
+        performance_sheet_name = perf_name or ""
+        performance_sheet_url = perf_clean_url or performance_sheet_url
 
     username = session.get("username", "")
     role = session.get("role", "employee")
@@ -2520,7 +2546,14 @@ def save_sheet():
             f.write(f"{sheet_name},{clean_url}\n")
 
     if username:
-        save_monthly_sheet_record(username, clean_url, sheet_name, month_key, performance_sheet_url=performance_sheet_url)
+        save_monthly_sheet_record(
+            username,
+            clean_url,
+            sheet_name,
+            month_key,
+            performance_sheet_url=performance_sheet_url,
+            performance_sheet_name=performance_sheet_name,
+        )
 
         if role == "employee":
             users = load_users_config()
