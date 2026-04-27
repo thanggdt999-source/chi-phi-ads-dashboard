@@ -1046,6 +1046,11 @@ def save_monthly_sheet_record(username: str, sheet_url: str, sheet_name: str, mo
     }
     if performance_sheet_url:
         record["performance_sheet_url"] = performance_sheet_url
+    elif existing_idx >= 0 and isinstance(entries[existing_idx], dict):
+        # Keep the previously saved performance URL when user only updates ads sheet.
+        prev_perf_url = (entries[existing_idx].get("performance_sheet_url") or "").strip()
+        if prev_perf_url:
+            record["performance_sheet_url"] = prev_perf_url
     if existing_idx >= 0:
         entries[existing_idx] = record
     else:
@@ -1540,6 +1545,13 @@ def index():
         for m in monthly_sheets
         if m.get("performance_sheet_url", "")
     ]
+    if performance_sheet_url and not any(item.get("sheet_url") == performance_sheet_url for item in monthly_performance_sheets):
+        monthly_performance_sheets.insert(0, {
+            "month_key": current_month_key(),
+            "month_label": month_label(current_month_key()),
+            "sheet_name": "Bảng hiệu suất hiện tại",
+            "sheet_url": performance_sheet_url,
+        })
     inline_style_css = read_web_static_asset("style.css")
     inline_script_js = read_web_static_asset("script.js")
     return render_template(
