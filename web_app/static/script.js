@@ -9,6 +9,8 @@ const DISPLAY   = window.APP_DISPLAY   || "";
 const SHEET_URL = window.APP_SHEET_URL || "";
 const SHEETS    = window.APP_SHEETS    || [];
 const MONTHLY_SHEETS = window.APP_MONTHLY_SHEETS || [];
+const SESSION_TIMEOUT_MS = Math.max(60, Number(window.APP_SESSION_TIMEOUT_SECONDS || 600)) * 1000;
+const SESSION_KEEPALIVE_MS = 60 * 1000;
 
 // ─── State ────────────────────────────────────────────
 let currentData  = { rows: [], headers: [], ads_percent: "", memberSummaries: [] };
@@ -17,9 +19,12 @@ let autoFillEnabled = true;
 let charts = { spendByDate: null, spendByProduct: null };
 let currentPage = 1;
 let pageSize = 50;
+let inactivityTimer = null;
+let lastKeepAliveAt = 0;
 
 // ─── Init ─────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", async () => {
+    setupInactivityLogout();
     populateMemberSelect();
     populateMonthSelect();
     await loadAutoFillStatus();
@@ -110,6 +115,7 @@ async function loadAllData() {
 
     try {
         const res  = await fetch("/api/fetch-all-data", { method: "POST" });
+        if (await handleSessionExpiredGateFromResponse(res)) return;
         const data = await res.json();
         if (spinner) spinner.style.display = "none";
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-layer-group"></i> Tải báo cáo tổng'; }
@@ -177,6 +183,7 @@ function maybeAutoOpenSheetForAccess(data) {
     }
 }
         const res  = await fetch("/api/fetch-data", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sheet_url: sheetUrl }) });
+    if (await handleSessionExpiredGateFromResponse(res)) return;
         const data = await res.json();
         if (spinner) spinner.style.display = "none";
 
@@ -526,14 +533,18 @@ function renderSuggestions(filterText = "") {
 // ─── Auto-fill toggle ─────────────────────────────────
 async function loadAutoFillStatus() {
     try {
-        const data = await (await fetch("/api/auto-fill-status")).json();
+        const response = await fetch("/api/auto-fill-status");
+        if (await handleSessionExpiredGateFromResponse(response)) return;
+        const data = await response.json();
         if (data.success) { autoFillEnabled = !!data.enabled; renderAutoToggle(); }
     } catch (_) {}
 }
 
 async function toggleAutoFillStatus() {
     try {
-        const data = await (await fetch("/api/auto-fill-status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: !autoFillEnabled }) })).json();
+        const response = await fetch("/api/auto-fill-status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: !autoFillEnabled }) });
+        if (await handleSessionExpiredGateFromResponse(response)) return;
+        const data = await response.json();
         if (data.success) { autoFillEnabled = !!data.enabled; renderAutoToggle(); showToast(autoFillEnabled ? "✅ Đã bật Auto Fill" : "⏸️ Đã tắt Auto Fill"); }
     } catch (_) {}
 }
@@ -549,7 +560,9 @@ function renderAutoToggle() {
 // ─── Save sheet ───────────────────────────────────────
 async function saveSheetUrl(sheetUrl) {
     try {
-        const data = await (await fetch("/api/save-sheet", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sheet_url: sheetUrl }) })).json();
+        const response = await fetch("/api/save-sheet", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sheet_url: sheetUrl }) });
+        if (await handleSessionExpiredGateFromResponse(response)) return;
+        const data = await response.json();
         if (!data.success) {
             const detail = buildSheetAccessHint(data);
             maybeAutoOpenSheetForAccess(data);
@@ -636,12 +649,83 @@ function showToast(message) {
     clearTimeout(t._timeout); t._timeout = setTimeout(() => { t.style.opacity = "0"; }, 3500);
 }
 
+function setupInactivityLogout() {
+    if (ROLE !== "employee") return;
+
+    const activityEvents = ["click", "keydown", "mousedown", "mousemove", "scroll", "touchstart"];
+    const onActivity = () => {
+        resetInactivityTimer();
+        void maybeSendSessionKeepAlive();
+    };
+
+    activityEvents.forEach((eventName) => {
+        document.addEventListener(eventName, onActivity, { passive: true });
+    });
+
+    document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) onActivity();
+    });
+    window.addEventListener("focus", onActivity);
+    onActivity();
+}
+
+function resetInactivityTimer() {
+    clearTimeout(inactivityTimer);
+    inactivityTimer = window.setTimeout(() => {
+        showError("⚠️ Bạn đã không thao tác trong 10 phút. Hệ thống đang tự đăng xuất...");
+        window.setTimeout(() => {
+            window.location.href = "/logout?expired=1";
+        }, 900);
+    }, SESSION_TIMEOUT_MS);
+}
+
+async function maybeSendSessionKeepAlive() {
+    const now = Date.now();
+    if (document.hidden || now - lastKeepAliveAt < SESSION_KEEPALIVE_MS) {
+        return;
+    }
+
+    lastKeepAliveAt = now;
+    try {
+        const response = await fetch("/api/session/ping", { method: "POST" });
+        await handleSessionExpiredGateFromResponse(response);
+    } catch (_) {
+        // Ignore transient keepalive failures; the next real request will enforce auth.
+    }
+}
+
+async function handleSessionExpiredGateFromResponse(response) {
+    if (!response || response.status !== 401) {
+        return false;
+    }
+
+    let data = {};
+    try {
+        data = await response.clone().json();
+    } catch (_) {
+        data = {};
+    }
+    return handleSessionExpiredGate(data, response.status);
+}
+
 function handleTelegramSetupGate(data, statusCode) {
     const setupUrl = (data && data.setup_url) ? data.setup_url : "";
     if (statusCode === 428 || setupUrl) {
         showError("⚠️ Bạn cần hoàn tất kết nối Telegram trước khi xem dashboard. Hệ thống đang chuyển đến màn kết nối...");
         setTimeout(() => {
             window.location.href = setupUrl || "/telegram/connect";
+        }, 1200);
+        return true;
+    }
+    return false;
+}
+
+function handleSessionExpiredGate(data, statusCode) {
+    const loginUrl = (data && data.login_url) ? data.login_url : "/login?expired=1";
+    if (statusCode === 401) {
+        showError("⚠️ Phiên đăng nhập đã hết hạn. Hệ thống đang chuyển bạn về màn đăng nhập...");
+        window.setTimeout(() => {
+            window.location.href = loginUrl;
         }, 1200);
         return true;
     }

@@ -67,11 +67,23 @@ def read_web_static_asset(filename: str) -> str:
 
 
 @app.before_request
-def track_session_activity():
-    """Update session last_activity timestamp on each request."""
-    if session.get("logged_in") is True:
-        session["last_activity"] = datetime.now().timestamp()
-        session.modified = True
+def enforce_session_timeout():
+    if session.get("logged_in") is not True:
+        return None
+
+    if is_session_timeout():
+        session.clear()
+        if (request.path or "").startswith("/api/"):
+            return jsonify({
+                "success": False,
+                "error": "Phiên đăng nhập đã hết hạn do không hoạt động trong 10 phút. Vui lòng đăng nhập lại.",
+                "login_url": url_for("login", expired="1"),
+            }), 401
+        return redirect(url_for("login", next=request.path, expired="1"))
+
+    session["last_activity"] = datetime.now().timestamp()
+    session.modified = True
+    return None
 
 
 @app.after_request
@@ -1116,11 +1128,11 @@ def is_session_timeout():
     """Check if the current session has exceeded the timeout duration."""
     if session.get("logged_in") is not True:
         return False
-    
+
     last_activity = session.get("last_activity", 0)
     if not last_activity:
         return False
-    
+
     current_time = datetime.now().timestamp()
     elapsed = current_time - last_activity
     return elapsed > SESSION_TIMEOUT_SECONDS
@@ -1129,12 +1141,12 @@ def is_session_timeout():
 def is_logged_in():
     if session.get("logged_in") is not True:
         return False
-    
+
     # Check for session timeout
     if is_session_timeout():
         session.clear()
         return False
-    
+
     return True
 
 
@@ -1387,6 +1399,7 @@ def index():
         display_name=display_name,
         team=team,
         sheet_url=sheet_url,
+        session_timeout_seconds=SESSION_TIMEOUT_SECONDS,
         is_elevated=is_elevated,
         base_employee=base_employee,
         can_elevate=can_elevate,
@@ -1406,11 +1419,15 @@ def login():
         if is_logged_in():
             return redirect(url_for("index"))
         success_message = ""
+        error_message = ""
         next_target = request.args.get("next", "").strip()
+        expired = request.args.get("expired", "").strip()
         registered = request.args.get("registered", "").strip()
         telegram_ready = request.args.get("telegram_ready", "").strip()
         telegram_test = request.args.get("telegram_test", "").strip()
         registered_username = request.args.get("username", "").strip()
+        if expired == "1":
+            error_message = "Phiên đăng nhập đã tự thoát sau 10 phút không thao tác. Vui lòng đăng nhập lại."
         if registered == "1":
             success_message = (
                 (
@@ -1429,7 +1446,7 @@ def login():
             )
         return render_template(
             "login.html",
-            error="",
+            error=error_message,
             success=success_message,
             title="Chi Phi Ads Dashboard",
             subtitle="Ae làm cái này thì sau không cần điền chi phí ads mỗi ngày nữa nè. Phêêêêêêêê...!",
@@ -1986,7 +2003,15 @@ def api_telegram_autofill():
 @app.route("/logout", methods=["GET"])
 def logout():
     session.clear()
+    if request.args.get("expired", "").strip() == "1":
+        return redirect(url_for("login", expired="1"))
     return redirect(url_for("login"))
+
+
+@app.route("/api/session/ping", methods=["POST"])
+@api_login_required
+def session_ping():
+    return jsonify({"success": True})
 
 @app.route("/api/fetch-data", methods=["POST"])
 @api_login_required

@@ -218,6 +218,7 @@
         window.APP_SHEET_URL = {{ sheet_url | tojson }};
         window.APP_SHEETS    = {{ accessible_sheets_json | safe }};
         window.APP_MONTHLY_SHEETS = {{ monthly_sheets_json | safe }};
+        window.APP_SESSION_TIMEOUT_SECONDS = {{ session_timeout_seconds | tojson }};
     </script>
 
     <div class="container">
