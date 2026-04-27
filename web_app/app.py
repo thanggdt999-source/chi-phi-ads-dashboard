@@ -215,16 +215,26 @@ def atomic_write_json_file(path: Path, payload: dict) -> None:
 
 def load_users_config() -> dict:
     """Load user config from env, file, or auto-generated defaults."""
+    users_from_env = {}
     config_json = os.getenv("USERS_CONFIG", "").strip()
     if config_json:
         try:
-            return json.loads(config_json)
+            parsed = json.loads(config_json)
+            if isinstance(parsed, dict):
+                users_from_env = parsed
         except Exception:
             pass
 
     users_from_file = load_json_dict_file(USERS_FILE_PATH)
     if users_from_file:
+        if users_from_env:
+            merged = dict(users_from_env)
+            merged.update(users_from_file)
+            return merged
         return users_from_file
+
+    if users_from_env:
+        return users_from_env
 
     # Recover from backup if main file is corrupted/empty.
     users_from_backup = load_json_dict_file(USERS_FILE_BACKUP_PATH)
@@ -1095,6 +1105,7 @@ def set_session_user(username: str, user: dict, *, elevated: bool = False) -> No
     session["team"] = user.get("team", "")
     session["display_name"] = user.get("display_name", username)
     session["sheet_url"] = user.get("sheet_url", "")
+    session["performance_sheet_url"] = user.get("performance_sheet_url", "")
     session["is_elevated"] = elevated
     session["last_activity"] = datetime.now().timestamp()
     if user.get("role") == "employee" and not elevated:
@@ -1103,6 +1114,7 @@ def set_session_user(username: str, user: dict, *, elevated: bool = False) -> No
             "display_name": user.get("display_name", username),
             "team": user.get("team", ""),
             "sheet_url": user.get("sheet_url", ""),
+            "performance_sheet_url": user.get("performance_sheet_url", ""),
         }
 
 
@@ -1505,6 +1517,7 @@ def index():
     display_name = session.get("display_name", username)
     team = session.get("team", "")
     sheet_url = session.get("sheet_url", "")
+    performance_sheet_url = session.get("performance_sheet_url", "")
     is_elevated = bool(session.get("is_elevated", False))
     base_employee = get_base_employee_session()
     can_elevate = role == "employee" and not is_elevated
@@ -1520,6 +1533,7 @@ def index():
         display_name=display_name,
         team=team,
         sheet_url=sheet_url,
+        performance_sheet_url=performance_sheet_url,
         session_timeout_seconds=SESSION_TIMEOUT_SECONDS,
         is_elevated=is_elevated,
         base_employee=base_employee,
@@ -1680,7 +1694,6 @@ def register_employee():
         "username": "",
         "display_name": "",
         "team": "",
-        "sheet_url": "",
     }
 
     if request.method == "GET":
@@ -1695,7 +1708,6 @@ def register_employee():
     username = request.form.get("username", "").strip()
     display_name = request.form.get("display_name", "").strip()
     team = request.form.get("team", "").strip()
-    sheet_url = request.form.get("sheet_url", "").strip()
     password = request.form.get("password", "")
     confirm_password = request.form.get("confirm_password", "")
 
@@ -1703,10 +1715,9 @@ def register_employee():
         "username": username,
         "display_name": display_name,
         "team": team,
-        "sheet_url": sheet_url,
     }
 
-    if not username or not display_name or not password or not confirm_password or not team or not sheet_url:
+    if not username or not display_name or not password or not confirm_password or not team:
         return render_template(
             "register.html",
             error="Vui lòng nhập đầy đủ thông tin đăng ký.",
@@ -1733,15 +1744,6 @@ def register_employee():
             form_values=form_values,
         )
 
-    if not is_valid_sheet_url(sheet_url):
-        return render_template(
-            "register.html",
-            error="Link Google Sheet không hợp lệ.",
-            board_name=LOGIN_BOARD_NAME,
-            team_codes=TEAM_CODES,
-            form_values=form_values,
-        )
-
     users = load_users_config()
     if username in users:
         return render_template(
@@ -1752,34 +1754,15 @@ def register_employee():
             form_values=form_values,
         )
 
-    access = inspect_sheet_access(sheet_url)
-    if not access.get("success"):
-        register_error = access.get("error", "Không thể kết nối Google Sheet.")
-        register_help = access.get("help", "")
-        return render_template(
-            "register.html",
-            error=f"{register_error} {register_help}".strip(),
-            board_name=LOGIN_BOARD_NAME,
-            team_codes=TEAM_CODES,
-            form_values=form_values,
-        )
-
-    sheet_name = access.get("sheet_name", "")
-    month_key = access.get("month_key", current_month_key())
-    clean_url = access.get("clean_url", "")
-
     users[username] = {
         "password": password,
         "role": "employee",
         "team": team,
         "display_name": display_name,
-        "sheet_url": clean_url or sheet_url,
         "telegram_verified": False,
         "telegram_test_status": "pending",
     }
     save_users_config(users)
-    if clean_url:
-        save_monthly_sheet_record(username, clean_url, sheet_name or username, month_key)
 
     session["pending_telegram_setup"] = username
     return redirect(url_for("register_telegram"))
@@ -2449,7 +2432,8 @@ def api_admin_delete_user(username):
 @api_login_required
 def save_sheet():
     data = request.get_json()
-    sheet_url = data.get("sheet_url", "").strip()
+    sheet_url = (data.get("sheet_url") or "").strip()
+    performance_sheet_url = (data.get("performance_sheet_url") or "").strip()
     sheet_id = extract_sheet_id(sheet_url)
     if not sheet_id:
         return jsonify({
@@ -2457,6 +2441,17 @@ def save_sheet():
             "error": "URL sheet không hợp lệ.",
             "help_steps": [
                 "Mở đúng file Google Sheet cần đọc dữ liệu.",
+                "Copy link trên thanh địa chỉ (dạng /spreadsheets/d/... hoặc /spreadsheets/u/1/d/...).",
+                "Hoặc dán trực tiếp mã Sheet ID (chuỗi dài phía sau /d/).",
+            ],
+        }), 400
+
+    if performance_sheet_url and not extract_sheet_id(performance_sheet_url):
+        return jsonify({
+            "success": False,
+            "error": "URL Link bảng hiệu suất không hợp lệ.",
+            "help_steps": [
+                "Mở đúng file Google Sheet hiệu suất cần dùng.",
                 "Copy link trên thanh địa chỉ (dạng /spreadsheets/d/... hoặc /spreadsheets/u/1/d/...).",
                 "Hoặc dán trực tiếp mã Sheet ID (chuỗi dài phía sau /d/).",
             ],
@@ -2503,8 +2498,10 @@ def save_sheet():
             users = load_users_config()
             if username in users:
                 users[username]["sheet_url"] = clean_url
+                users[username]["performance_sheet_url"] = performance_sheet_url
                 save_users_config(users)
             session["sheet_url"] = clean_url
+            session["performance_sheet_url"] = performance_sheet_url
 
     msg = f'Đã lưu sheet "{sheet_name}" vào thư mục tháng {month_label(month_key)}.'
     return jsonify({

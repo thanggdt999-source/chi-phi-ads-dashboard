@@ -7,6 +7,7 @@ const ROLE      = window.APP_ROLE      || "employee";
 const TEAM      = window.APP_TEAM      || "";
 const DISPLAY   = window.APP_DISPLAY   || "";
 const SHEET_URL = window.APP_SHEET_URL || "";
+const PERFORMANCE_SHEET_URL = window.APP_PERFORMANCE_SHEET_URL || "";
 const SHEETS    = window.APP_SHEETS    || [];
 const MONTHLY_SHEETS = window.APP_MONTHLY_SHEETS || [];
 const SESSION_TIMEOUT_MS = Math.max(60, Number(window.APP_SESSION_TIMEOUT_SECONDS || 600)) * 1000;
@@ -34,13 +35,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         const defaultSheet = SHEET_URL || (SHEETS[0] && SHEETS[0].url) || "";
         const sheetInput = document.getElementById("sheetUrl");
         if (sheetInput && defaultSheet) sheetInput.value = defaultSheet;
+        const performanceInput = document.getElementById("performanceSheetUrl");
+        if (performanceInput && PERFORMANCE_SHEET_URL) performanceInput.value = PERFORMANCE_SHEET_URL;
         const sel = document.getElementById("memberSelect");
         if (sel && defaultSheet) sel.value = defaultSheet;
 
         if (defaultSheet) {
             await fetchAndRender(defaultSheet, false);
         } else {
-            showError("⚠️ Tài khoản chưa được gán sheet. Liên hệ Admin.");
+            showError("⚠️ Vui lòng nhập Link chi phí ads để bắt đầu.");
         }
     }
 });
@@ -222,7 +225,10 @@ function maybeAutoOpenSheetForAccess(data) {
 
 async function handleSubmit(event) {
     event.preventDefault();
-    await fetchAndRender(document.getElementById("sheetUrl").value.trim(), true);
+    const sheetUrl = (document.getElementById("sheetUrl")?.value || "").trim();
+    const performanceSheetUrl = (document.getElementById("performanceSheetUrl")?.value || "").trim();
+    await fetchAndRender(sheetUrl, false);
+    await saveSheetUrl(sheetUrl, performanceSheetUrl);
 }
 
 // ─── Date Filter ──────────────────────────────────────
@@ -558,9 +564,16 @@ function renderAutoToggle() {
 }
 
 // ─── Save sheet ───────────────────────────────────────
-async function saveSheetUrl(sheetUrl) {
+async function saveSheetUrl(sheetUrl, performanceSheetUrl = "") {
     try {
-        const response = await fetch("/api/save-sheet", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sheet_url: sheetUrl }) });
+        const response = await fetch("/api/save-sheet", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                sheet_url: sheetUrl,
+                performance_sheet_url: performanceSheetUrl,
+            }),
+        });
         if (await handleSessionExpiredGateFromResponse(response)) return;
         const data = await response.json();
         if (!data.success) {
