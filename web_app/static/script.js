@@ -11,6 +11,7 @@ const PERFORMANCE_SHEET_URL = window.APP_PERFORMANCE_SHEET_URL || "";
 const SHEETS    = window.APP_SHEETS    || [];
 const MONTHLY_SHEETS = window.APP_MONTHLY_SHEETS || [];
 const MONTHLY_PERFORMANCE_SHEETS = window.APP_MONTHLY_PERFORMANCE_SHEETS || [];
+const MONTHLY_GROSS_PROFIT_SHEETS = window.APP_MONTHLY_GROSS_PROFIT_SHEETS || [];
 const SESSION_TIMEOUT_MS = Math.max(60, Number(window.APP_SESSION_TIMEOUT_SECONDS || 600)) * 1000;
 const SESSION_KEEPALIVE_MS = 60 * 1000;
 
@@ -39,6 +40,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (sheetInput && defaultSheet) sheetInput.value = defaultSheet;
         const performanceInput = document.getElementById("performanceSheetUrl");
         if (performanceInput && PERFORMANCE_SHEET_URL) performanceInput.value = PERFORMANCE_SHEET_URL;
+        const grossProfitInput = document.getElementById("grossProfitSheetUrl");
+        const GROSS_PROFIT_SHEET_URL = window.APP_GROSS_PROFIT_SHEET_URL || "";
+        if (grossProfitInput && GROSS_PROFIT_SHEET_URL) grossProfitInput.value = GROSS_PROFIT_SHEET_URL;
         const sel = document.getElementById("memberSelect");
         if (sel && defaultSheet) sel.value = defaultSheet;
 
@@ -229,8 +233,9 @@ async function handleSubmit(event) {
     event.preventDefault();
     const sheetUrl = (document.getElementById("sheetUrl")?.value || "").trim();
     const performanceSheetUrl = (document.getElementById("performanceSheetUrl")?.value || "").trim();
+    const grossProfitSheetUrl = (document.getElementById("grossProfitSheetUrl")?.value || "").trim();
     await fetchAndRender(sheetUrl, false);
-    await saveSheetUrl(sheetUrl, performanceSheetUrl);
+    await saveSheetUrl(sheetUrl, performanceSheetUrl, grossProfitSheetUrl);
 }
 
 // ─── Date Filter ──────────────────────────────────────
@@ -471,6 +476,7 @@ function renderCharts(rows) {
 function initURLInputListeners() {
     const sheetInput = document.getElementById("sheetUrl");
     const perfInput = document.getElementById("performanceSheetUrl");
+    const gpInput = document.getElementById("grossProfitSheetUrl");
     const box = document.getElementById("sheetSuggestions");
     const wrap = document.querySelector(".input-wrap");
     const autoBtn = document.getElementById("autoFillToggleBtn");
@@ -481,7 +487,6 @@ function initURLInputListeners() {
     const show = (inputId) => () => { activeSheetInputId = inputId; renderSuggestions(document.getElementById(inputId)?.value || ""); box.style.display = "block"; };
     const hide = () => { setTimeout(() => { box.style.display = "none"; }, 150); };
     
-    // Ads sheet input listeners
     if (sheetInput) {
         sheetInput.addEventListener("focus", show("sheetUrl"));
         sheetInput.addEventListener("click", show("sheetUrl"));
@@ -489,19 +494,24 @@ function initURLInputListeners() {
         sheetInput.addEventListener("blur", hide);
     }
     
-    // Performance sheet input listeners
     if (perfInput) {
         perfInput.addEventListener("focus", show("performanceSheetUrl"));
         perfInput.addEventListener("click", show("performanceSheetUrl"));
         perfInput.addEventListener("input", show("performanceSheetUrl"));
         perfInput.addEventListener("blur", hide);
     }
+
+    if (gpInput) {
+        gpInput.addEventListener("focus", show("grossProfitSheetUrl"));
+        gpInput.addEventListener("click", show("grossProfitSheetUrl"));
+        gpInput.addEventListener("input", show("grossProfitSheetUrl"));
+        gpInput.addEventListener("blur", hide);
+    }
     
     document.addEventListener("click", e => { if (!wrap.contains(e.target)) box.style.display = "none"; });
 }
 
 function getSuggestionSource() {
-    // If performance sheet input is active, return performance sheet suggestions
     if (activeSheetInputId === "performanceSheetUrl") {
         const seen = new Set();
         const source = [];
@@ -509,39 +519,34 @@ function getSuggestionSource() {
             const url = (item.sheet_url || "").trim();
             if (!url || seen.has(url)) return;
             seen.add(url);
-            source.push({
-                name: item.sheet_name || item.month_label || "Bảng hiệu suất",
-                url,
-                team: "",
-                month_label: item.month_label || "",
-            });
+            source.push({ name: item.sheet_name || item.month_label || "Bảng hiệu suất", url, team: "", month_label: item.month_label || "" });
         });
         return source;
     }
 
-    // For ads sheet input or non-employee roles
-    if (ROLE !== "employee") {
-        return SHEETS.map(s => ({
-            name: s.name || "",
-            url: s.url || "",
-            team: s.team || "",
-            month_label: "",
-        })).filter(s => s.url);
+    if (activeSheetInputId === "grossProfitSheetUrl") {
+        const seen = new Set();
+        const source = [];
+        MONTHLY_GROSS_PROFIT_SHEETS.forEach(item => {
+            const url = (item.sheet_url || "").trim();
+            if (!url || seen.has(url)) return;
+            seen.add(url);
+            source.push({ name: item.sheet_name || item.month_label || "Bảng lợi nhuận gộp", url, team: "", month_label: item.month_label || "" });
+        });
+        return source;
     }
 
-    // Employee: suggest previously used ads sheets from monthly history.
+    if (ROLE !== "employee") {
+        return SHEETS.map(s => ({ name: s.name || "", url: s.url || "", team: s.team || "", month_label: "" })).filter(s => s.url);
+    }
+
     const seen = new Set();
     const source = [];
     MONTHLY_SHEETS.forEach(item => {
         const url = (item.sheet_url || "").trim();
         if (!url || seen.has(url)) return;
         seen.add(url);
-        source.push({
-            name: item.sheet_name || item.month_label || "Sheet đã dùng",
-            url,
-            team: "",
-            month_label: item.month_label || "",
-        });
+        source.push({ name: item.sheet_name || item.month_label || "Sheet đã dùng", url, team: "", month_label: item.month_label || "" });
     });
     return source;
 }
@@ -608,7 +613,7 @@ function renderAutoToggle() {
 }
 
 // ─── Save sheet ───────────────────────────────────────
-async function saveSheetUrl(sheetUrl, performanceSheetUrl = "") {
+async function saveSheetUrl(sheetUrl, performanceSheetUrl = "", grossProfitSheetUrl = "") {
     try {
         const response = await fetch("/api/save-sheet", {
             method: "POST",
@@ -616,6 +621,7 @@ async function saveSheetUrl(sheetUrl, performanceSheetUrl = "") {
             body: JSON.stringify({
                 sheet_url: sheetUrl,
                 performance_sheet_url: performanceSheetUrl,
+                gross_profit_sheet_url: grossProfitSheetUrl,
             }),
         });
         if (await handleSessionExpiredGateFromResponse(response)) return;
