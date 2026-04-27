@@ -1974,9 +1974,23 @@ def fetch_data():
     if role == "employee":
         accessible_ids = {extract_sheet_id(s["url"]) for s in get_accessible_sheets_for_user(username) if s.get("url")}
         if sheet_id not in accessible_ids:
-            return jsonify({"success": False, "error": "Bạn không có quyền xem sheet này."}), 403
+            # Allow employee to test a newly entered sheet URL before saving it.
+            access = inspect_sheet_access(sheet_url)
+            if not access.get("success"):
+                return jsonify({
+                    "success": False,
+                    "error": access.get("error", "Bạn không có quyền xem sheet này."),
+                    "help": access.get("help", ""),
+                    "help_steps": access.get("help_steps", []),
+                    "service_account_email": access.get("service_account_email", ""),
+                    "sheet_id": access.get("sheet_id", ""),
+                    "clean_url": access.get("clean_url", ""),
+                    "share_url": access.get("share_url", ""),
+                    "request_access_url": access.get("request_access_url", ""),
+                    "can_auto_open_sheet": bool(access.get("can_auto_open_sheet", False)),
+                }), 403
     elif role == "lead":
-        accessible_ids = {extract_sheet_id(s["url"]) for s in get_accessible_sheets_for_user(username)}
+        accessible_ids = {extract_sheet_id(s["url"]) for s in get_accessible_sheets_for_user(username) if s.get("url")}
         if sheet_id not in accessible_ids:
             return jsonify({"success": False, "error": "Sheet này không thuộc team của bạn."}), 403
 
