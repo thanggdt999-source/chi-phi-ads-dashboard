@@ -46,6 +46,7 @@ TELEGRAM_REPORT_TIMEZONE = os.getenv("TELEGRAM_REPORT_TIMEZONE", "Asia/Ho_Chi_Mi
 TELEGRAM_REPORT_START_HOUR = int(os.getenv("TELEGRAM_REPORT_START_HOUR", "6"))
 TELEGRAM_REPORT_END_HOUR = int(os.getenv("TELEGRAM_REPORT_END_HOUR", "23"))
 TELEGRAM_REPORT_MAX_PRODUCTS = max(1, int(os.getenv("TELEGRAM_REPORT_MAX_PRODUCTS", "8")))
+SESSION_TIMEOUT_SECONDS = int(os.getenv("SESSION_TIMEOUT_SECONDS", "600"))  # 10 minutes
 
 ROLE_LEVELS = {"admin": 3, "lead": 2, "employee": 1}
 TEAM_CODES = ["TEAM_1", "TEAM_2", "TEAM_3", "TEAM_4", "TEAM_5", "Fanmen"]
@@ -63,6 +64,14 @@ def read_web_static_asset(filename: str) -> str:
         return path.read_text(encoding="utf-8")
     except Exception:
         return ""
+
+
+@app.before_request
+def track_session_activity():
+    """Update session last_activity timestamp on each request."""
+    if session.get("logged_in") is True:
+        session["last_activity"] = datetime.now().timestamp()
+        session.modified = True
 
 
 @app.after_request
@@ -1033,6 +1042,7 @@ def set_session_user(username: str, user: dict, *, elevated: bool = False) -> No
     session["display_name"] = user.get("display_name", username)
     session["sheet_url"] = user.get("sheet_url", "")
     session["is_elevated"] = elevated
+    session["last_activity"] = datetime.now().timestamp()
     if user.get("role") == "employee" and not elevated:
         session["base_employee"] = {
             "username": username,
@@ -1102,14 +1112,37 @@ def get_accessible_sheets_for_user(username: str) -> list:
 
 # ─────────────────── AUTH HELPERS ───────────────────
 
+def is_session_timeout():
+    """Check if the current session has exceeded the timeout duration."""
+    if session.get("logged_in") is not True:
+        return False
+    
+    last_activity = session.get("last_activity", 0)
+    if not last_activity:
+        return False
+    
+    current_time = datetime.now().timestamp()
+    elapsed = current_time - last_activity
+    return elapsed > SESSION_TIMEOUT_SECONDS
+
+
 def is_logged_in():
-    return session.get("logged_in") is True
+    if session.get("logged_in") is not True:
+        return False
+    
+    # Check for session timeout
+    if is_session_timeout():
+        session.clear()
+        return False
+    
+    return True
 
 
 def login_required(view_func):
     @wraps(view_func)
     def wrapper(*args, **kwargs):
         if not is_logged_in():
+            # Session might have timed out
             return redirect(url_for("login", next=request.path))
 
         username = session.get("username", "")
@@ -1128,6 +1161,7 @@ def api_login_required(view_func):
     @wraps(view_func)
     def wrapper(*args, **kwargs):
         if not is_logged_in():
+            # Session might have timed out or user not logged in
             return jsonify({"success": False, "error": "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."}), 401
 
         username = session.get("username", "")
