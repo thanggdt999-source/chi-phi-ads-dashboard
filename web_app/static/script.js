@@ -10,6 +10,7 @@ const SHEET_URL = window.APP_SHEET_URL || "";
 const PERFORMANCE_SHEET_URL = window.APP_PERFORMANCE_SHEET_URL || "";
 const SHEETS    = window.APP_SHEETS    || [];
 const MONTHLY_SHEETS = window.APP_MONTHLY_SHEETS || [];
+const MONTHLY_PERFORMANCE_SHEETS = window.APP_MONTHLY_PERFORMANCE_SHEETS || [];
 const SESSION_TIMEOUT_MS = Math.max(60, Number(window.APP_SESSION_TIMEOUT_SECONDS || 600)) * 1000;
 const SESSION_KEEPALIVE_MS = 60 * 1000;
 
@@ -500,6 +501,25 @@ function initURLInputListeners() {
 }
 
 function getSuggestionSource() {
+    // If performance sheet input is active, return performance sheet suggestions
+    if (activeSheetInputId === "performanceSheetUrl") {
+        const seen = new Set();
+        const source = [];
+        MONTHLY_PERFORMANCE_SHEETS.forEach(item => {
+            const url = (item.sheet_url || "").trim();
+            if (!url || seen.has(url)) return;
+            seen.add(url);
+            source.push({
+                name: item.sheet_name || item.month_label || "Bảng hiệu suất",
+                url,
+                team: "",
+                month_label: item.month_label || "",
+            });
+        });
+        return source;
+    }
+
+    // For ads sheet input or non-employee roles
     if (ROLE !== "employee") {
         return SHEETS.map(s => ({
             name: s.name || "",
@@ -509,7 +529,7 @@ function getSuggestionSource() {
         })).filter(s => s.url);
     }
 
-    // Employee: suggest previously used sheets from monthly history.
+    // Employee: suggest previously used ads sheets from monthly history.
     const seen = new Set();
     const source = [];
     MONTHLY_SHEETS.forEach(item => {

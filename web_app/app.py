@@ -1014,7 +1014,7 @@ def get_sheet_name_and_month(sheet_url: str) -> tuple[str, str, str]:
     return sheet_name, month_key, clean_url
 
 
-def save_monthly_sheet_record(username: str, sheet_url: str, sheet_name: str, month_key: str) -> None:
+def save_monthly_sheet_record(username: str, sheet_url: str, sheet_name: str, month_key: str, performance_sheet_url: str = "") -> None:
     month_dir = MONTHLY_SHEETS_ROOT / month_key
     month_dir.mkdir(parents=True, exist_ok=True)
     user_file = month_dir / f"{username}.json"
@@ -1044,6 +1044,8 @@ def save_monthly_sheet_record(username: str, sheet_url: str, sheet_name: str, mo
         "sheet_url": sheet_url,
         "saved_at": now_iso,
     }
+    if performance_sheet_url:
+        record["performance_sheet_url"] = performance_sheet_url
     if existing_idx >= 0:
         entries[existing_idx] = record
     else:
@@ -1078,6 +1080,7 @@ def get_user_monthly_sheets(username: str, fallback_sheet_url: str = "") -> list
                     "month_label": month_label(month_key),
                     "sheet_name": latest.get("sheet_name", ""),
                     "sheet_url": latest.get("sheet_url", ""),
+                    "performance_sheet_url": latest.get("performance_sheet_url", ""),
                     "folder_url": url_for("view_month_folder", month_key=month_key),
                 })
             except Exception:
@@ -1092,6 +1095,7 @@ def get_user_monthly_sheets(username: str, fallback_sheet_url: str = "") -> list
             "month_label": month_label(mk),
             "sheet_name": "Sheet hiện tại",
             "sheet_url": fallback_sheet_url,
+            "performance_sheet_url": "",
             "folder_url": url_for("view_month_folder", month_key=mk),
         })
 
@@ -1525,6 +1529,17 @@ def index():
     can_manage_users = role == "admin"
     accessible_sheets = get_accessible_sheets_for_user(username)
     monthly_sheets = get_user_monthly_sheets(username, fallback_sheet_url=sheet_url)
+    # Extract performance sheets from monthly sheets for autocomplete
+    monthly_performance_sheets = [
+        {
+            "month_key": m["month_key"],
+            "month_label": m["month_label"],
+            "sheet_name": m.get("performance_sheet_url", "").split("/")[-1][:30] or "Bảng hiệu suất",
+            "sheet_url": m.get("performance_sheet_url", ""),
+        }
+        for m in monthly_sheets
+        if m.get("performance_sheet_url", "")
+    ]
     inline_style_css = read_web_static_asset("style.css")
     inline_script_js = read_web_static_asset("script.js")
     return render_template(
@@ -1543,6 +1558,7 @@ def index():
         accessible_sheets_count=len(accessible_sheets),
         accessible_sheets_json=json.dumps(accessible_sheets, ensure_ascii=False),
         monthly_sheets_json=json.dumps(monthly_sheets, ensure_ascii=False),
+        monthly_performance_sheets_json=json.dumps(monthly_performance_sheets, ensure_ascii=False),
         inline_style_css=inline_style_css,
         inline_script_js=inline_script_js,
     )
@@ -2492,7 +2508,7 @@ def save_sheet():
             f.write(f"{sheet_name},{clean_url}\n")
 
     if username:
-        save_monthly_sheet_record(username, clean_url, sheet_name, month_key)
+        save_monthly_sheet_record(username, clean_url, sheet_name, month_key, performance_sheet_url=performance_sheet_url)
 
         if role == "employee":
             users = load_users_config()
