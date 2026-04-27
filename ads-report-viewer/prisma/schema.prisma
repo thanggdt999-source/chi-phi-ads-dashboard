@@ -1,0 +1,89 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  viewer
+  leader
+  admin
+}
+
+model User {
+  id          String    @id @default(cuid())
+  username    String    @unique
+  password    String
+  displayName String    @default("")
+  team        String    @default("")
+  role        Role      @default(viewer)
+  telegramId       String    @default("")
+  telegramUsername String    @default("")
+  connectToken     String?   @unique
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  spreadsheets Spreadsheet[]
+  reports      Report[]
+
+  @@index([role])
+  @@index([team])
+}
+
+model Spreadsheet {
+  id          String   @id @default(cuid())
+  userId      String
+  url         String
+  parsedOwner String   @default("")
+  team        String   @default("")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reports Report[]
+
+  @@index([userId])
+  @@index([team])
+}
+
+model Report {
+  id             String   @id @default(cuid())
+  userId         String
+  spreadsheetId  String?
+  date           DateTime
+  totalData      Float    @default(0)
+  totalRevenue   Float    @default(0)
+  adsPercentage  Float    @default(0)
+  costPerResult  Float    @default(0)
+  rawJson        Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spreadsheet   Spreadsheet?   @relation(fields: [spreadsheetId], references: [id], onDelete: SetNull)
+  productReports ProductReport[]
+
+  @@unique([userId, date])
+  @@index([userId])
+  @@index([date])
+}
+
+model ProductReport {
+  id            String  @id @default(cuid())
+  reportId      String
+  productName   String
+  data          Float   @default(0)
+  revenue       Float   @default(0)
+  adsPercentage Float   @default(0)
+  costPerResult Float   @default(0)
+
+  report Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+}

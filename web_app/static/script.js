@@ -22,6 +22,7 @@ let currentPage = 1;
 let pageSize = 50;
 let inactivityTimer = null;
 let lastKeepAliveAt = 0;
+let activeSheetInputId = "sheetUrl"; // Track which URL input is active
 
 // ─── Init ─────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", async () => {
@@ -467,17 +468,34 @@ function renderCharts(rows) {
 
 // ─── URL suggestions ──────────────────────────────────
 function initURLInputListeners() {
-    const input   = document.getElementById("sheetUrl");
-    const box     = document.getElementById("sheetSuggestions");
-    const wrap    = document.querySelector(".input-wrap");
+    const sheetInput = document.getElementById("sheetUrl");
+    const perfInput = document.getElementById("performanceSheetUrl");
+    const box = document.getElementById("sheetSuggestions");
+    const wrap = document.querySelector(".input-wrap");
     const autoBtn = document.getElementById("autoFillToggleBtn");
+    
     if (autoBtn) autoBtn.addEventListener("click", toggleAutoFillStatus);
-    if (!input || !box || !wrap) return;
-    const show = () => { renderSuggestions(input.value); box.style.display = "block"; };
-    input.addEventListener("focus", show);
-    input.addEventListener("click", show);
-    input.addEventListener("input", show);
-    input.addEventListener("blur", () => setTimeout(() => { box.style.display = "none"; }, 150));
+    if (!box || !wrap) return;
+    
+    const show = (inputId) => () => { activeSheetInputId = inputId; renderSuggestions(document.getElementById(inputId)?.value || ""); box.style.display = "block"; };
+    const hide = () => { setTimeout(() => { box.style.display = "none"; }, 150); };
+    
+    // Ads sheet input listeners
+    if (sheetInput) {
+        sheetInput.addEventListener("focus", show("sheetUrl"));
+        sheetInput.addEventListener("click", show("sheetUrl"));
+        sheetInput.addEventListener("input", show("sheetUrl"));
+        sheetInput.addEventListener("blur", hide);
+    }
+    
+    // Performance sheet input listeners
+    if (perfInput) {
+        perfInput.addEventListener("focus", show("performanceSheetUrl"));
+        perfInput.addEventListener("click", show("performanceSheetUrl"));
+        perfInput.addEventListener("input", show("performanceSheetUrl"));
+        perfInput.addEventListener("blur", hide);
+    }
+    
     document.addEventListener("click", e => { if (!wrap.contains(e.target)) box.style.display = "none"; });
 }
 
@@ -529,9 +547,15 @@ function renderSuggestions(filterText = "") {
     }
     box.querySelectorAll(".suggestion-item").forEach(item => {
         item.addEventListener("mousedown", () => {
-            document.getElementById("sheetUrl").value = item.getAttribute("data-url") || "";
+            const targetInput = document.getElementById(activeSheetInputId);
+            if (targetInput) {
+                targetInput.value = item.getAttribute("data-url") || "";
+            }
             box.style.display = "none";
-            fetchAndRender(item.getAttribute("data-url"), false);
+            // Only fetch data if the ads sheet URL changed
+            if (activeSheetInputId === "sheetUrl") {
+                fetchAndRender(item.getAttribute("data-url"), false);
+            }
         });
     });
 }

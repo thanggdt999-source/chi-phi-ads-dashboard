@@ -1,0 +1,5 @@
+storage/logs/
+storage/output/
+__pycache__/
+*.pyc
+*.log
