@@ -2,6 +2,7 @@ import argparse
 import html
 import secrets
 import sys
+import tempfile
 
 from flask import Flask, render_template, render_template_string, request, jsonify, session, redirect, url_for
 from google.oauth2.service_account import Credentials
@@ -27,6 +28,7 @@ WEB_STATIC_DIR = Path(__file__).parent / "static"
 SHEET_URLS_PATH = Path(os.getenv("SHEET_URLS_PATH", str(Path(__file__).parent.parent / "storage" / "sheet_urls.csv")))
 AUTO_STATE_PATH = Path(os.getenv("AUTO_STATE_PATH", str(Path(__file__).parent.parent / "storage" / "config" / "auto_fill_state.json")))
 USERS_FILE_PATH = Path(os.getenv("USERS_FILE_PATH", str(Path(__file__).parent.parent / "storage" / "config" / "users.json")))
+USERS_FILE_BACKUP_PATH = Path(os.getenv("USERS_FILE_BACKUP_PATH", str(Path(__file__).parent.parent / "storage" / "config" / "users.backup.json")))
 MONTHLY_SHEETS_ROOT = Path(os.getenv("MONTHLY_SHEETS_ROOT", str(Path(__file__).parent.parent / "storage" / "monthly_sheets")))
 STATIC_ASSET_VERSION = os.getenv("STATIC_ASSET_VERSION", str(int(datetime.now().timestamp())))
 TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "").strip().lstrip("@")
@@ -178,9 +180,36 @@ def build_auto_users_from_sheet_urls() -> dict:
 
 
 def write_default_users_file(users: dict) -> None:
-    USERS_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with USERS_FILE_PATH.open("w", encoding="utf-8") as f:
-        json.dump(users, f, ensure_ascii=False, indent=2)
+    atomic_write_json_file(USERS_FILE_PATH, users)
+    atomic_write_json_file(USERS_FILE_BACKUP_PATH, users)
+
+
+def load_json_dict_file(path: Path) -> Optional[dict]:
+    if not path.exists():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+        return payload if isinstance(payload, dict) and payload else None
+    except Exception:
+        return None
+
+
+def atomic_write_json_file(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_path = tempfile.mkstemp(prefix=f"{path.name}.", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, path)
+    finally:
+        try:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        except Exception:
+            pass
 
 
 def load_users_config() -> dict:
@@ -192,14 +221,26 @@ def load_users_config() -> dict:
         except Exception:
             pass
 
-    if USERS_FILE_PATH.exists():
+    users_from_file = load_json_dict_file(USERS_FILE_PATH)
+    if users_from_file:
+        return users_from_file
+
+    # Recover from backup if main file is corrupted/empty.
+    users_from_backup = load_json_dict_file(USERS_FILE_BACKUP_PATH)
+    if users_from_backup:
         try:
-            with USERS_FILE_PATH.open("r", encoding="utf-8") as f:
-                payload = json.load(f)
-            if isinstance(payload, dict) and payload:
-                return payload
+            atomic_write_json_file(USERS_FILE_PATH, users_from_backup)
         except Exception:
             pass
+        return users_from_backup
+
+    # Only auto-generate defaults when users file does not exist yet.
+    if USERS_FILE_PATH.exists():
+        username = os.getenv("WEB_APP_USERNAME", "admin")
+        password = os.getenv("WEB_APP_PASSWORD", "admin123")
+        return {
+            username: {"password": password, "role": "admin", "display_name": "Administrator"}
+        }
 
     auto_users = build_auto_users_from_sheet_urls()
     if auto_users:
@@ -2144,9 +2185,8 @@ def run_internal_telegram_reports():
 
 def save_users_config(config: dict) -> None:
     """Persist user config to the JSON file (used by admin UI)."""
-    USERS_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with USERS_FILE_PATH.open("w", encoding="utf-8") as f:
-        json.dump(config, f, ensure_ascii=False, indent=2)
+    atomic_write_json_file(USERS_FILE_PATH, config)
+    atomic_write_json_file(USERS_FILE_BACKUP_PATH, config)
 
 
 def admin_page_required(view_func):
