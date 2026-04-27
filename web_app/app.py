@@ -1352,6 +1352,10 @@ def resolve_ads_worksheet(spreadsheet):
     preferred_titles = [
         "Chi phí ADS",
         "Chi phí Ads",
+        "CP ADS-Chuyển đổi",
+        "CP ADS - Chuyển đổi",
+        "CP ADS Chuyển đổi",
+        "CP ADS",
         "Chi Phi ADS",
         "Chi Phi Ads",
         "Chi phi ADS",
@@ -1368,7 +1372,10 @@ def resolve_ads_worksheet(spreadsheet):
     try:
         for ws in spreadsheet.worksheets():
             norm = normalize_sheet_tab_name(ws.title)
-            if ("chiphi" in norm or "chiph" in norm) and "ads" in norm:
+            has_ads = "ads" in norm
+            looks_like_chi_phi_ads = ("chiphi" in norm or "chiph" in norm)
+            looks_like_cp_ads = norm.startswith("cpads") or "cpads" in norm
+            if has_ads and (looks_like_chi_phi_ads or looks_like_cp_ads):
                 candidates.append(ws)
     except Exception:
         candidates = []
@@ -1475,10 +1482,10 @@ def fetch_chi_phi_ads_data(sheet_id):
         ):
             return {
                 "success": False,
-                "error": "Không tìm thấy tab dữ liệu 'Chi phí ADS' trong sheet này.",
+                "error": "Không tìm thấy tab dữ liệu hợp lệ trong sheet này.",
                 "help_steps": [
                     "Mở file Google Sheet và kiểm tra tên tab chứa dữ liệu chi phí.",
-                    "Đổi tên tab thành 'Chi phí ADS' (hoặc tên gần giống có chứa 'chi phí' và 'ads').",
+                    "Đổi tên tab thành 'Chi phí ADS' hoặc 'CP ADS-Chuyển đổi' (hoặc tên gần giống có chứa 'ads').",
                     "Đảm bảo các cột bắt buộc có trong tab: Ngày, Tên tài khoản, Tên sản phẩm - VN, Số Data, Số tiền chi tiêu - VND.",
                 ],
             }
