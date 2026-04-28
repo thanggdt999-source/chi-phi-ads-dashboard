@@ -57,6 +57,12 @@ META_ACCESS_TOKEN_PATH = Path(
         str(Path(__file__).parent.parent / "storage" / "credentials" / "meta_access_token.json"),
     )
 )
+META_TOKEN_VAULT_PATH = Path(
+    os.getenv(
+        "META_TOKEN_VAULT_PATH",
+        str(Path(__file__).parent.parent / "storage" / "config" / "meta_token_vault.json"),
+    )
+)
 CHI_PHI_ADS_SHEET = "Chi phí ADS"
 SHEET_DATA_START_ROW = 3
 MAX_EMPTY_STREAK_TO_STOP_SCAN = 120
@@ -1530,6 +1536,199 @@ def load_meta_access_token() -> str:
     return ""
 
 
+def load_meta_token_vault() -> dict:
+    """Load keyed Meta tokens used for auto-routing by token_key.
+
+    Supported JSON formats:
+    - {"default": "...", "tokens": {"team_3": "EA..."}}
+    - {"team_3": "EA...", "team_1": "EA..."}
+    """
+    env_payload = (os.getenv("META_TOKEN_VAULT", "") or "").strip()
+    if env_payload:
+        try:
+            parsed = json.loads(env_payload)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+
+    if not META_TOKEN_VAULT_PATH.exists():
+        return {}
+
+    try:
+        with META_TOKEN_VAULT_PATH.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+
+def _token_from_vault(vault: dict, token_key: str) -> str:
+    key = str(token_key or "").strip()
+    if not key:
+        return ""
+
+    nested = vault.get("tokens") if isinstance(vault, dict) else None
+    if isinstance(nested, dict):
+        value = str(nested.get(key, "") or "").strip()
+        if value:
+            return value
+
+    direct = str(vault.get(key, "") or "").strip() if isinstance(vault, dict) else ""
+    return direct
+
+
+def resolve_meta_access_token(token_key: str = "") -> str:
+    """Resolve token by priority: keyed vault -> vault default -> legacy token."""
+    vault = load_meta_token_vault()
+    token = _token_from_vault(vault, token_key)
+    if token:
+        return token
+
+    default_from_vault = str(vault.get("default", "") or "").strip() if isinstance(vault, dict) else ""
+    if default_from_vault:
+        return default_from_vault
+
+    return load_meta_access_token()
+
+
+def resolve_meta_account_map_worksheet(spreadsheet):
+    preferred = [
+        "Meta_Account_Map",
+        "Meta Account Map",
+        "META_ACCOUNT_MAP",
+        "Meta mapping",
+        "Meta_Map",
+        "Map tài khoản Meta",
+    ]
+    for title in preferred:
+        try:
+            return spreadsheet.worksheet(title)
+        except Exception:
+            continue
+
+    try:
+        for ws in spreadsheet.worksheets():
+            norm = normalize_sheet_tab_name(ws.title)
+            if "meta" in norm and ("map" in norm or "mapping" in norm):
+                return ws
+    except Exception:
+        pass
+
+    return None
+
+
+def _parse_bool_like(value: str, default: bool = True) -> bool:
+    text = normalize_sheet_tab_name(value)
+    if not text:
+        return default
+    if text in {"1", "true", "yes", "y", "on", "active", "kichhoat"}:
+        return True
+    if text in {"0", "false", "no", "n", "off", "inactive", "tat", "disabled"}:
+        return False
+    return default
+
+
+def _detect_meta_map_headers(row: list) -> dict:
+    headers = {}
+    for idx, cell in enumerate(row):
+        h = normalize_sheet_tab_name(cell)
+        if not h:
+            continue
+        if "owner" in h or h in {"username", "nguoidung", "nhanvien", "taikhoan"}:
+            headers.setdefault("owner_username", idx)
+        if ("account" in h and "id" in h) or h in {"metaid", "adaccountid", "actid"}:
+            headers.setdefault("meta_account_id", idx)
+        if ("label" in h and "account" in h) or "tenhienthi" in h or "tentaikhoan" in h:
+            headers.setdefault("account_label", idx)
+        if "tokenkey" in h or ("token" in h and "key" in h):
+            headers.setdefault("token_key", idx)
+        if "active" in h or "isactive" in h or "trangthai" in h:
+            headers.setdefault("is_active", idx)
+        if "priority" in h or "uutien" in h:
+            headers.setdefault("priority", idx)
+    return headers
+
+
+def _safe_cell(row: list, idx: Optional[int]) -> str:
+    if idx is None or idx < 0 or idx >= len(row):
+        return ""
+    return str(row[idx] or "").strip()
+
+
+def load_accounts_from_meta_map(spreadsheet, owner_username: str = "") -> list:
+    ws = resolve_meta_account_map_worksheet(spreadsheet)
+    if ws is None:
+        return []
+
+    rows = ws.get_all_values()
+    if not rows:
+        return []
+
+    header_idx = None
+    header_map = {}
+    for i, row in enumerate(rows[:20]):
+        detected = _detect_meta_map_headers(row)
+        if "meta_account_id" in detected:
+            header_idx = i
+            header_map = detected
+            break
+
+    if header_idx is None:
+        return []
+
+    owner_norm = normalize_username(owner_username)
+    entries = []
+    dedupe = {}
+    for row in rows[header_idx + 1 :]:
+        raw_account = _safe_cell(row, header_map.get("meta_account_id"))
+        account_id = normalize_account_id(raw_account)
+        if not account_id:
+            continue
+
+        row_owner = _safe_cell(row, header_map.get("owner_username"))
+        if owner_norm and row_owner and normalize_username(row_owner) != owner_norm:
+            continue
+
+        is_active = _parse_bool_like(_safe_cell(row, header_map.get("is_active")), default=True)
+        if not is_active:
+            continue
+
+        label = _safe_cell(row, header_map.get("account_label")) or f"act_{account_id}"
+        token_key = _safe_cell(row, header_map.get("token_key"))
+        priority_raw = parse_number_like(_safe_cell(row, header_map.get("priority")))
+        priority = int(priority_raw) if priority_raw is not None else 999
+
+        existing = dedupe.get(account_id)
+        candidate = {
+            "account_id": account_id,
+            "account_name": label,
+            "token_key": token_key,
+            "priority": priority,
+            "source": "meta_map",
+        }
+        if existing is None or candidate["priority"] < existing["priority"]:
+            dedupe[account_id] = candidate
+
+    entries = list(dedupe.values())
+    entries.sort(key=lambda x: (int(x.get("priority", 999)), str(x.get("account_name", ""))))
+    return entries
+
+
+def resolve_accounts_for_meta_sync(spreadsheet, owner_username: str = "") -> list:
+    mapped = load_accounts_from_meta_map(spreadsheet, owner_username=owner_username)
+    if mapped:
+        return mapped
+
+    settings_ws = resolve_settings_worksheet(spreadsheet)
+    fallback = extract_accounts_from_settings_rows(settings_ws.get_all_values())
+    for item in fallback:
+        item["token_key"] = ""
+        item["priority"] = 999
+        item["source"] = "settings"
+    return fallback
+
+
 def fetch_meta_account_status(account_id: str, access_token: str) -> dict:
     if not access_token:
         return {
@@ -1606,11 +1805,10 @@ def fetch_meta_account_status(account_id: str, access_token: str) -> dict:
 def get_sheet_account_statuses(sheet_id: str) -> dict:
     client = get_gspread_client()
     spreadsheet = client.open_by_key(sheet_id)
-    settings_ws = resolve_settings_worksheet(spreadsheet)
-    rows = settings_ws.get_all_values()
-    accounts = extract_accounts_from_settings_rows(rows)
+    owner_username = str(session.get("username", "") or "")
+    accounts = resolve_accounts_for_meta_sync(spreadsheet, owner_username=owner_username)
 
-    token = load_meta_access_token()
+    default_token = resolve_meta_access_token("")
     results = []
     summary = {
         "total": 0,
@@ -1621,7 +1819,8 @@ def get_sheet_account_statuses(sheet_id: str) -> dict:
 
     status_weight = {"has_spend": 0, "no_spend": 1, "not_connected": 2}
     for entry in accounts:
-        status_data = fetch_meta_account_status(entry["account_id"], token)
+        account_token = resolve_meta_access_token(entry.get("token_key", ""))
+        status_data = fetch_meta_account_status(entry["account_id"], account_token)
         status = status_data.get("status", "not_connected")
         summary["total"] += 1
         summary[status] = summary.get(status, 0) + 1
@@ -1634,6 +1833,8 @@ def get_sheet_account_statuses(sheet_id: str) -> dict:
                 "spend_today": float(status_data.get("spend_today") or 0),
                 "hint": status_data.get("hint", ""),
                 "error": status_data.get("error", ""),
+                "token_key": entry.get("token_key", ""),
+                "source": entry.get("source", "settings"),
             }
         )
 
@@ -1642,7 +1843,7 @@ def get_sheet_account_statuses(sheet_id: str) -> dict:
         "success": True,
         "summary": summary,
         "accounts": results,
-        "has_token": bool(token),
+        "has_token": bool(default_token),
     }
 
 
@@ -1826,9 +2027,9 @@ def fetch_meta_campaign_insights(account_id: str, access_token: str, date_preset
     return data if isinstance(data, list) else []
 
 
-def sync_ads_sheet_from_meta(sheet_id: str, date_preset: str = "today") -> dict:
-    access_token = load_meta_access_token()
-    if not access_token:
+def sync_ads_sheet_from_meta(sheet_id: str, date_preset: str = "today", owner_username: str = "") -> dict:
+    default_token = resolve_meta_access_token("")
+    if not default_token:
         return {
             "attempted": True,
             "success": False,
@@ -1840,9 +2041,8 @@ def sync_ads_sheet_from_meta(sheet_id: str, date_preset: str = "today") -> dict:
 
     client = get_gspread_client()
     spreadsheet = client.open_by_key(sheet_id)
-    settings_ws = resolve_settings_worksheet(spreadsheet)
     ads_ws = resolve_ads_worksheet(spreadsheet)
-    accounts = extract_accounts_from_settings_rows(settings_ws.get_all_values())
+    accounts = resolve_accounts_for_meta_sync(spreadsheet, owner_username=owner_username)
 
     now_dt = datetime.now() if date_preset == "today" else datetime.now() - timedelta(days=1)
     target_date_vn = format_date_vn(now_dt)
@@ -1853,11 +2053,17 @@ def sync_ads_sheet_from_meta(sheet_id: str, date_preset: str = "today") -> dict:
     for account in accounts:
         account_id = normalize_account_id(account.get("account_id", ""))
         account_name = (account.get("account_name") or f"act_{account_id}").strip()
+        token_key = str(account.get("token_key", "") or "").strip()
         if not account_id:
             continue
 
+        account_token = resolve_meta_access_token(token_key)
+        if not account_token:
+            sync_errors.append(f"act_{account_id}: thiếu token (token_key={token_key or 'default'})")
+            continue
+
         try:
-            campaigns = fetch_meta_campaign_insights(account_id, access_token, date_preset=date_preset)
+            campaigns = fetch_meta_campaign_insights(account_id, account_token, date_preset=date_preset)
         except urllib_error.HTTPError as e:
             sync_errors.append(f"act_{account_id}: HTTP {e.code}")
             continue
@@ -1890,6 +2096,7 @@ def sync_ads_sheet_from_meta(sheet_id: str, date_preset: str = "today") -> dict:
         "written_rows": written_rows,
         "accounts_total": len(accounts),
         "accounts_synced": synced_accounts,
+        "accounts_source": "meta_map" if any(a.get("source") == "meta_map" for a in accounts) else "settings",
         "errors": sync_errors[:10],
         "hint": "" if not sync_errors else "Một số tài khoản chưa tự đồng bộ được, web đã bỏ qua và vẫn tải dữ liệu hiện có.",
     }
@@ -2977,7 +3184,7 @@ def fetch_data():
     sync_meta_result = {"attempted": False, "success": False, "written_rows": 0, "accounts_total": 0, "accounts_synced": 0}
     if should_sync_meta:
         try:
-            sync_meta_result = sync_ads_sheet_from_meta(sheet_id, date_preset="today")
+            sync_meta_result = sync_ads_sheet_from_meta(sheet_id, date_preset="today", owner_username=username)
         except Exception as e:
             sync_meta_result = {
                 "attempted": True,

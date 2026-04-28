@@ -135,3 +135,66 @@ Can cau hinh them 1 repo secret tren GitHub:
 - `INTERNAL_CRON_SECRET`: phai trung voi bien moi truong `INTERNAL_CRON_SECRET` dang dat tren Render web service `chi-phi-ads-dashboard`.
 
 Sau khi dat secret, co the test tay trong tab Actions bang `Run workflow` va bat `force=true` neu can bo qua kiem tra slot da gui.
+
+## 6) Tu dong ket noi Meta theo bang mapping (de nghi dung)
+
+Muc tieu: web tu doc danh sach tkqc, tu chon token dung theo `token_key`, tu dong bo chi phi. Nhan vien chi can xu ly khi bi loi quyen/token.
+
+### Buoc 1: Tao tab mapping trong Google Sheet
+
+Tao 1 tab ten `Meta_Account_Map` (hoac `Meta Account Map`) voi cac cot:
+
+- `owner_username`
+- `meta_account_id` (co the nhap `745...` hoac `act_745...`)
+- `account_label`
+- `token_key`
+- `is_active` (`TRUE/FALSE`)
+- `priority` (so nho hon thi uu tien cao hon)
+
+Vi du:
+
+```csv
+owner_username,meta_account_id,account_label,token_key,is_active,priority
+emp_thang,745204308086518,HKD Nguyen Thi Thanh Hien,team_3,TRUE,1
+emp_thang,1529748470808306,HKD Bui Thi Thu Loan,team_3,TRUE,2
+```
+
+### Buoc 2: Cau hinh token vault tren server
+
+Dat bien moi truong `META_TOKEN_VAULT_PATH` tro toi file JSON (mac dinh: `storage/config/meta_token_vault.json`).
+
+Noi dung mau:
+
+```json
+{
+   "default": "EAAB...",
+   "tokens": {
+      "team_3": "EAAB...",
+      "team_1": "EAAC..."
+   }
+}
+```
+
+Thu tu lay token:
+1. token theo `token_key`
+2. `default` trong vault
+3. `META_ACCESS_TOKEN` (fallback cu)
+
+### Buoc 3: Van hanh
+
+- Frontend goi `/api/fetch-data` voi `sync_meta=true`.
+- Backend tu dong:
+   - doc `Meta_Account_Map`
+   - loc theo `owner_username`
+   - dong bo tung `meta_account_id` bang token phu hop
+   - bo qua tai khoan loi va van tra du lieu cac tai khoan con lai
+
+### Buoc 4: Khi nao nhan vien can thao tac
+
+Chi can thao tac khi:
+
+- loi quyen (`ads_read`) trong BM/ad account
+- token het han/bi revoke
+- thieu dong mapping trong `Meta_Account_Map`
+
+Con lai he thong tu chay.
