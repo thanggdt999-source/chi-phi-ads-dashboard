@@ -243,6 +243,11 @@ def load_users_config() -> dict:
 
     users_from_file = load_json_dict_file(USERS_FILE_PATH)
     if users_from_file:
+        # Keep backup in sync so we can recover if the main file is damaged later.
+        try:
+            atomic_write_json_file(USERS_FILE_BACKUP_PATH, users_from_file)
+        except Exception:
+            pass
         if users_from_env:
             merged = dict(users_from_env)
             merged.update(users_from_file)
@@ -271,11 +276,10 @@ def load_users_config() -> dict:
 
     # Only auto-generate defaults when users file does not exist yet.
     if USERS_FILE_PATH.exists():
-        username = os.getenv("WEB_APP_USERNAME", "admin")
-        password = os.getenv("WEB_APP_PASSWORD", "admin123")
-        return {
-            username: {"password": password, "role": "admin", "display_name": "Administrator"}
-        }
+        # Safety guard: never silently replace an existing user store with a
+        # synthetic admin-only account. Returning empty config here preserves
+        # data integrity and avoids the false impression that users were deleted.
+        return dict(users_from_env) if users_from_env else {}
 
     auto_users = build_auto_users_from_sheet_urls()
     if auto_users:
@@ -2600,7 +2604,8 @@ def login():
 
     username = normalize_username(request.form.get("username", ""))
     password = request.form.get("password", "")
-    username_key, user = get_user_entry(username)
+    users_snapshot = load_users_config()
+    username_key, user = get_user_entry(username, users_snapshot)
 
     if user and user.get("password") == password and user.get("role") == "employee":
         set_session_user(username_key or username, user, elevated=False)
@@ -2612,7 +2617,10 @@ def login():
     error_message = "Sai tài khoản hoặc mật khẩu"
 
     if not user:
-        error_message = "Tài khoản chưa tồn tại trong hệ thống"
+        if not users_snapshot:
+            error_message = "Hệ thống tài khoản đang tạm lỗi dữ liệu. Tài khoản không bị xóa, vui lòng liên hệ admin để khôi phục file users."
+        else:
+            error_message = "Tài khoản chưa tồn tại trong hệ thống"
     elif user.get("role") != "employee" and user.get("password") == password:
         error_message = "Tài khoản này là Leader/Admin. Vui lòng đăng nhập bằng tài khoản nhân viên ở bước 1 trước."
     elif user.get("role") != "employee":
