@@ -2298,12 +2298,16 @@ def extract_metric_values(rows: list, aliases: list) -> tuple[float, float]:
 
 # Column header aliases for column-based "Báo cáo hiệu suất" sheet format
 _COL_ALIASES = {
-    "spend":   ["chiphiads", "tongtienchi", "chiphiquangcao", "tongspend"],
-    "results": ["soluongdata", "soluongketqua", "sodata", "tongketqua", "data", "ketqua"],
+    "spend":   ["chiphiads", "tongtienchi", "chiphiquangcao", "tongspend", "chiphi"],
+    "results": [
+        "soluongdata", "soluongketqua", "sodata", "tongketqua", "data", "ketqua",
+        "donhang", "tongdon", "sodon", "soluong", "tongkq", "tongketqua",
+        "dondat", "dondathoa", "soketqua",
+    ],
     "cpr":     ["giaso", "chiphidata", "chiphiketqua", "cpkq"],
-    "ads_pct": ["phantramads", "tyleads", "percentads", "cpads"],
+    "ads_pct": ["phantramads", "tyleads", "percentads", "cpads", "pctads", "tylechiphi"],
     "aov":     ["giatritbon", "giatritbdon", "giatritrungbinhdon", "giatridon"],
-    "doanh_so": ["doanhso", "doanhthu", "revenue"],
+    "doanh_so": ["doanhso", "doanhthu", "revenue", "tongdoanhthu", "tongthu", "tongdoanh"],
 }
 
 
@@ -2383,49 +2387,120 @@ def fetch_performance_summary_column_based(rows: list) -> dict | None:
     }
 
 
+def _parse_date_flexible(raw: str):
+    """Try to parse a date string in multiple common formats. Returns datetime or None."""
+    raw = raw.strip()
+    for fmt in ("%d/%m/%Y", "%-d/%-m/%Y", "%d/%m/%y", "%Y-%m-%d", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(raw, fmt)
+        except Exception:
+            pass
+    # Try without zero-padding via manual split  e.g. "1/4/2026"
+    parts = raw.split("/")
+    if len(parts) == 3:
+        try:
+            d, m, y = int(parts[0]), int(parts[1]), int(parts[2])
+            if y < 100:
+                y += 2000
+            return datetime(y, m, d)
+        except Exception:
+            pass
+    return None
+
+
 def fetch_performance_weekly_trend(rows: list) -> list:
+    # --- Phase 1: try alias-based header detection ---
     header_row_idx = None
     col_idx = {}
     for i, row in enumerate(rows):
         cand = _extract_col_idx(row)
-        # Relaxed: need at least results + (doanh_so or spend)
         has_result = "results" in cand
         has_revenue = "doanh_so" in cand or "spend" in cand
         if has_result and has_revenue:
             header_row_idx = i
             col_idx = cand
             break
-        # Even more relaxed: just results
         if has_result and header_row_idx is None:
             header_row_idx = i
             col_idx = cand
 
+    # --- Phase 2: fallback — scan ALL rows for date+numbers pattern ---
+    # If Phase 1 didn't find a header, try to auto-detect date rows from any row
+    # whose first non-empty cell is a parseable date.
     if header_row_idx is None:
+        # Try to find the first row that has a date in column 0
+        # and use the previous row as the "header" to detect columns
+        date_row_indices = []
+        for i, row in enumerate(rows):
+            if not row:
+                continue
+            cell0 = str(row[0] if len(row) > 0 else "").strip()
+            if _parse_date_flexible(cell0) is not None:
+                date_row_indices.append(i)
+
+        if date_row_indices:
+            # Use the row just before the first date row as the header (if any)
+            first_date_idx = date_row_indices[0]
+            if first_date_idx > 0:
+                col_idx = _extract_col_idx(rows[first_date_idx - 1])
+            # Process all detected date rows
+            series = []
+            for i in date_row_indices:
+                row = rows[i]
+                raw_date = str(row[0]).strip()
+                day_obj = _parse_date_flexible(raw_date)
+                if day_obj is None:
+                    continue
+                # Collect numeric values from the row (skip date column)
+                nums = []
+                for cell in row[1:]:
+                    v = parse_number_like(str(cell))
+                    if v is not None:
+                        nums.append(float(v))
+                # Map to metrics: use col_idx if available, else positional heuristic
+                results_val = _get_cell(row, col_idx.get("results")) if col_idx.get("results") else (nums[0] if nums else 0)
+                revenue_val = _get_cell(row, col_idx.get("doanh_so")) if col_idx.get("doanh_so") else (nums[1] if len(nums) > 1 else 0)
+                ads_val     = _get_cell(row, col_idx.get("ads_pct")) if col_idx.get("ads_pct") else 0.0
+                series.append({
+                    "date": day_obj.strftime("%d/%m/%Y"),
+                    "date_key": day_obj.strftime("%Y-%m-%d"),
+                    "data": round(results_val),
+                    "revenue": round(revenue_val),
+                    "ads_percent": round(ads_val, 2),
+                })
+            series.sort(key=lambda item: item.get("date_key", ""))
+            by_key = {item["date_key"]: item for item in series}
+            window = []
+            for offset in range(6, -1, -1):
+                day = (datetime.now() - timedelta(days=offset)).strftime("%Y-%m-%d")
+                if day in by_key:
+                    window.append(by_key[day])
+                else:
+                    label = (datetime.now() - timedelta(days=offset)).strftime("%d/%m/%Y")
+                    window.append({"date": label, "date_key": day, "data": 0, "revenue": 0, "ads_percent": 0.0})
+            return window
+        # No date rows found at all
         return []
 
+    # --- Phase 1 succeeded: use detected header + col_idx ---
     series = []
-    for row in rows[header_row_idx + 1 :]:
+    for row in rows[header_row_idx + 1:]:
         if not row:
             continue
         raw_date = str(row[0] if len(row) > 0 else "").strip()
-        try:
-            day_obj = datetime.strptime(raw_date, "%d/%m/%Y")
-        except Exception:
+        day_obj = _parse_date_flexible(raw_date)
+        if day_obj is None:
             continue
 
-        series.append(
-            {
-                "date": raw_date,
-                "date_key": day_obj.strftime("%Y-%m-%d"),
-                "data": round(_get_cell(row, col_idx.get("results"))),
-                "revenue": round(_get_cell(row, col_idx.get("doanh_so"))),
-                "ads_percent": round(_get_cell(row, col_idx.get("ads_pct")), 2),
-            }
-        )
+        series.append({
+            "date": day_obj.strftime("%d/%m/%Y"),
+            "date_key": day_obj.strftime("%Y-%m-%d"),
+            "data": round(_get_cell(row, col_idx.get("results"))),
+            "revenue": round(_get_cell(row, col_idx.get("doanh_so"))),
+            "ads_percent": round(_get_cell(row, col_idx.get("ads_pct")), 2),
+        })
 
     series.sort(key=lambda item: item.get("date_key", ""))
-    # Build a 7-day window ending today so today is always last
-    today_str = datetime.now().strftime("%Y-%m-%d")
     by_key = {item["date_key"]: item for item in series}
     window = []
     for offset in range(6, -1, -1):
@@ -3829,6 +3904,33 @@ def admin_users_page():
         team_codes=TEAM_CODES,
         display_name=session.get("display_name", ""),
     )
+
+
+@app.route("/api/debug/performance-weekly", methods=["GET"])
+@api_role_required("admin")
+def api_debug_performance_weekly():
+    """Debug endpoint: returns raw rows sample + weekly_trend parse result for a given sheet URL."""
+    url = request.args.get("url", "").strip()
+    if not url:
+        return jsonify({"success": False, "error": "url param required"})
+    try:
+        sheet_id = extract_sheet_id(url)
+        client = get_gspread_client()
+        spreadsheet = client.open_by_key(sheet_id)
+        worksheet = resolve_performance_worksheet(spreadsheet)
+        rows = worksheet.get_all_values()
+        weekly = fetch_performance_weekly_trend(rows)
+        # Return first 5 rows as sample to help diagnose
+        sample = [list(r)[:10] for r in rows[:10]]
+        return jsonify({
+            "success": True,
+            "tab_title": worksheet.title,
+            "total_rows": len(rows),
+            "sample_rows": sample,
+            "weekly_trend": weekly,
+        })
+    except Exception as exc:
+        return jsonify({"success": False, "error": str(exc)})
 
 
 @app.route("/api/admin/users-config-export", methods=["GET"])
