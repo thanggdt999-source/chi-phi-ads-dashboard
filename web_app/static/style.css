@@ -190,7 +190,6 @@ body {
     position: absolute;
     top: calc(100% - 4px);
     left: 0;
-    right: 0;
     background: #ffffff;
     border-radius: 10px;
     box-shadow: 0 14px 35px rgba(0, 0, 0, 0.22);

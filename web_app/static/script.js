@@ -652,8 +652,22 @@ function initURLInputListeners() {
     
     if (autoBtn) autoBtn.addEventListener("click", toggleAutoFillStatus);
     if (!box || !wrap) return;
+
+    const syncSuggestionBoxToInput = (inputEl) => {
+        if (!inputEl) return;
+        const wrapRect = wrap.getBoundingClientRect();
+        const inputRect = inputEl.getBoundingClientRect();
+        box.style.left = `${Math.max(0, inputRect.left - wrapRect.left)}px`;
+        box.style.width = `${Math.max(180, inputRect.width)}px`;
+    };
     
-    const show = (inputId) => () => { activeSheetInputId = inputId; renderSuggestions(document.getElementById(inputId)?.value || ""); box.style.display = "block"; };
+    const show = (inputId) => () => {
+        activeSheetInputId = inputId;
+        const targetInput = document.getElementById(inputId);
+        syncSuggestionBoxToInput(targetInput);
+        renderSuggestions(targetInput?.value || "");
+        box.style.display = "block";
+    };
     const hide = () => { setTimeout(() => { box.style.display = "none"; }, 150); };
     
     // Ads sheet input listeners
@@ -673,6 +687,11 @@ function initURLInputListeners() {
     }
     
     document.addEventListener("click", e => { if (!wrap.contains(e.target)) box.style.display = "none"; });
+    window.addEventListener("resize", () => {
+        if (box.style.display !== "none") {
+            syncSuggestionBoxToInput(document.getElementById(activeSheetInputId));
+        }
+    });
 }
 
 function getSuggestionSource() {
