@@ -29,6 +29,7 @@ let activeSheetInputId = "sheetUrl"; // Track which URL input is active
 // ─── Init ─────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", async () => {
     setupInactivityLogout();
+    initMetaApiHelperModal();
     populateMemberSelect();
     populateMonthSelect();
     await loadAutoFillStatus();
@@ -109,6 +110,53 @@ function openMonthFolder() {
         return;
     }
     window.open(`/monthly-folder/${encodeURIComponent(key)}`, "_blank");
+}
+
+function initMetaApiHelperModal() {
+    const modal = document.getElementById("metaApiHelperModal");
+    const openBtn = document.getElementById("openMetaApiHelperBtn");
+    const closeBtn = document.getElementById("closeMetaApiHelperBtn");
+    const runBtn = document.getElementById("runMetaApiAutoBtn");
+    if (!modal || !openBtn || !closeBtn || !runBtn) return;
+
+    const openModal = () => {
+        modal.classList.add("show");
+        modal.setAttribute("aria-hidden", "false");
+    };
+    const closeModal = () => {
+        modal.classList.remove("show");
+        modal.setAttribute("aria-hidden", "true");
+    };
+
+    openBtn.addEventListener("click", openModal);
+    closeBtn.addEventListener("click", closeModal);
+    modal.addEventListener("click", (e) => {
+        if (e.target === modal) closeModal();
+    });
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && modal.classList.contains("show")) {
+            closeModal();
+        }
+    });
+
+    runBtn.addEventListener("click", async () => {
+        const sheetUrl = (document.getElementById("sheetUrl")?.value || "").trim();
+        if (!sheetUrl) {
+            showToast("⚠️ Vui lòng nhập link Sheet trước khi đồng bộ API.");
+            return;
+        }
+        runBtn.disabled = true;
+        const original = runBtn.innerHTML;
+        runBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang đồng bộ...';
+        try {
+            await fetchAndRender(sheetUrl, false);
+            showToast("✅ Đã chạy đồng bộ API tự động.");
+            closeModal();
+        } finally {
+            runBtn.disabled = false;
+            runBtn.innerHTML = original;
+        }
+    });
 }
 
 // ─── Load ALL sheets (lead/admin) ─────────────────────
