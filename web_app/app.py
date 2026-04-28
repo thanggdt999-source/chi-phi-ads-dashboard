@@ -1998,6 +1998,89 @@ def extract_metric_values(rows: list, aliases: list) -> tuple[float, float]:
     return float(month_val), float(day_val)
 
 
+# Column header aliases for column-based "Báo cáo hiệu suất" sheet format
+_COL_ALIASES = {
+    "spend":   ["chiphiads", "tongtienchi", "chiphiquangcao", "tongspend"],
+    "results": ["soluongdata", "soluongketqua", "sodata", "tongketqua", "data", "ketqua"],
+    "cpr":     ["giaso", "chiphidata", "chiphiketqua", "cpkq"],
+    "ads_pct": ["phantramads", "tyleads", "percentads", "cpads"],
+    "aov":     ["giatritbon", "giatritbdon", "giatritrungbinhdon", "giatridon"],
+    "doanh_so": ["doanhso", "doanhthu", "revenue"],
+}
+
+
+def _match_col_alias(header: str, key: str) -> bool:
+    norm = normalize_sheet_tab_name(header)
+    return any(alias in norm for alias in _COL_ALIASES[key])
+
+
+def _extract_col_idx(header_row: list) -> dict:
+    """Return dict of metric key → column index, or empty if not found."""
+    idx = {}
+    for i, cell in enumerate(header_row):
+        for key in _COL_ALIASES:
+            if key not in idx and _match_col_alias(str(cell), key):
+                idx[key] = i
+    return idx
+
+
+def _get_cell(row: list, idx: int) -> float:
+    if idx is None or idx >= len(row):
+        return 0.0
+    v = parse_number_like(row[idx])
+    return float(v) if v is not None else 0.0
+
+
+def fetch_performance_summary_column_based(rows: list) -> dict | None:
+    """Parse sheet with column headers (e.g. Báo cáo hiệu suất tab).
+    Returns metric dict or None if sheet doesn't match this format."""
+    from datetime import date
+    today_str = date.today().strftime("%d/%m/%Y")  # e.g. 28/04/2026
+
+    # Find header row: must contain at least "Chi phí ADS" or "Số lượng Data"
+    header_row_idx = None
+    col_idx = {}
+    for i, row in enumerate(rows):
+        cand = _extract_col_idx(row)
+        if "spend" in cand and ("results" in cand or "cpr" in cand or "aov" in cand):
+            header_row_idx = i
+            col_idx = cand
+            break
+
+    if header_row_idx is None:
+        return None
+
+    # Find "Tổng" row (month totals) and today's row
+    tong_row = None
+    today_row = None
+    for row in rows[header_row_idx + 1:]:
+        if not row:
+            continue
+        first = normalize_sheet_tab_name(str(row[0]))
+        if tong_row is None and first in ("tong", "tongsong", "tongcong"):
+            tong_row = row
+        if today_row is None and str(row[0]).strip() == today_str:
+            today_row = row
+
+    def extract(row, key):
+        if row is None or key not in col_idx:
+            return 0.0
+        return _get_cell(row, col_idx[key])
+
+    return {
+        "spend_month":   extract(tong_row, "spend"),
+        "spend_day":     extract(today_row, "spend"),
+        "result_month":  extract(tong_row, "results"),
+        "result_day":    extract(today_row, "results"),
+        "cpr_month":     extract(tong_row, "cpr"),
+        "cpr_day":       extract(today_row, "cpr"),
+        "ads_month":     extract(tong_row, "ads_pct"),
+        "ads_day":       extract(today_row, "ads_pct"),
+        "aov_month":     extract(tong_row, "aov"),
+        "aov_day":       extract(today_row, "aov"),
+    }
+
+
 def fetch_performance_summary(performance_sheet_url: str) -> dict:
     sheet_id = extract_sheet_id(performance_sheet_url)
     if not sheet_id:
@@ -2011,11 +2094,26 @@ def fetch_performance_summary(performance_sheet_url: str) -> dict:
     if not rows:
         return {"success": False, "error": "Bảng hiệu suất chưa có dữ liệu."}
 
-    spend_month, spend_day = extract_metric_values(rows, ["tongchiphi", "tongchi", "tongspend", "chiphi"])
-    result_month, result_day = extract_metric_values(rows, ["tongketqua", "tongdata", "ketqua", "data"])
-    cpr_month, cpr_day = extract_metric_values(rows, ["chiphiketqua", "chiphidata", "cpa", "cpkq"])
-    ads_month, ads_day = extract_metric_values(rows, ["ads", "tyleads", "phantramads", "percentads"])
-    aov_month, aov_day = extract_metric_values(rows, ["giatritbdon", "giatritrungbinhdon", "aov", "giatridon"])
+    # Try column-based parser first (Báo cáo hiệu suất format)
+    col_result = fetch_performance_summary_column_based(rows)
+    if col_result:
+        spend_month  = col_result["spend_month"]
+        spend_day    = col_result["spend_day"]
+        result_month = col_result["result_month"]
+        result_day   = col_result["result_day"]
+        cpr_month    = col_result["cpr_month"]
+        cpr_day      = col_result["cpr_day"]
+        ads_month    = col_result["ads_month"]
+        ads_day      = col_result["ads_day"]
+        aov_month    = col_result["aov_month"]
+        aov_day      = col_result["aov_day"]
+    else:
+        # Fallback: keyword-based row matching
+        spend_month, spend_day = extract_metric_values(rows, ["tongchiphi", "tongchi", "tongspend", "chiphi"])
+        result_month, result_day = extract_metric_values(rows, ["tongketqua", "tongdata", "ketqua", "data"])
+        cpr_month, cpr_day = extract_metric_values(rows, ["chiphiketqua", "chiphidata", "cpa", "cpkq"])
+        ads_month, ads_day = extract_metric_values(rows, ["ads", "tyleads", "phantramads", "percentads"])
+        aov_month, aov_day = extract_metric_values(rows, ["giatritbdon", "giatritrungbinhdon", "aov", "giatridon"])
 
     return {
         "success": True,
