@@ -20,6 +20,11 @@ from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 from zoneinfo import ZoneInfo
 
+try:
+    import psycopg2
+except Exception:
+    psycopg2 = None
+
 app = Flask(__name__)
 app.secret_key = os.getenv("WEB_APP_SECRET_KEY", "change-this-secret-in-production")
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
@@ -30,6 +35,7 @@ SHEET_URLS_PATH = Path(os.getenv("SHEET_URLS_PATH", str(Path(__file__).parent.pa
 AUTO_STATE_PATH = Path(os.getenv("AUTO_STATE_PATH", str(Path(__file__).parent.parent / "storage" / "config" / "auto_fill_state.json")))
 USERS_FILE_PATH = Path(os.getenv("USERS_FILE_PATH", str(Path(__file__).parent.parent / "storage" / "config" / "users.json")))
 USERS_FILE_BACKUP_PATH = Path(os.getenv("USERS_FILE_BACKUP_PATH", str(Path(__file__).parent.parent / "storage" / "config" / "users.backup.json")))
+USERS_DATABASE_URL = (os.getenv("USERS_DATABASE_URL") or os.getenv("DATABASE_URL") or "").strip()
 MONTHLY_SHEETS_ROOT = Path(os.getenv("MONTHLY_SHEETS_ROOT", str(Path(__file__).parent.parent / "storage" / "monthly_sheets")))
 STATIC_ASSET_VERSION = os.getenv("STATIC_ASSET_VERSION", str(int(datetime.now().timestamp())))
 TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "").strip().lstrip("@")
@@ -229,18 +235,76 @@ def atomic_write_json_file(path: Path, payload: dict) -> None:
             pass
 
 
-def load_users_config() -> dict:
-    """Load user config from env, file, or auto-generated defaults."""
-    users_from_env = {}
-    config_json = os.getenv("USERS_CONFIG", "").strip()
-    if config_json:
-        try:
-            parsed = json.loads(config_json)
-            if isinstance(parsed, dict):
-                users_from_env = parsed
-        except Exception:
-            pass
+def _is_users_db_enabled() -> bool:
+    return bool(USERS_DATABASE_URL) and psycopg2 is not None
 
+
+def _ensure_users_db_table() -> bool:
+    if not _is_users_db_enabled():
+        return False
+    try:
+        with psycopg2.connect(USERS_DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS app_users_store (
+                        store_key TEXT PRIMARY KEY,
+                        users_json JSONB NOT NULL,
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                    """
+                )
+            conn.commit()
+        return True
+    except Exception:
+        return False
+
+
+def _load_users_from_db() -> Optional[dict]:
+    if not _is_users_db_enabled():
+        return None
+    if not _ensure_users_db_table():
+        return None
+    try:
+        with psycopg2.connect(USERS_DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT users_json FROM app_users_store WHERE store_key = %s", ("default",))
+                row = cur.fetchone()
+        if not row:
+            return None
+        payload = row[0]
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        return payload if isinstance(payload, dict) and payload else None
+    except Exception:
+        return None
+
+
+def _save_users_to_db(users: dict) -> bool:
+    if not _is_users_db_enabled():
+        return False
+    if not _ensure_users_db_table():
+        return False
+    try:
+        with psycopg2.connect(USERS_DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO app_users_store (store_key, users_json, updated_at)
+                    VALUES (%s, %s::jsonb, NOW())
+                    ON CONFLICT (store_key)
+                    DO UPDATE SET users_json = EXCLUDED.users_json, updated_at = NOW()
+                    """,
+                    ("default", json.dumps(users, ensure_ascii=False)),
+                )
+            conn.commit()
+        return True
+    except Exception:
+        return False
+
+
+def _load_users_from_file_layers(users_from_env: dict) -> dict:
+    """Legacy loader stack (env/file/backup/auto-generated)."""
     users_from_file = load_json_dict_file(USERS_FILE_PATH)
     if users_from_file:
         # Keep backup in sync so we can recover if the main file is damaged later.
@@ -295,6 +359,32 @@ def load_users_config() -> dict:
     return {
         username: {"password": password, "role": "admin", "display_name": "Administrator"}
     }
+
+
+def load_users_config() -> dict:
+    """Load user config from Postgres (preferred) then file layers."""
+    users_from_env = {}
+    config_json = os.getenv("USERS_CONFIG", "").strip()
+    if config_json:
+        try:
+            parsed = json.loads(config_json)
+            if isinstance(parsed, dict):
+                users_from_env = parsed
+        except Exception:
+            pass
+
+    users_from_db = _load_users_from_db()
+    if users_from_db:
+        merged = dict(users_from_env)
+        merged.update(users_from_db)
+        if merged != users_from_db:
+            _save_users_to_db(merged)
+        return merged
+
+    loaded = _load_users_from_file_layers(users_from_env)
+    if loaded:
+        _save_users_to_db(loaded)
+    return loaded
 
 
 def normalize_username(value: str) -> str:
@@ -3887,6 +3977,8 @@ def save_users_config(config: dict) -> None:
             pass
     merged = dict(env_baseline)
     merged.update(config)  # config (file) wins on conflicts
+    _save_users_to_db(merged)
+    # Keep local files as a portable backup for non-DB environments.
     atomic_write_json_file(USERS_FILE_PATH, merged)
     atomic_write_json_file(USERS_FILE_BACKUP_PATH, merged)
 
