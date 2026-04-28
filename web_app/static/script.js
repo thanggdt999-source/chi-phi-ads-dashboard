@@ -592,7 +592,7 @@ function renderAccountStatuses(payload) {
     if (notConnectedEl) notConnectedEl.textContent = String(summary.not_connected || 0);
 
     if (!accounts.length) {
-        tbody.innerHTML = '<tr><td class="account-status-empty" colspan="5">Không tìm thấy tài khoản quảng cáo trong tab Cài đặt.</td></tr>';
+        tbody.innerHTML = '<tr><td class="account-status-empty" colspan="6">Không tìm thấy tài khoản quảng cáo trong tab Cài đặt.</td></tr>';
         section.style.display = "block";
         return;
     }
@@ -603,9 +603,14 @@ function renderAccountStatuses(payload) {
         const hint = escapeHtml(acc.hint || "");
         const spend = Number(acc.spend_today || 0);
         const spendLabel = spend > 0 ? formatCurrency(spend) : "0 VND";
+        const isConnected = status === "has_spend" || status === "no_spend";
+        const apiBadge = isConnected
+            ? `<span class="api-connect-badge connected"><i class="fas fa-check-circle"></i> Đã kết nối</span>`
+            : `<span class="api-connect-badge disconnected"><i class="fas fa-times-circle"></i> Chưa kết nối</span>`;
         return `<tr>
             <td>${escapeHtml(acc.account_name || "—")}</td>
             <td>act_${escapeHtml(acc.account_id || "")}</td>
+            <td>${apiBadge}</td>
             <td class="spend-cell">${spendLabel}</td>
             <td><span class="account-status-badge ${status.replace(/_/g, "-")}">${statusLabel}</span></td>
             <td class="account-hint">${hint || "—"}</td>
