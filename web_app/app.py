@@ -1937,7 +1937,17 @@ def parse_number_like(value: str) -> Optional[float]:
 
 
 def resolve_performance_worksheet(spreadsheet):
-    preferred = ["Hiệu suất", "Hieu suat", "Bảng hiệu suất", "Performance", "TỔNG", "Tong"]
+    preferred = [
+        "Báo cáo hiệu suất",
+        "Bao cao hieu suat",
+        "BÁO CÁO HIỆU SUẤT",
+        "Hiệu suất",
+        "Hieu suat",
+        "Bảng hiệu suất",
+        "Performance",
+        "TỔNG",
+        "Tong",
+    ]
     for title in preferred:
         try:
             return spreadsheet.worksheet(title)
