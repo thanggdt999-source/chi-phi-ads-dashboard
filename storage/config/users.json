@@ -34,25 +34,4 @@
     "team": "TEAM_5",
     "display_name": "Lead TEAM_5"
   },
-  "emp_duy_linh": {
-    "password": "Emp@123456",
-    "role": "employee",
-    "team": "TEAM_1",
-    "display_name": "Duy Linh",
-    "sheet_url": "https://docs.google.com/spreadsheets/d/1LTWiNI7QgkHBDqWHCxccx5W9b7A_xiRK91WAyOztmDg/edit"
-  },
-  "emp_dinh_hue": {
-    "password": "Emp@123456",
-    "role": "employee",
-    "team": "TEAM_2",
-    "display_name": "Đinh Huế",
-    "sheet_url": "https://docs.google.com/spreadsheets/d/1vh84oH_HxYIJHuKeId8naaMOcW8PG1DcBFPvkqQ3X3k/edit"
-  },
-  "emp_thang": {
-    "password": "Emp@123456",
-    "role": "employee",
-    "team": "TEAM_3",
-    "display_name": "Thắng",
-    "sheet_url": "https://docs.google.com/spreadsheets/d/1NHlo1Aw9-fMVujMJSTkYOu1G6ItjkfVk1DX-iwfuZBE/edit"
-  }
 }
