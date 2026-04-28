@@ -1858,8 +1858,32 @@ def parse_number_like(value: str) -> Optional[float]:
 
     compact = text.replace("\xa0", " ").replace("₫", "").replace("VND", "").replace("vnd", "")
     compact = compact.replace("%", "")
-    compact = compact.replace(".", "").replace(",", ".")
-    compact = re.sub(r"[^0-9\-.]", "", compact)
+    compact = re.sub(r"[^0-9,\.\-]", "", compact)
+
+    # Normalize decimal/thousand separators safely.
+    has_dot = "." in compact
+    has_comma = "," in compact
+    if has_dot and has_comma:
+        # Detect decimal separator by the last punctuation position.
+        if compact.rfind(",") > compact.rfind("."):
+            # VN style: 1.234.567,89
+            compact = compact.replace(".", "").replace(",", ".")
+        else:
+            # US style: 1,234,567.89
+            compact = compact.replace(",", "")
+    elif has_comma and not has_dot:
+        parts = compact.split(",")
+        if len(parts) == 2 and len(parts[1]) <= 2:
+            compact = parts[0] + "." + parts[1]
+        else:
+            compact = compact.replace(",", "")
+    elif has_dot and not has_comma:
+        parts = compact.split(".")
+        if len(parts) == 2 and len(parts[1]) <= 2:
+            compact = parts[0] + "." + parts[1]
+        else:
+            compact = compact.replace(".", "")
+
     if not compact or compact in {"-", ".", "-."}:
         return None
     try:
