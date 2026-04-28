@@ -378,7 +378,7 @@ function renderData() {
     try { renderTable(filteredRows); } catch (_) {}
     try { renderInsights(filteredRows); } catch (_) {
         const chartSection = document.getElementById("chartsSection");
-        if (chartSection) chartSection.style.display = "none";
+            // Removed the call to loadAccountStatuses after reading dashboard data
         showToast("⚠️ Không tải được khung tổng hợp. Dữ liệu bảng vẫn hiển thị bình thường.");
     }
 }
