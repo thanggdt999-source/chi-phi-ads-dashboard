@@ -136,6 +136,7 @@ async function loadAllData() {
             headers: data.headers,
             ads_percent: "",
             profitability_metrics: null,
+            account_summary: [],
             memberSummaries: data.member_summaries || [],
         };
         currentPerformanceMetrics = null;
@@ -235,6 +236,7 @@ function maybeAutoOpenSheetForAccess(data) {
             headers: data.headers,
             ads_percent: data.ads_percent || "",
             profitability_metrics: data.profitability_metrics || null,
+            account_summary: data.account_summary || [],
             memberSummaries: [],
         };
         filteredRows = [...currentData.rows];
@@ -336,7 +338,7 @@ function applyDateFilter() {
     currentPage = 1;
     renderStats(filteredRows);
     renderTable(filteredRows);
-    renderCharts(filteredRows);
+    renderInsights(filteredRows);
 }
 
 function resetDateFilter() {
@@ -347,7 +349,7 @@ function resetDateFilter() {
     if (info) info.style.display = "none";
     renderStats(filteredRows);
     renderTable(filteredRows);
-    renderCharts(filteredRows);
+    renderInsights(filteredRows);
 }
 
 function resetDateInputs() {
@@ -374,10 +376,10 @@ function renderData() {
     try { renderStats(filteredRows); } catch (_) {}
     try { renderRankings(); } catch (_) {}
     try { renderTable(filteredRows); } catch (_) {}
-    try { renderCharts(filteredRows); } catch (_) {
+    try { renderInsights(filteredRows); } catch (_) {
         const chartSection = document.getElementById("chartsSection");
         if (chartSection) chartSection.style.display = "none";
-        showToast("⚠️ Không tải được biểu đồ. Dữ liệu bảng vẫn hiển thị bình thường.");
+        showToast("⚠️ Không tải được khung tổng hợp. Dữ liệu bảng vẫn hiển thị bình thường.");
     }
 }
 
@@ -666,50 +668,101 @@ function changePageSize(value) {
     renderTable(filteredRows);
 }
 
-function renderCharts(rows) {
-    if (typeof Chart === "undefined") {
-        throw new Error("Chart.js not available");
+function renderInsights(rows) {
+    const accountBox = document.getElementById("accountInsightList");
+    const weeklyBox = document.getElementById("weeklyInsightList");
+    const lngBox = document.getElementById("lngInsightList");
+    if (!accountBox || !weeklyBox || !lngBox) return;
+
+    renderAccountInsight(accountBox, rows);
+    renderWeeklyInsight(weeklyBox);
+    renderLNGInsight(lngBox);
+}
+
+function renderAccountInsight(container, rows) {
+    const source = Array.isArray(currentData.account_summary) && currentData.account_summary.length
+        ? currentData.account_summary
+        : buildAccountInsightFallback(rows || []);
+
+    if (!source.length) {
+        container.innerHTML = '<div class="insight-empty">Chưa có dữ liệu tài khoản quảng cáo.</div>';
+        return;
     }
 
-    const dateCanvas = document.getElementById("spendByDateChart");
-    const productCanvas = document.getElementById("spendByProductChart");
-    if (!dateCanvas || !productCanvas) {
-        throw new Error("Chart canvas missing");
+    container.innerHTML = source.map((item) => {
+        const liveClass = item.is_live ? "live" : "die";
+        return `<div class="insight-row">
+            <div class="insight-main">
+                <span class="insight-dot ${liveClass}"></span>
+                <span class="insight-name">${escapeHtml(item.account_name || "Không rõ tài khoản")}</span>
+            </div>
+            <span class="insight-meta">${formatCurrency(item.total_spend || 0)}</span>
+        </div>`;
+    }).join("");
+}
+
+function buildAccountInsightFallback(rows) {
+    const now = new Date();
+    const todayKey = `${String(now.getDate()).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()}`;
+    const byAcc = {};
+
+    rows.forEach((row) => {
+        const name = (row["Tên tài khoản"] || "").trim() || "Không rõ tài khoản";
+        const spend = parseSpendJS(row["Số tiền chi tiêu - VND"] || "");
+        const day = (row["Ngày"] || "").trim();
+
+        if (!byAcc[name]) byAcc[name] = { account_name: name, total_spend: 0, today_spend: 0, is_live: false };
+        byAcc[name].total_spend += spend;
+        if (day === todayKey) byAcc[name].today_spend += spend;
+    });
+
+    const list = Object.values(byAcc).map((item) => ({
+        account_name: item.account_name,
+        total_spend: Math.round(item.total_spend),
+        today_spend: Math.round(item.today_spend),
+        is_live: item.today_spend > 0,
+    }));
+
+    list.sort((a, b) => Number(b.total_spend || 0) - Number(a.total_spend || 0));
+    return list;
+}
+
+function renderWeeklyInsight(container) {
+    const weekly = Array.isArray(currentPerformanceMetrics?.weekly_trend) ? currentPerformanceMetrics.weekly_trend : [];
+    if (!weekly.length) {
+        container.innerHTML = '<div class="insight-empty">Chưa có dữ liệu 7 ngày từ bảng hiệu suất.</div>';
+        return;
     }
 
-    // Date chart
-    const spendByDate = {};
-    rows.forEach(row => {
-        const d = row["Ngày"] || "Unknown";
-        spendByDate[d] = (spendByDate[d] || 0) + parseSpendJS(row["Số tiền chi tiêu - VND"] || "");
-    });
-    const dateLabels = Object.keys(spendByDate).sort((a, b) => {
-        const da = parseViDate(a), db = parseViDate(b);
-        return (da && db) ? da - db : a.localeCompare(b);
-    });
-    const ctx1 = dateCanvas.getContext("2d");
-    if (charts.spendByDate) charts.spendByDate.destroy();
-    charts.spendByDate = new Chart(ctx1, {
-        type: "line",
-        data: { labels: dateLabels, datasets: [{ label: "Chi Phí (VND)", data: dateLabels.map(d => spendByDate[d]), borderColor: "#3498db", backgroundColor: "rgba(52,152,219,0.1)", borderWidth: 2, fill: true, tension: 0.4, pointRadius: 5, pointBackgroundColor: "#3498db", pointBorderColor: "#fff", pointBorderWidth: 2 }] },
-        options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { display: true, position: "top" } }, scales: { y: { beginAtZero: true, ticks: { callback: v => formatShortCurrency(v) } } } },
-    });
+    container.innerHTML = weekly.map((item) => `<div class="insight-row">
+        <div class="insight-main">
+            <span class="insight-name">${escapeHtml(item.date || "—")}</span>
+        </div>
+        <span class="insight-meta">Data: ${formatMetricNumber(item.data, false)} | DS: ${formatMetricNumber(item.revenue)} | %Ads: ${formatMetricNumber(item.ads_percent, true)}%</span>
+    </div>`).join("");
+}
 
-    // Product chart
-    const spendByProduct = {};
-    rows.forEach(row => {
-        const p = row["Tên sản phẩm - VN"] || "Unknown";
-        spendByProduct[p] = (spendByProduct[p] || 0) + parseSpendJS(row["Số tiền chi tiêu - VND"] || "");
-    });
-    const pLabels = Object.keys(spendByProduct);
-    const colors  = ["#3498db","#e74c3c","#2ecc71","#f39c12","#9b59b6","#1abc9c","#34495e","#e67e22","#c0392b","#27ae60"];
-    const ctx2 = productCanvas.getContext("2d");
-    if (charts.spendByProduct) charts.spendByProduct.destroy();
-    charts.spendByProduct = new Chart(ctx2, {
-        type: "doughnut",
-        data: { labels: pLabels, datasets: [{ data: pLabels.map(p => spendByProduct[p]), backgroundColor: colors.slice(0, pLabels.length), borderColor: "#fff", borderWidth: 2 }] },
-        options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { display: true, position: "bottom" } } },
-    });
+function renderLNGInsight(container) {
+    const lng = currentData.profitability_metrics?.product_lng || {};
+    const top = Array.isArray(lng.top) ? lng.top : [];
+    const bottom = Array.isArray(lng.bottom) ? lng.bottom : [];
+
+    if (!top.length && !bottom.length) {
+        container.innerHTML = '<div class="insight-empty">Chưa có dữ liệu LNG sản phẩm trong tab LN gộp dự tính.</div>';
+        return;
+    }
+
+    const renderProduct = (item) => `<div class="insight-row">
+        <div class="insight-main"><span class="insight-name">${escapeHtml(item.product_name || "—")}</span></div>
+        <span class="insight-meta">${formatCurrency(item.lng || 0)}</span>
+    </div>`;
+
+    let html = top.map(renderProduct).join("");
+    if (top.length && bottom.length) {
+        html += '<div class="lng-separator">...</div>';
+    }
+    html += bottom.map(renderProduct).join("");
+    container.innerHTML = html;
 }
 
 // ─── URL suggestions ──────────────────────────────────

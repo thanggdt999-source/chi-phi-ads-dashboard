@@ -2367,6 +2367,43 @@ def fetch_performance_summary_column_based(rows: list) -> dict | None:
     }
 
 
+def fetch_performance_weekly_trend(rows: list) -> list:
+    header_row_idx = None
+    col_idx = {}
+    for i, row in enumerate(rows):
+        cand = _extract_col_idx(row)
+        if "doanh_so" in cand and "results" in cand and "ads_pct" in cand:
+            header_row_idx = i
+            col_idx = cand
+            break
+
+    if header_row_idx is None:
+        return []
+
+    series = []
+    for row in rows[header_row_idx + 1 :]:
+        if not row:
+            continue
+        raw_date = str(row[0] if len(row) > 0 else "").strip()
+        try:
+            day_obj = datetime.strptime(raw_date, "%d/%m/%Y")
+        except Exception:
+            continue
+
+        series.append(
+            {
+                "date": raw_date,
+                "date_key": day_obj.strftime("%Y-%m-%d"),
+                "data": round(_get_cell(row, col_idx.get("results"))),
+                "revenue": round(_get_cell(row, col_idx.get("doanh_so"))),
+                "ads_percent": round(_get_cell(row, col_idx.get("ads_pct")), 2),
+            }
+        )
+
+    series.sort(key=lambda item: item.get("date_key", ""))
+    return series[-7:]
+
+
 def fetch_performance_summary(performance_sheet_url: str) -> dict:
     sheet_id = extract_sheet_id(performance_sheet_url)
     if not sheet_id:
@@ -2382,6 +2419,7 @@ def fetch_performance_summary(performance_sheet_url: str) -> dict:
 
     # Try column-based parser first (Báo cáo hiệu suất format)
     col_result = fetch_performance_summary_column_based(rows)
+    weekly_trend = fetch_performance_weekly_trend(rows)
     if col_result:
         spend_month  = col_result["spend_month"]
         spend_day    = col_result["spend_day"]
@@ -2413,6 +2451,7 @@ def fetch_performance_summary(performance_sheet_url: str) -> dict:
             "cost_per_result": {"month": round(cpr_month), "day": round(cpr_day), "unit": "VND"},
             "ads_percent": {"month": round(ads_month, 2), "day": round(ads_day, 2), "unit": "%"},
             "avg_order_value": {"month": round(aov_month), "day": round(aov_day), "unit": "VND"},
+            "weekly_trend": weekly_trend,
         },
         "sheet_name": spreadsheet.title or "Bảng hiệu suất",
     }
@@ -2566,6 +2605,97 @@ def fetch_profitability_summary(spreadsheet) -> dict:
         "gross_profit_percent": {"total": round(gross_pct_total, 2), "unit": "%"},
     }
 
+
+def build_account_spend_summary(rows: list) -> list:
+    today_key = datetime.now().strftime("%d/%m/%Y")
+    by_account = {}
+    for row in rows:
+        account_name = (row.get("Tên tài khoản") or "").strip() or "Không rõ tài khoản"
+        spend = parse_spend(row.get("Số tiền chi tiêu - VND", ""))
+        date_text = (row.get("Ngày") or "").strip()
+
+        if account_name not in by_account:
+            by_account[account_name] = {
+                "account_name": account_name,
+                "total_spend": 0.0,
+                "today_spend": 0.0,
+            }
+
+        by_account[account_name]["total_spend"] += spend
+        if date_text == today_key:
+            by_account[account_name]["today_spend"] += spend
+
+    summaries = []
+    for item in by_account.values():
+        total = float(item.get("total_spend", 0.0))
+        today = float(item.get("today_spend", 0.0))
+        summaries.append(
+            {
+                "account_name": item.get("account_name", ""),
+                "total_spend": round(total),
+                "today_spend": round(today),
+                "is_live": today > 0,
+            }
+        )
+
+    summaries.sort(key=lambda x: float(x.get("total_spend", 0)), reverse=True)
+    return summaries
+
+
+def build_product_lng_summary(spreadsheet) -> dict:
+    worksheet = resolve_profitability_worksheet(spreadsheet)
+    if worksheet is None:
+        return {"top": [], "bottom": []}
+
+    try:
+        rows = worksheet.get_all_values()
+    except Exception:
+        rows = []
+
+    if not rows:
+        return {"top": [], "bottom": []}
+
+    gross_col_idx = 20  # U
+    product_col_idx = 3  # default D
+    header_idx = 0
+
+    for i, row in enumerate(rows[:8]):
+        normalized = [normalize_sheet_tab_name(cell) for cell in row]
+        if any("sanpham" in cell for cell in normalized):
+            header_idx = i
+            for j, cell in enumerate(normalized):
+                if "sanpham" in cell or "tensp" in cell:
+                    product_col_idx = j
+                    break
+            break
+
+    products = []
+    for row in rows[header_idx + 1 :]:
+        if not row:
+            continue
+        name = str(row[product_col_idx] if product_col_idx < len(row) else "").strip()
+        if not name:
+            continue
+
+        name_norm = normalize_sheet_tab_name(name)
+        if any(token in name_norm for token in ["tong", "tongcong", "total"]):
+            continue
+
+        if gross_col_idx >= len(row):
+            continue
+        lng_val = parse_number_like(row[gross_col_idx])
+        if lng_val is None:
+            continue
+
+        products.append({"product_name": name, "lng": round(float(lng_val))})
+
+    if not products:
+        return {"top": [], "bottom": []}
+
+    desc = sorted(products, key=lambda x: float(x.get("lng", 0)), reverse=True)
+    asc = sorted(products, key=lambda x: float(x.get("lng", 0)))
+    return {"top": desc[:5], "bottom": asc[:5]}
+
 def fetch_chi_phi_ads_data(sheet_id):
     """Fetch all data from 'Chi phí ADS' tab."""
     try:
@@ -2618,6 +2748,8 @@ def fetch_chi_phi_ads_data(sheet_id):
             pass
 
         profitability_metrics = fetch_profitability_summary(spreadsheet)
+        profitability_metrics["product_lng"] = build_product_lng_summary(spreadsheet)
+        account_summary = build_account_spend_summary(rows)
 
         return {
             "success": True,
@@ -2625,6 +2757,7 @@ def fetch_chi_phi_ads_data(sheet_id):
             "headers": DISPLAY_COLUMNS,
             "ads_percent": ads_percent,
             "profitability_metrics": profitability_metrics,
+            "account_summary": account_summary,
         }
     except Exception as e:
         raw_error = str(e)

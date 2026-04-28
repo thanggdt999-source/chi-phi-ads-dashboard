@@ -536,16 +536,92 @@ small {
 
 .charts-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-    gap: 20px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
 }
 
 .charts-grid .card {
     position: relative;
+    padding: 14px;
+    min-height: 270px;
+    display: flex;
+    flex-direction: column;
 }
 
-.charts-grid canvas {
-    max-height: 300px;
+.charts-grid .card h3 {
+    margin-bottom: 10px;
+}
+
+.insight-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow: auto;
+    padding-right: 4px;
+}
+
+.insight-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border: 1px solid #e5eef8;
+    border-radius: 10px;
+    padding: 8px 10px;
+    background: #f8fbff;
+    font-size: 0.82rem;
+}
+
+.insight-main {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+}
+
+.insight-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+}
+
+.insight-dot.live {
+    background: #16a34a;
+}
+
+.insight-dot.die {
+    background: #ef4444;
+}
+
+.insight-name {
+    color: #1f2937;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.insight-meta {
+    color: #334155;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.insight-empty {
+    border: 1px dashed #cbd5e1;
+    border-radius: 10px;
+    padding: 12px;
+    color: #64748b;
+    text-align: center;
+    font-size: 0.84rem;
+}
+
+.lng-separator {
+    text-align: center;
+    color: #64748b;
+    font-weight: 700;
+    letter-spacing: 2px;
 }
 
 /* Table Section */
