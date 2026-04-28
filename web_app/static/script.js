@@ -763,25 +763,36 @@ function renderWeeklyInsight(container) {
 
 function renderLNGInsight(container) {
     const lng = currentData.profitability_metrics?.product_lng || {};
-    const top = Array.isArray(lng.top) ? lng.top : [];
-    const bottom = Array.isArray(lng.bottom) ? lng.bottom : [];
+    // Support both new format {items:[]} and legacy {top:[], bottom:[]}
+    let items = null;
+    if (Array.isArray(lng.items)) {
+        items = lng.items;
+    } else {
+        const top = Array.isArray(lng.top) ? lng.top : [];
+        const bottom = Array.isArray(lng.bottom) ? lng.bottom : [];
+        if (!top.length && !bottom.length) {
+            container.innerHTML = '<div class="insight-empty">Chưa có dữ liệu LNG sản phẩm trong tab LN gộp dự tính.</div>';
+            return;
+        }
+        // Merge legacy and sort desc
+        const merged = [...top, ...bottom.filter(b => !top.some(t => t.product_name === b.product_name))];
+        items = merged.sort((a, b) => (b.lng || 0) - (a.lng || 0));
+    }
 
-    if (!top.length && !bottom.length) {
+    if (!items || !items.length) {
         container.innerHTML = '<div class="insight-empty">Chưa có dữ liệu LNG sản phẩm trong tab LN gộp dự tính.</div>';
         return;
     }
 
-    const renderProduct = (item) => `<div class="insight-row">
-        <div class="insight-main"><span class="insight-name">${escapeHtml(item.product_name || "—")}</span></div>
-        <span class="insight-meta">${formatCurrency(item.lng || 0)}</span>
-    </div>`;
-
-    let html = top.map(renderProduct).join("");
-    if (top.length && bottom.length) {
-        html += '<div class="lng-separator">...</div>';
-    }
-    html += bottom.map(renderProduct).join("");
-    container.innerHTML = html;
+    container.innerHTML = items.map(item => {
+        const lngVal = item.lng || 0;
+        const pctText = (item.lng_pct != null) ? ` <span style="font-size:0.82em;color:#64748b;">(${item.lng_pct}%)</span>` : "";
+        const color = lngVal >= 0 ? "#16a34a" : "#dc2626";
+        return `<div class="insight-row">
+            <div class="insight-main"><span class="insight-name">${escapeHtml(item.product_name || "—")}</span></div>
+            <span class="insight-meta" style="color:${color};white-space:nowrap;">${formatCurrency(lngVal)}${pctText}</span>
+        </div>`;
+    }).join("");
 }
 
 // ─── URL suggestions ──────────────────────────────────

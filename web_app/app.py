@@ -2724,6 +2724,19 @@ def build_product_lng_summary(spreadsheet) -> dict:
                 product_col_idx = fallback_idx
             break
 
+    # Also find % LNG column (e.g. "%LNG", "%LN", or column V index 21)
+    lng_pct_col_idx: int | None = None
+    if header_idx < len(rows):
+        header_row_normalized = [normalize_sheet_tab_name(cell) for cell in rows[header_idx]]
+        for j, cell in enumerate(header_row_normalized):
+            if ("phantramlng" in cell or "phantramln" in cell or
+                    ("phantram" in cell and ("gop" in cell or "ln" in cell or "lng" in cell))):
+                lng_pct_col_idx = j
+                break
+        # Fallback: column V (index 21) which is the known %LN gộp column
+        if lng_pct_col_idx is None and gross_col_idx == 20:
+            lng_pct_col_idx = 21
+
     products = []
     for row in rows[header_idx + 1 :]:
         if not row:
@@ -2742,14 +2755,19 @@ def build_product_lng_summary(spreadsheet) -> dict:
         if lng_val is None:
             continue
 
-        products.append({"product_name": name, "lng": round(float(lng_val))})
+        lng_pct_val = None
+        if lng_pct_col_idx is not None and lng_pct_col_idx < len(row):
+            raw_pct = parse_number_like(row[lng_pct_col_idx])
+            if raw_pct is not None:
+                lng_pct_val = round(float(raw_pct), 2)
+
+        products.append({"product_name": name, "lng": round(float(lng_val)), "lng_pct": lng_pct_val})
 
     if not products:
-        return {"top": [], "bottom": []}
+        return {"items": []}
 
     desc = sorted(products, key=lambda x: float(x.get("lng", 0)), reverse=True)
-    asc = sorted(products, key=lambda x: float(x.get("lng", 0)))
-    return {"top": desc[:5], "bottom": asc[:5]}
+    return {"items": desc}
 
 def fetch_chi_phi_ads_data(sheet_id):
     """Fetch all data from 'Chi phí ADS' tab."""
