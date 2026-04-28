@@ -3752,6 +3752,128 @@ def main_cli() -> int:
     return 1
 
 
+# ─────────────────── CHANGE PASSWORD ───────────────────
+
+def _clear_pw_otp_session() -> None:
+    for k in ["pw_otp_code", "pw_otp_expires", "pw_otp_new_password", "pw_otp_attempts", "pw_otp_step"]:
+        session.pop(k, None)
+
+
+@app.route("/change-password", methods=["GET"])
+@login_required
+def change_password_page():
+    step = session.get("pw_otp_step", "form")
+    return render_template("change_password.html", step=step, error="", success="")
+
+
+@app.route("/change-password/request", methods=["POST"])
+@login_required
+def change_password_request():
+    username = session.get("username", "")
+    users = load_users_config()
+    user = users.get(username)
+
+    if not user:
+        return render_template("change_password.html", step="form",
+                               error="Không tìm thấy tài khoản.", success="")
+
+    old_password = request.form.get("old_password", "")
+    new_password = request.form.get("new_password", "")
+    confirm_password = request.form.get("confirm_password", "")
+
+    if user.get("password") != old_password:
+        return render_template("change_password.html", step="form",
+                               error="Mật khẩu hiện tại không đúng.", success="")
+
+    if not new_password or len(new_password) < 6:
+        return render_template("change_password.html", step="form",
+                               error="Mật khẩu mới phải có ít nhất 6 ký tự.", success="")
+
+    if new_password != confirm_password:
+        return render_template("change_password.html", step="form",
+                               error="Mật khẩu xác nhận không khớp.", success="")
+
+    if new_password == old_password:
+        return render_template("change_password.html", step="form",
+                               error="Mật khẩu mới phải khác mật khẩu hiện tại.", success="")
+
+    chat_id = normalize_telegram_chat_id(str(user.get("telegram_chat_id", "")))
+    if not chat_id:
+        return render_template("change_password.html", step="form",
+                               error="Tài khoản chưa liên kết Telegram. Vui lòng liên hệ admin để reset mật khẩu.",
+                               success="")
+
+    otp_code = str(secrets.randbelow(10000)).zfill(4)
+    session["pw_otp_code"] = otp_code
+    session["pw_otp_expires"] = (datetime.now() + timedelta(minutes=5)).timestamp()
+    session["pw_otp_new_password"] = new_password
+    session["pw_otp_attempts"] = 0
+    session["pw_otp_step"] = "otp"
+
+    bot_token = normalize_telegram_bot_token(str(user.get("telegram_bot_token", ""))) or TELEGRAM_BOT_TOKEN
+    display = html.escape(user.get("display_name", username))
+    msg_text = (
+        f"🔐 <b>Xác nhận đổi mật khẩu</b>\n\n"
+        f"Xin chào <b>{display}</b>,\n\n"
+        f"Mã xác nhận đổi mật khẩu của bạn là:\n\n"
+        f"<b>🔢 {otp_code}</b>\n\n"
+        f"Mã có hiệu lực trong <b>5 phút</b>.\n"
+        f"Nếu bạn không yêu cầu đổi mật khẩu, hãy bỏ qua tin nhắn này."
+    )
+    ok, err = send_telegram_message(chat_id, msg_text, bot_token)
+    if not ok:
+        _clear_pw_otp_session()
+        return render_template("change_password.html", step="form",
+                               error=f"Không thể gửi mã xác nhận qua Telegram: {err}", success="")
+
+    return render_template("change_password.html", step="otp", error="", success="")
+
+
+@app.route("/change-password/verify", methods=["POST"])
+@login_required
+def change_password_verify():
+    entered_code = request.form.get("otp_code", "").strip()
+    stored_code = str(session.get("pw_otp_code", ""))
+    expires = float(session.get("pw_otp_expires", 0))
+    new_password = str(session.get("pw_otp_new_password", ""))
+    attempts = int(session.get("pw_otp_attempts", 0))
+
+    if not stored_code or not new_password:
+        _clear_pw_otp_session()
+        return render_template("change_password.html", step="form",
+                               error="Phiên đổi mật khẩu đã hết hạn. Vui lòng thử lại.", success="")
+
+    if datetime.now().timestamp() > expires:
+        _clear_pw_otp_session()
+        return render_template("change_password.html", step="form",
+                               error="Mã xác nhận đã hết hạn (5 phút). Vui lòng thử lại.", success="")
+
+    if attempts >= 3:
+        _clear_pw_otp_session()
+        return render_template("change_password.html", step="form",
+                               error="Đã nhập sai quá 3 lần. Vui lòng yêu cầu mã mới.", success="")
+
+    if not secrets.compare_digest(entered_code, stored_code):
+        session["pw_otp_attempts"] = attempts + 1
+        remaining = 3 - (attempts + 1)
+        return render_template("change_password.html", step="otp",
+                               error=f"Mã xác nhận không đúng. Còn {remaining} lần thử.", success="")
+
+    username = session.get("username", "")
+    users = load_users_config()
+    if username not in users:
+        _clear_pw_otp_session()
+        return render_template("change_password.html", step="form",
+                               error="Không tìm thấy tài khoản.", success="")
+
+    users[username]["password"] = new_password
+    save_users_config(users)
+    _clear_pw_otp_session()
+
+    return render_template("change_password.html", step="done", error="",
+                           success="Mật khẩu đã được đổi thành công!")
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         raise SystemExit(main_cli())

@@ -122,7 +122,8 @@
         .action-link.elevate { background: linear-gradient(135deg, #0ea5e9, #2563eb); color: #fff; }
         .action-link.manage { background: rgba(139,92,246,0.16); color: #ede9fe; border: 1px solid rgba(167,139,250,0.28); }
         .action-link.back-employee { background: rgba(56, 189, 248, 0.2); color: #e0f2fe; border: 1px solid rgba(125, 211, 252, 0.35); }
-        .action-link.logout { background: rgba(239,68,68,0.92); color: #fff; }
+            .action-link.change-pw { background: rgba(250,204,21,0.18); color: #fef08a; border: 1px solid rgba(250,204,21,0.32); }
+            .action-link.logout { background: rgba(239,68,68,0.92); color: #fff; }
 
         .main-content { flex: 1; }
 
@@ -283,6 +284,7 @@
                         </a>
                         {% endif %}
                         <a href="{{ url_for('logout') }}" class="action-link logout"><i class="fas fa-sign-out-alt"></i> Đăng xuất</a>
+                            <a href="{{ url_for('change_password_page') }}" class="action-link change-pw"><i class="fas fa-key"></i> Đổi mật khẩu</a>
                     </div>
 
 
