@@ -12,7 +12,7 @@ import re
 import os
 from pathlib import Path
 from functools import wraps
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import json
 from typing import Optional
 from urllib import error as urllib_error
@@ -57,6 +57,9 @@ META_ACCESS_TOKEN_PATH = Path(
         str(Path(__file__).parent.parent / "storage" / "credentials" / "meta_access_token.json"),
     )
 )
+CHI_PHI_ADS_SHEET = "Chi phí ADS"
+SHEET_DATA_START_ROW = 3
+MAX_EMPTY_STREAK_TO_STOP_SCAN = 120
 
 ROLE_LEVELS = {"admin": 3, "lead": 2, "employee": 1}
 TEAM_CODES = ["TEAM_1", "TEAM_2", "TEAM_3", "TEAM_4", "TEAM_5", "Fanmen"]
@@ -1598,6 +1601,356 @@ def get_sheet_account_statuses(sheet_id: str) -> dict:
         "has_token": bool(token),
     }
 
+
+def extract_product_name_from_campaign(campaign_name: str) -> str:
+    match = re.search(r"BID\s*1_(.+?)(?:_|$)", campaign_name or "", re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return (campaign_name or "").strip() or "Không rõ sản phẩm"
+
+
+def sum_result_actions(actions: list) -> int:
+    total = 0
+    for action in actions or []:
+        action_type = str(action.get("action_type", ""))
+        if action_type == "offsite_conversion.fb_pixel_complete_registration":
+            try:
+                total += int(float(action.get("value", 0)))
+            except (TypeError, ValueError):
+                continue
+    return total
+
+
+def format_date_vn(date_obj: datetime) -> str:
+    return date_obj.strftime("%d/%m/%Y")
+
+
+def extract_account_id_from_label(label: str) -> str:
+    match = re.search(r"\((\d{6,})\)", label or "")
+    return normalize_account_id(match.group(1)) if match else ""
+
+
+def resolve_account_name_for_sheet(all_values: list, account_id: str, account_name_raw: str) -> str:
+    normalized_id = normalize_account_id(account_id)
+    for i, row in enumerate(all_values):
+        if i < SHEET_DATA_START_ROW - 1:
+            continue
+        cell_account = row[1].strip() if len(row) > 1 else ""
+        if cell_account and normalized_id and f"({normalized_id})" in cell_account:
+            return cell_account
+
+    cleaned_name = (account_name_raw or "").strip() or f"act_{normalized_id}"
+    if normalized_id and f"({normalized_id})" not in cleaned_name:
+        return f"{cleaned_name} ({normalized_id})"
+    return cleaned_name
+
+
+def has_core_data_in_ads_row(row: list) -> bool:
+    cell_date = row[0].strip() if len(row) > 0 else ""
+    cell_account = row[1].strip() if len(row) > 1 else ""
+    cell_product = row[3].strip() if len(row) > 3 else ""
+    return bool(cell_date and (cell_account or cell_product))
+
+
+def detect_logical_last_data_row(all_values: list) -> int:
+    last_data_row = SHEET_DATA_START_ROW - 1
+    seen_data = False
+    empty_streak = 0
+
+    for i in range(SHEET_DATA_START_ROW - 1, len(all_values)):
+        row = all_values[i]
+        if has_core_data_in_ads_row(row):
+            seen_data = True
+            empty_streak = 0
+            last_data_row = i + 1
+            continue
+
+        if seen_data:
+            empty_streak += 1
+            if empty_streak >= MAX_EMPTY_STREAK_TO_STOP_SCAN:
+                break
+
+    return last_data_row
+
+
+def aggregate_sync_rows(rows_to_write: list) -> list:
+    grouped = {}
+    for row in rows_to_write:
+        account_id = normalize_account_id(str(row.get("account_id", "")))
+        key = (row.get("date_vn", ""), account_id or row.get("account_name", ""), row.get("product_name", ""))
+        if key not in grouped:
+            grouped[key] = {
+                "date_vn": row.get("date_vn", ""),
+                "account_id": account_id,
+                "account_name": row.get("account_name", ""),
+                "product_name": row.get("product_name", ""),
+                "data_count": int(row.get("data_count", 0) or 0),
+                "spend": float(row.get("spend", 0) or 0),
+            }
+            continue
+
+        grouped[key]["data_count"] += int(row.get("data_count", 0) or 0)
+        grouped[key]["spend"] += float(row.get("spend", 0) or 0)
+
+    return list(grouped.values())
+
+
+def upsert_rows_to_ads_worksheet(worksheet, rows_to_write: list) -> int:
+    prepared_rows = aggregate_sync_rows(rows_to_write)
+    if not prepared_rows:
+        return 0
+
+    all_values = worksheet.get_all_values()
+    logical_last_data_row = detect_logical_last_data_row(all_values)
+    written = 0
+
+    for row_data in prepared_rows:
+        target_date = row_data.get("date_vn", "")
+        account_id = normalize_account_id(str(row_data.get("account_id", "")))
+        account_name = resolve_account_name_for_sheet(all_values, account_id, row_data.get("account_name", ""))
+        product_name = (row_data.get("product_name", "") or "").strip() or "Không rõ sản phẩm"
+        data_count = int(row_data.get("data_count", 0) or 0)
+        spend = float(row_data.get("spend", 0) or 0)
+
+        found_row_idx = None
+        found_cell_account = ""
+        for i, row in enumerate(all_values):
+            if i < SHEET_DATA_START_ROW - 1:
+                continue
+            if i + 1 > logical_last_data_row:
+                break
+
+            cell_date = row[0].strip() if len(row) > 0 else ""
+            cell_account = row[1].strip() if len(row) > 1 else ""
+            cell_product = row[3].strip() if len(row) > 3 else ""
+
+            same_account = cell_account == account_name
+            if not same_account and account_id:
+                cell_account_id = extract_account_id_from_label(cell_account)
+                if cell_account_id == account_id:
+                    same_account = True
+                elif row_data.get("account_name") and cell_account.startswith(str(row_data.get("account_name"))):
+                    same_account = True
+
+            if cell_date == target_date and same_account and cell_product == product_name:
+                found_row_idx = i + 1
+                found_cell_account = cell_account
+                break
+
+        if found_row_idx:
+            worksheet.update(f"A{found_row_idx}", [[target_date]], value_input_option="USER_ENTERED")
+            if found_cell_account != account_name:
+                worksheet.update(f"B{found_row_idx}", [[account_name]])
+            worksheet.update(f"E{found_row_idx}:F{found_row_idx}", [[data_count, spend]])
+        else:
+            next_row = logical_last_data_row + 1
+            if next_row > worksheet.row_count:
+                worksheet.add_rows(next_row - worksheet.row_count)
+
+            worksheet.update(
+                f"A{next_row}:B{next_row}",
+                [[target_date, account_name]],
+                value_input_option="USER_ENTERED",
+            )
+            worksheet.update(f"D{next_row}:F{next_row}", [[product_name, data_count, spend]])
+
+            while len(all_values) < next_row:
+                all_values.append([])
+            all_values[next_row - 1] = [target_date, account_name, "", product_name, str(data_count), str(spend)]
+            logical_last_data_row = next_row
+
+        written += 1
+
+    return written
+
+
+def fetch_meta_campaign_insights(account_id: str, access_token: str, date_preset: str = "today") -> list:
+    endpoint = f"https://graph.facebook.com/{META_GRAPH_VERSION}/act_{normalize_account_id(account_id)}/insights"
+    query = urllib_parse.urlencode(
+        {
+            "fields": "campaign_name,spend,actions",
+            "level": "campaign",
+            "date_preset": date_preset,
+            "limit": 200,
+            "access_token": access_token,
+        }
+    )
+    url = f"{endpoint}?{query}"
+    with urllib_request.urlopen(url, timeout=30) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    data = payload.get("data", []) if isinstance(payload, dict) else []
+    return data if isinstance(data, list) else []
+
+
+def sync_ads_sheet_from_meta(sheet_id: str, date_preset: str = "today") -> dict:
+    access_token = load_meta_access_token()
+    if not access_token:
+        return {
+            "attempted": True,
+            "success": False,
+            "written_rows": 0,
+            "accounts_total": 0,
+            "accounts_synced": 0,
+            "hint": "Chưa có Meta access token, nên chưa thể tự ghi chi phí vào sheet.",
+        }
+
+    client = get_gspread_client()
+    spreadsheet = client.open_by_key(sheet_id)
+    settings_ws = resolve_settings_worksheet(spreadsheet)
+    ads_ws = resolve_ads_worksheet(spreadsheet)
+    accounts = extract_accounts_from_settings_rows(settings_ws.get_all_values())
+
+    now_dt = datetime.now() if date_preset == "today" else datetime.now() - timedelta(days=1)
+    target_date_vn = format_date_vn(now_dt)
+    rows_to_write = []
+    sync_errors = []
+    synced_accounts = 0
+
+    for account in accounts:
+        account_id = normalize_account_id(account.get("account_id", ""))
+        account_name = (account.get("account_name") or f"act_{account_id}").strip()
+        if not account_id:
+            continue
+
+        try:
+            campaigns = fetch_meta_campaign_insights(account_id, access_token, date_preset=date_preset)
+        except urllib_error.HTTPError as e:
+            sync_errors.append(f"act_{account_id}: HTTP {e.code}")
+            continue
+        except Exception as e:
+            sync_errors.append(f"act_{account_id}: {str(e)}")
+            continue
+
+        if campaigns:
+            synced_accounts += 1
+
+        for campaign in campaigns:
+            spend = float(campaign.get("spend") or 0)
+            if spend <= 0:
+                continue
+            rows_to_write.append(
+                {
+                    "date_vn": target_date_vn,
+                    "account_id": account_id,
+                    "account_name": account_name,
+                    "product_name": extract_product_name_from_campaign(campaign.get("campaign_name", "")),
+                    "data_count": sum_result_actions(campaign.get("actions") or []),
+                    "spend": spend,
+                }
+            )
+
+    written_rows = upsert_rows_to_ads_worksheet(ads_ws, rows_to_write) if rows_to_write else 0
+    return {
+        "attempted": True,
+        "success": True,
+        "written_rows": written_rows,
+        "accounts_total": len(accounts),
+        "accounts_synced": synced_accounts,
+        "errors": sync_errors[:10],
+        "hint": "" if not sync_errors else "Một số tài khoản chưa tự đồng bộ được, web đã bỏ qua và vẫn tải dữ liệu hiện có.",
+    }
+
+
+def parse_number_like(value: str) -> Optional[float]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+
+    compact = text.replace("\xa0", " ").replace("₫", "").replace("VND", "").replace("vnd", "")
+    compact = compact.replace("%", "")
+    compact = compact.replace(".", "").replace(",", ".")
+    compact = re.sub(r"[^0-9\-.]", "", compact)
+    if not compact or compact in {"-", ".", "-."}:
+        return None
+    try:
+        return float(compact)
+    except Exception:
+        return None
+
+
+def resolve_performance_worksheet(spreadsheet):
+    preferred = ["Hiệu suất", "Hieu suat", "Bảng hiệu suất", "Performance", "TỔNG", "Tong"]
+    for title in preferred:
+        try:
+            return spreadsheet.worksheet(title)
+        except Exception:
+            continue
+
+    worksheets = spreadsheet.worksheets()
+    if worksheets:
+        return worksheets[0]
+    raise gspread.exceptions.WorksheetNotFound("Hiệu suất")
+
+
+def extract_metric_values(rows: list, aliases: list) -> tuple[float, float]:
+    month_val = None
+    day_val = None
+    for row in rows:
+        row_text = " ".join(str(cell or "") for cell in row)
+        row_norm = normalize_sheet_tab_name(row_text)
+        if not any(alias in row_norm for alias in aliases):
+            continue
+
+        numeric_values = [num for num in (parse_number_like(cell) for cell in row) if num is not None]
+        if not numeric_values:
+            continue
+
+        is_day_row = any(key in row_norm for key in ["homnay", "today", "trongngay"])
+        is_month_row = any(key in row_norm for key in ["thang", "month"])
+
+        if is_day_row and day_val is None:
+            day_val = numeric_values[0]
+            continue
+
+        if is_month_row and month_val is None:
+            month_val = numeric_values[0]
+            if len(numeric_values) > 1 and day_val is None:
+                day_val = numeric_values[1]
+            continue
+
+        if month_val is None:
+            month_val = numeric_values[0]
+        if day_val is None and len(numeric_values) > 1:
+            day_val = numeric_values[1]
+
+    if month_val is None:
+        month_val = 0.0
+    if day_val is None:
+        day_val = 0.0
+    return float(month_val), float(day_val)
+
+
+def fetch_performance_summary(performance_sheet_url: str) -> dict:
+    sheet_id = extract_sheet_id(performance_sheet_url)
+    if not sheet_id:
+        return {"success": False, "error": "Link bảng hiệu suất không hợp lệ."}
+
+    client = get_gspread_client()
+    spreadsheet = client.open_by_key(sheet_id)
+    worksheet = resolve_performance_worksheet(spreadsheet)
+    rows = worksheet.get_all_values()
+
+    if not rows:
+        return {"success": False, "error": "Bảng hiệu suất chưa có dữ liệu."}
+
+    spend_month, spend_day = extract_metric_values(rows, ["tongchiphi", "tongchi", "tongspend", "chiphi"])
+    result_month, result_day = extract_metric_values(rows, ["tongketqua", "tongdata", "ketqua", "data"])
+    cpr_month, cpr_day = extract_metric_values(rows, ["chiphiketqua", "chiphidata", "cpa", "cpkq"])
+    ads_month, ads_day = extract_metric_values(rows, ["ads", "tyleads", "phantramads", "percentads"])
+    aov_month, aov_day = extract_metric_values(rows, ["giatritbdon", "giatritrungbinhdon", "aov", "giatridon"])
+
+    return {
+        "success": True,
+        "metrics": {
+            "total_spend": {"month": round(spend_month), "day": round(spend_day), "unit": "VND"},
+            "total_results": {"month": round(result_month), "day": round(result_day), "unit": "data"},
+            "cost_per_result": {"month": round(cpr_month), "day": round(cpr_day), "unit": "VND"},
+            "ads_percent": {"month": round(ads_month, 2), "day": round(ads_day, 2), "unit": "%"},
+            "avg_order_value": {"month": round(aov_month), "day": round(aov_day), "unit": "VND"},
+        },
+        "sheet_name": spreadsheet.title or "Bảng hiệu suất",
+    }
+
 DISPLAY_COLUMNS = ["Ngày", "Tên tài khoản", "Tên sản phẩm - VN", "Số Data", "Số tiền chi tiêu - VND"]
 
 
@@ -2389,8 +2742,9 @@ def session_ping():
 @app.route("/api/fetch-data", methods=["POST"])
 @api_login_required
 def fetch_data():
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     sheet_url = (data.get("sheet_url") or "").strip()
+    should_sync_meta = bool(data.get("sync_meta", True))
     
     if not sheet_url:
         return jsonify({"success": False, "error": "Vui lòng nhập URL sheet"}), 400
@@ -2434,7 +2788,22 @@ def fetch_data():
         if sheet_id not in accessible_ids:
             return jsonify({"success": False, "error": "Sheet này không thuộc team của bạn."}), 403
 
+    sync_meta_result = {"attempted": False, "success": False, "written_rows": 0, "accounts_total": 0, "accounts_synced": 0}
+    if should_sync_meta:
+        try:
+            sync_meta_result = sync_ads_sheet_from_meta(sheet_id, date_preset="today")
+        except Exception as e:
+            sync_meta_result = {
+                "attempted": True,
+                "success": False,
+                "written_rows": 0,
+                "accounts_total": 0,
+                "accounts_synced": 0,
+                "hint": f"Không thể tự đồng bộ Meta API: {str(e)}",
+            }
+
     result = fetch_chi_phi_ads_data(sheet_id)
+    result["sync_meta"] = sync_meta_result
     return jsonify(result)
 
 
@@ -2518,6 +2887,44 @@ def account_status():
         ), 400
     except Exception as e:
         return jsonify({"success": False, "error": f"Không lấy được trạng thái tài khoản: {str(e)}"}), 500
+
+
+@app.route("/api/performance-summary", methods=["POST"])
+@api_login_required
+def performance_summary():
+    data = request.get_json(silent=True) or {}
+    performance_sheet_url = (data.get("performance_sheet_url") or "").strip()
+    if not performance_sheet_url:
+        return jsonify({"success": False, "error": "Thiếu Link bảng hiệu suất."}), 400
+
+    sheet_id = extract_sheet_id(performance_sheet_url)
+    if not sheet_id:
+        return jsonify({"success": False, "error": "Link bảng hiệu suất không hợp lệ."}), 400
+
+    role = session.get("role", "employee")
+    username = session.get("username", "")
+    if role == "employee":
+        allowed_ids = set()
+        session_perf_url = (session.get("performance_sheet_url") or "").strip()
+        if session_perf_url:
+            sid = extract_sheet_id(session_perf_url)
+            if sid:
+                allowed_ids.add(sid)
+        for item in get_user_monthly_sheets(username):
+            perf_url = (item.get("performance_sheet_url") or "").strip()
+            sid = extract_sheet_id(perf_url)
+            if sid:
+                allowed_ids.add(sid)
+        if allowed_ids and sheet_id not in allowed_ids:
+            return jsonify({"success": False, "error": "Bạn không có quyền xem bảng hiệu suất này."}), 403
+
+    try:
+        result = fetch_performance_summary(performance_sheet_url)
+        return jsonify(result)
+    except gspread.exceptions.WorksheetNotFound:
+        return jsonify({"success": False, "error": "Không tìm thấy tab dữ liệu trong bảng hiệu suất."}), 400
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Không đọc được bảng hiệu suất: {str(e)}"}), 500
 
 
 @app.route("/api/auto-fill-status", methods=["GET"])

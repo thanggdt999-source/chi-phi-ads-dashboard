@@ -17,6 +17,7 @@ const SESSION_KEEPALIVE_MS = 60 * 1000;
 // ─── State ────────────────────────────────────────────
 let currentData  = { rows: [], headers: [], ads_percent: "", memberSummaries: [] };
 let filteredRows = [];
+let currentPerformanceMetrics = null;
 let autoFillEnabled = true;
 let charts = { spendByDate: null, spendByProduct: null };
 let currentPage = 1;
@@ -131,6 +132,7 @@ async function loadAllData() {
         if (!data.data || data.data.length === 0) { showError("⚠️ Chưa có dữ liệu trong các sheet."); return; }
 
         currentData = { rows: data.data, headers: data.headers, ads_percent: "", memberSummaries: data.member_summaries || [] };
+        currentPerformanceMetrics = null;
         filteredRows = [...currentData.rows];
         resetDateInputs();
         renderData();
@@ -188,7 +190,11 @@ function maybeAutoOpenSheetForAccess(data) {
         });
     }
 }
-        const res  = await fetch("/api/fetch-data", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sheet_url: sheetUrl }) });
+        const res  = await fetch("/api/fetch-data", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sheet_url: sheetUrl, sync_meta: true }),
+        });
     if (await handleSessionExpiredGateFromResponse(res)) return;
         const data = await res.json();
         if (spinner) spinner.style.display = "none";
@@ -222,6 +228,18 @@ function maybeAutoOpenSheetForAccess(data) {
         filteredRows = [...currentData.rows];
         resetDateInputs();
         renderData();
+
+        const syncMeta = data.sync_meta || {};
+        if (syncMeta.attempted) {
+            if (Number(syncMeta.written_rows || 0) > 0) {
+                showToast(`✅ Đã tự đồng bộ Meta API: ${syncMeta.written_rows} dòng chi phí.`);
+            } else if (syncMeta.hint) {
+                showToast(`⚠️ ${syncMeta.hint}`);
+            }
+        }
+
+        const perfUrl = (document.getElementById("performanceSheetUrl")?.value || "").trim();
+        await loadPerformanceSummary(perfUrl);
         await loadAccountStatuses(sheetUrl);
 
         if (shouldAutoSave) saveSheetUrl(sheetUrl);
@@ -237,6 +255,36 @@ async function handleSubmit(event) {
     const performanceSheetUrl = (document.getElementById("performanceSheetUrl")?.value || "").trim();
     await fetchAndRender(sheetUrl, false);
     await saveSheetUrl(sheetUrl, performanceSheetUrl);
+}
+
+async function loadPerformanceSummary(performanceSheetUrl) {
+    if (!performanceSheetUrl) {
+        currentPerformanceMetrics = null;
+        renderStats(filteredRows);
+        return;
+    }
+
+    try {
+        const res = await fetch("/api/performance-summary", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ performance_sheet_url: performanceSheetUrl }),
+        });
+        if (await handleSessionExpiredGateFromResponse(res)) return;
+        const data = await res.json();
+        if (!data.success) {
+            currentPerformanceMetrics = null;
+            renderStats(filteredRows);
+            if (data.error) showToast(`⚠️ ${data.error}`);
+            return;
+        }
+
+        currentPerformanceMetrics = data.metrics || null;
+        renderStats(filteredRows);
+    } catch (_) {
+        currentPerformanceMetrics = null;
+        renderStats(filteredRows);
+    }
 }
 
 // ─── Date Filter ──────────────────────────────────────
@@ -321,37 +369,83 @@ function renderData() {
 }
 
 function renderStats(rows) {
-    let totalSpend = 0, totalResults = 0;
-    rows.forEach(row => {
-        totalSpend   += parseSpendJS(row["Số tiền chi tiêu - VND"] || "");
-        totalResults += parseIntJS(row["Số Data"] || "");
+    if (currentPerformanceMetrics) {
+        const spend = currentPerformanceMetrics.total_spend || { month: 0, day: 0, unit: "VND" };
+        const results = currentPerformanceMetrics.total_results || { month: 0, day: 0, unit: "data" };
+        const cpr = currentPerformanceMetrics.cost_per_result || { month: 0, day: 0, unit: "VND" };
+        const ads = currentPerformanceMetrics.ads_percent || { month: 0, day: 0, unit: "%" };
+        const avgOrder = currentPerformanceMetrics.avg_order_value || { month: 0, day: 0, unit: "VND" };
+
+        setStatValue("totalSpend", formatMetricNumber(spend.month), spend.unit, "Hôm nay", formatMetricNumber(spend.day));
+        setStatValue("totalResults", formatMetricNumber(results.month, false), results.unit, "Hôm nay", formatMetricNumber(results.day, false));
+        setStatValue("costPerResult", formatMetricNumber(cpr.month), cpr.unit, "Hôm nay", formatMetricNumber(cpr.day));
+        setStatValue("adsPercent", formatMetricNumber(ads.month, true), ads.unit, "Hôm nay", formatMetricNumber(ads.day, true));
+        setStatValue("avgOrderValue", formatMetricNumber(avgOrder.month), avgOrder.unit, "Hôm nay", formatMetricNumber(avgOrder.day));
+        return;
+    }
+
+    const sourceRows = currentData.rows || rows || [];
+    const today = new Date();
+    const todayKey = `${String(today.getDate()).padStart(2, "0")}/${String(today.getMonth() + 1).padStart(2, "0")}/${today.getFullYear()}`;
+
+    let totalSpend = 0;
+    let totalResults = 0;
+    let todaySpend = 0;
+    let todayResults = 0;
+
+    sourceRows.forEach(row => {
+        const spendVal = parseSpendJS(row["Số tiền chi tiêu - VND"] || "");
+        const resultVal = parseIntJS(row["Số Data"] || "");
+        const rowDate = (row["Ngày"] || "").trim();
+
+        totalSpend += spendVal;
+        totalResults += resultVal;
+
+        if (rowDate === todayKey) {
+            todaySpend += spendVal;
+            todayResults += resultVal;
+        }
     });
+
     const costPerResult = totalResults > 0 ? Math.round(totalSpend / totalResults) : 0;
-    setStatValue("totalSpend", totalSpend.toLocaleString("vi-VN"), "VND");
-    setStatValue("totalResults", totalResults.toLocaleString("en-US"), "data");
-    setStatValue("costPerResult", costPerResult.toLocaleString("vi-VN"), "VND");
+    const todayCostPerResult = todayResults > 0 ? Math.round(todaySpend / todayResults) : 0;
+
+    setStatValue("totalSpend", totalSpend.toLocaleString("vi-VN"), "VND", "Hôm nay", todaySpend.toLocaleString("vi-VN"));
+    setStatValue("totalResults", totalResults.toLocaleString("en-US"), "data", "Hôm nay", todayResults.toLocaleString("en-US"));
+    setStatValue("costPerResult", costPerResult.toLocaleString("vi-VN"), "VND", "Hôm nay", todayCostPerResult.toLocaleString("vi-VN"));
 
     const adsRaw = (currentData.ads_percent || "").toString().trim();
-    if (!adsRaw || adsRaw === "—") {
-        setStatValue("adsPercent", "—", "");
-    } else {
-        const adsMain = adsRaw.endsWith("%") ? adsRaw.slice(0, -1) : adsRaw;
-        setStatValue("adsPercent", adsMain, "%");
-    }
+    const adsMain = (!adsRaw || adsRaw === "—") ? "—" : (adsRaw.endsWith("%") ? adsRaw.slice(0, -1) : adsRaw);
+    setStatValue("adsPercent", adsMain, "%", "Hôm nay", "—");
+    setStatValue("avgOrderValue", "—", "", "Hôm nay", "—");
 }
 
-function setStatValue(elementId, mainValue, unit = "") {
+function setStatValue(elementId, mainValue, unit = "", subLabel = "", subValue = "") {
     const el = document.getElementById(elementId);
     if (!el) return;
     const safeMain = escapeHtml(mainValue || "—");
     const safeUnit = escapeHtml(unit || "");
+    const safeSubLabel = escapeHtml(subLabel || "");
+    const safeSubValue = escapeHtml(subValue || "");
+
+    const mainBlock = (safeSubValue && safeSubValue !== "—")
+        ? `<span class="value-stack"><span class="value-main">${safeMain}</span><span class="value-sub">${safeSubLabel}: ${safeSubValue}</span></span>`
+        : `<span class="value-main">${safeMain}</span>`;
 
     if (!safeUnit) {
-        el.innerHTML = `<span class="value-main">${safeMain}</span>`;
+        el.innerHTML = mainBlock;
         return;
     }
 
-    el.innerHTML = `<span class="value-main">${safeMain}</span><span class="value-unit">${safeUnit}</span>`;
+    el.innerHTML = `${mainBlock}<span class="value-unit">${safeUnit}</span>`;
+}
+
+function formatMetricNumber(value, isPercent = false) {
+    const n = Number(value || 0);
+    if (isPercent) {
+        return n.toLocaleString("vi-VN", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    }
+    return Math.round(n).toLocaleString("vi-VN");
 }
 
 function renderRankings() {
