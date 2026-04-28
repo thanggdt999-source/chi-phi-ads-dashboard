@@ -143,6 +143,22 @@
             flex-wrap: wrap;
         }
 
+        .login-forgot-row {
+            margin-top: 10px;
+            text-align: center;
+        }
+
+        .login-forgot-link {
+            color: #1d4ed8;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.92rem;
+        }
+
+        .login-forgot-link:hover {
+            text-decoration: underline;
+        }
+
         .login-secondary-btn {
             display: inline-flex;
             align-items: center;
@@ -235,6 +251,12 @@
                     <button class="login-btn" type="submit">{{ submit_label or 'Đăng nhập' }}</button>
                 </form>
 
+                {% if mode != 'privileged' %}
+                <div class="login-forgot-row">
+                    <a href="{{ url_for('forgot_password_page') }}" class="login-forgot-link">Quên mật khẩu?</a>
+                </div>
+                {% endif %}
+
                 {% if error %}
                 <div class="login-error">{{ error }}</div>
                 {% endif %}
@@ -243,15 +265,6 @@
                 <div class="login-actions">
                     <a href="{{ url_for('register_employee') }}" class="login-secondary-btn">
                         <i class="fas fa-user-plus"></i> Đăng ký
-                    </a>
-                    <a href="{{ url_for('forgot_password_page') }}" class="login-secondary-btn">
-                        <i class="fas fa-key"></i> Quên mật khẩu
-                    </a>
-                </div>
-                {% elif mode != 'privileged' %}
-                <div class="login-actions">
-                    <a href="{{ url_for('forgot_password_page') }}" class="login-secondary-btn">
-                        <i class="fas fa-key"></i> Quên mật khẩu
                     </a>
                 </div>
                 {% endif %}
