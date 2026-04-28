@@ -2319,12 +2319,14 @@ def fetch_performance_summary_column_based(rows: list) -> dict | None:
     from datetime import date
     today_str = date.today().strftime("%d/%m/%Y")  # e.g. 28/04/2026
 
-    # Find header row: must contain at least "Chi phí ADS" or "Số lượng Data"
+    # Find header row: prefer rows that expose core performance columns.
     header_row_idx = None
     col_idx = {}
     for i, row in enumerate(rows):
         cand = _extract_col_idx(row)
-        if "spend" in cand and ("results" in cand or "cpr" in cand or "aov" in cand):
+        has_main = "spend" in cand or "doanh_so" in cand
+        has_support = "results" in cand or "cpr" in cand or "aov" in cand
+        if has_main and has_support:
             header_row_idx = i
             col_idx = cand
             break
@@ -2352,6 +2354,8 @@ def fetch_performance_summary_column_based(rows: list) -> dict | None:
     return {
         "spend_month":   extract(tong_row, "spend"),
         "spend_day":     extract(today_row, "spend"),
+        "doanh_so_month": extract(tong_row, "doanh_so"),
+        "doanh_so_day":   extract(today_row, "doanh_so"),
         "result_month":  extract(tong_row, "results"),
         "result_day":    extract(today_row, "results"),
         "cpr_month":     extract(tong_row, "cpr"),
@@ -2381,6 +2385,8 @@ def fetch_performance_summary(performance_sheet_url: str) -> dict:
     if col_result:
         spend_month  = col_result["spend_month"]
         spend_day    = col_result["spend_day"]
+        doanh_so_month = col_result["doanh_so_month"]
+        doanh_so_day = col_result["doanh_so_day"]
         result_month = col_result["result_month"]
         result_day   = col_result["result_day"]
         cpr_month    = col_result["cpr_month"]
@@ -2392,6 +2398,7 @@ def fetch_performance_summary(performance_sheet_url: str) -> dict:
     else:
         # Fallback: keyword-based row matching
         spend_month, spend_day = extract_metric_values(rows, ["tongchiphi", "tongchi", "tongspend", "chiphi"])
+        doanh_so_month, doanh_so_day = extract_metric_values(rows, ["doanhso", "doanhthu", "revenue"])
         result_month, result_day = extract_metric_values(rows, ["tongketqua", "tongdata", "ketqua", "data"])
         cpr_month, cpr_day = extract_metric_values(rows, ["chiphiketqua", "chiphidata", "cpa", "cpkq"])
         ads_month, ads_day = extract_metric_values(rows, ["ads", "tyleads", "phantramads", "percentads"])
@@ -2400,6 +2407,7 @@ def fetch_performance_summary(performance_sheet_url: str) -> dict:
     return {
         "success": True,
         "metrics": {
+            "revenue": {"month": round(doanh_so_month), "day": round(doanh_so_day), "unit": "VND"},
             "total_spend": {"month": round(spend_month), "day": round(spend_day), "unit": "VND"},
             "total_results": {"month": round(result_month), "day": round(result_day), "unit": "data"},
             "cost_per_result": {"month": round(cpr_month), "day": round(cpr_day), "unit": "VND"},
@@ -2491,8 +2499,9 @@ def fetch_profitability_summary(spreadsheet) -> dict:
     worksheet = resolve_profitability_worksheet(spreadsheet)
     if worksheet is None:
         return {
-            "completion_percent": {"month": 0.0, "day": 0.0, "unit": "%"},
-            "gross_profit": {"month": 0.0, "day": 0.0, "unit": "VND"},
+            "completion_percent": {"total": 0.0, "unit": "%"},
+            "gross_profit": {"total": 0.0, "unit": "VND"},
+            "gross_profit_percent": {"total": 0.0, "unit": "%"},
         }
 
     try:
@@ -2502,22 +2511,59 @@ def fetch_profitability_summary(spreadsheet) -> dict:
 
     if not rows:
         return {
-            "completion_percent": {"month": 0.0, "day": 0.0, "unit": "%"},
-            "gross_profit": {"month": 0.0, "day": 0.0, "unit": "VND"},
+            "completion_percent": {"total": 0.0, "unit": "%"},
+            "gross_profit": {"total": 0.0, "unit": "VND"},
+            "gross_profit_percent": {"total": 0.0, "unit": "%"},
         }
 
-    completion_month, completion_day = extract_metric_values(
-        rows,
-        ["phantramhoan", "tylehoan", "%hoan", "hoanthanh", "hoan"],
-    )
-    gross_month, gross_day = extract_metric_values(
-        rows,
-        ["loinhuangop", "lngop", "grossprofit", "loinhuangopdutinh"],
-    )
+    completion_col_idx = 10  # K: Tỷ lệ hoàn dự tính
+    gross_profit_col_idx = 20  # U: Lợi nhuận gộp
+    gross_profit_pct_col_idx = 21  # V: %LN gộp
+
+    def get_numeric_at(row: list, col_idx: int) -> float | None:
+        if col_idx >= len(row):
+            return None
+        parsed = parse_number_like(row[col_idx])
+        return float(parsed) if parsed is not None else None
+
+    def is_total_row(row: list) -> bool:
+        text = " ".join(str(cell or "") for cell in row[:4])
+        norm = normalize_sheet_tab_name(text)
+        return any(key in norm for key in ["tong", "tongcong", "tongket", "total"])
+
+    total_row = next((row for row in rows if is_total_row(row)), None)
+
+    completion_total = get_numeric_at(total_row, completion_col_idx) if total_row else None
+    gross_total = get_numeric_at(total_row, gross_profit_col_idx) if total_row else None
+    gross_pct_total = get_numeric_at(total_row, gross_profit_pct_col_idx) if total_row else None
+
+    # Fallback: if no explicit total row, use the last numeric value in each target column.
+    if completion_total is None:
+        for row in reversed(rows):
+            completion_total = get_numeric_at(row, completion_col_idx)
+            if completion_total is not None:
+                break
+
+    if gross_total is None:
+        for row in reversed(rows):
+            gross_total = get_numeric_at(row, gross_profit_col_idx)
+            if gross_total is not None:
+                break
+
+    if gross_pct_total is None:
+        for row in reversed(rows):
+            gross_pct_total = get_numeric_at(row, gross_profit_pct_col_idx)
+            if gross_pct_total is not None:
+                break
+
+    completion_total = float(completion_total or 0.0)
+    gross_total = float(gross_total or 0.0)
+    gross_pct_total = float(gross_pct_total or 0.0)
 
     return {
-        "completion_percent": {"month": round(completion_month, 2), "day": round(completion_day, 2), "unit": "%"},
-        "gross_profit": {"month": round(gross_month), "day": round(gross_day), "unit": "VND"},
+        "completion_percent": {"total": round(completion_total, 2), "unit": "%"},
+        "gross_profit": {"total": round(gross_total), "unit": "VND"},
+        "gross_profit_percent": {"total": round(gross_pct_total, 2), "unit": "%"},
     }
 
 def fetch_chi_phi_ads_data(sheet_id):
