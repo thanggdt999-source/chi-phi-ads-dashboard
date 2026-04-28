@@ -710,6 +710,36 @@ function getSuggestionSource() {
                 month_label: item.month_label || "",
             });
         });
+
+        // Fallback 1: employee monthly ads sheets (useful when performance history is empty)
+        if (!source.length) {
+            MONTHLY_SHEETS.forEach(item => {
+                const url = (item.sheet_url || "").trim();
+                if (!url || seen.has(url)) return;
+                seen.add(url);
+                source.push({
+                    name: item.sheet_name || item.month_label || "Sheet đã dùng",
+                    url,
+                    team: "",
+                    month_label: item.month_label || "",
+                });
+            });
+        }
+
+        // Fallback 2: accessible sheets list
+        if (!source.length) {
+            SHEETS.forEach(s => {
+                const url = (s.url || "").trim();
+                if (!url || seen.has(url)) return;
+                seen.add(url);
+                source.push({
+                    name: s.name || "Sheet",
+                    url,
+                    team: s.team || "",
+                    month_label: "",
+                });
+            });
+        }
         return source;
     }
 
