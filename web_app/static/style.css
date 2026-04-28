@@ -502,7 +502,7 @@ small {
 }
 
 .stat-value {
-    font-size: clamp(1.2rem, 1.85vw, 2rem);
+    font-size: clamp(1rem, 1.6vw, 1.9rem);
     font-weight: 800;
     color: var(--primary);
     margin-bottom: 2px;

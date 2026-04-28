@@ -2781,22 +2781,36 @@ def build_product_lng_summary(spreadsheet) -> dict:
         return {"top": [], "bottom": []}
 
     gross_col_idx = 20  # U
-    product_col_idx = 3  # default D
+    product_col_idx = 3  # default D (English name)
+    vn_col_idx: int | None = None  # Vietnamese name column, if separate
     header_idx = 0
 
     for i, row in enumerate(rows[:8]):
         normalized = [normalize_sheet_tab_name(cell) for cell in row]
-        if any("sanpham" in cell for cell in normalized):
+        if any("sanpham" in cell or "tensp" in cell for cell in normalized):
             header_idx = i
-            # Prefer the Vietnamese name column (contains "vn")
-            vn_idx = next((j for j, cell in enumerate(normalized)
-                           if ("sanpham" in cell or "tensp" in cell) and "vn" in cell), None)
-            fallback_idx = next((j for j, cell in enumerate(normalized)
-                                  if "sanpham" in cell or "tensp" in cell), None)
-            if vn_idx is not None:
-                product_col_idx = vn_idx
-            elif fallback_idx is not None:
-                product_col_idx = fallback_idx
+            # Find any product name column
+            all_product_idxs = [j for j, cell in enumerate(normalized)
+                                 if "sanpham" in cell or "tensp" in cell]
+            # Among those, prefer the one with "vn" or "viet"
+            vn_candidates = [j for j in all_product_idxs
+                             if "vn" in normalized[j] or "viet" in normalized[j]]
+            # Also widen: any column ending with "vn" (e.g. "tensanphamvn")
+            if not vn_candidates:
+                vn_candidates = [j for j, cell in enumerate(normalized)
+                                 if cell.endswith("vn") and len(cell) >= 4]
+            en_candidates = [j for j in all_product_idxs if j not in vn_candidates]
+
+            if vn_candidates:
+                vn_col_idx = vn_candidates[0]
+                product_col_idx = vn_col_idx
+            elif en_candidates:
+                product_col_idx = en_candidates[0]
+
+            # If we found both en and vn separately, track en as well
+            if vn_candidates and en_candidates:
+                product_col_idx = vn_candidates[0]  # primary = VN
+                # en kept separately for cross-reference if needed
             break
 
     # Also find % LNG column (e.g. "%LNG", "%LN", or column V index 21)
@@ -2813,7 +2827,7 @@ def build_product_lng_summary(spreadsheet) -> dict:
             lng_pct_col_idx = 21
 
     products = []
-    for row in rows[header_idx + 1 :]:
+    for row in rows[header_idx + 1:]:
         if not row:
             continue
         name = str(row[product_col_idx] if product_col_idx < len(row) else "").strip()
@@ -3907,6 +3921,33 @@ def admin_users_page():
 
 
 @app.route("/api/debug/performance-weekly", methods=["GET"])
+@app.route("/api/debug/lng-headers", methods=["GET"])
+@api_role_required("admin")
+def api_debug_lng_headers():
+    """Debug endpoint: show profitability sheet header row and what product/lng columns were detected."""
+    url = request.args.get("url", "").strip()
+    if not url:
+        return jsonify({"success": False, "error": "url param required"})
+    try:
+        sheet_id = extract_sheet_id(url)
+        client = get_gspread_client()
+        spreadsheet = client.open_by_key(sheet_id)
+        worksheet = resolve_profitability_worksheet(spreadsheet)
+        rows = worksheet.get_all_values()
+        sample = [list(r) for r in rows[:10]]
+        result = build_product_lng_summary(spreadsheet)
+        return jsonify({
+            "success": True,
+            "tab_title": worksheet.title,
+            "total_rows": len(rows),
+            "first_10_rows": sample,
+            "lng_items_count": len(result.get("items", [])),
+            "first_3_items": result.get("items", [])[:3],
+        })
+    except Exception as exc:
+        return jsonify({"success": False, "error": str(exc)})
+
+
 @api_role_required("admin")
 def api_debug_performance_weekly():
     """Debug endpoint: returns raw rows sample + weekly_trend parse result for a given sheet URL."""

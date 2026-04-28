@@ -518,6 +518,12 @@ function formatMetricNumber(value, isPercent = false) {
     if (isPercent) {
         return n.toLocaleString("vi-VN", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
     }
+    if (Math.abs(n) >= 1_000_000_000) {
+        return (n / 1_000_000_000).toLocaleString("vi-VN", { minimumFractionDigits: 1, maximumFractionDigits: 2 }) + " tỷ";
+    }
+    if (Math.abs(n) >= 1_000_000) {
+        return (n / 1_000_000).toLocaleString("vi-VN", { minimumFractionDigits: 0, maximumFractionDigits: 1 }) + " tr";
+    }
     return Math.round(n).toLocaleString("vi-VN");
 }
 
@@ -793,8 +799,9 @@ function renderLNGInsight(container) {
         const lngVal = item.lng || 0;
         const pctText = (item.lng_pct != null) ? ` <span style="font-size:0.82em;color:#64748b;">(${item.lng_pct}%)</span>` : "";
         const color = lngVal >= 0 ? "#16a34a" : "#dc2626";
+        const displayName = item.product_name_vn || item.product_name || "—";
         return `<div class="insight-row">
-            <div class="insight-main"><span class="insight-name">${escapeHtml(item.product_name || "—")}</span></div>
+            <div class="insight-main"><span class="insight-name">${escapeHtml(displayName)}</span></div>
             <span class="insight-meta" style="color:${color};white-space:nowrap;">${formatCurrency(lngVal)}${pctText}</span>
         </div>`;
     }).join("");
