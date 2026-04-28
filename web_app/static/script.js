@@ -238,7 +238,8 @@ function maybeAutoOpenSheetForAccess(data) {
             }
         }
 
-        const perfUrl = (document.getElementById("performanceSheetUrl")?.value || "").trim();
+        const perfInputUrl = (document.getElementById("performanceSheetUrl")?.value || "").trim();
+        const perfUrl = perfInputUrl || sheetUrl;
         await loadPerformanceSummary(perfUrl);
         await loadAccountStatuses(sheetUrl);
 
