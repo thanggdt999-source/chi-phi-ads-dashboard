@@ -1,0 +1,59 @@
+name: Ads Auto Fill
+
+on:
+  schedule:
+    - cron: '*/15 6-23 * * *'
+      timezone: 'Asia/Ho_Chi_Minh'
+    - cron: '2 7 * * *'
+      timezone: 'Asia/Ho_Chi_Minh'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Run mode for autofill
+        required: true
+        default: today
+        type: choice
+        options:
+          - today
+          - yesterday
+      force:
+        description: Force run even when Auto Fill is OFF
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: ads-autofill
+  cancel-in-progress: false
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ADS_AUTOFILL_ENDPOINT: https://ads.hexistoree.click/internal/ads/autofill/run
+      MODE_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || '' }}
+      FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
+      EVENT_NAME: ${{ github.event_name }}
+      EVENT_SCHEDULE: ${{ github.event.schedule }}
+    steps:
+      - name: Trigger Ads autofill job
+        run: |
+          mode='today'
+          if [ "$EVENT_NAME" = 'workflow_dispatch' ] && [ -n "$MODE_INPUT" ]; then
+            mode="$MODE_INPUT"
+          elif [ "$EVENT_SCHEDULE" = '2 7 * * *' ]; then
+            mode='yesterday'
+          fi
+
+          payload='{"mode":"'"$mode"'","force":false}'
+          if [ "$FORCE_RUN" = 'true' ]; then
+            payload='{"mode":"'"$mode"'","force":true}'
+          fi
+
+          curl --fail --show-error --silent \
+            --request POST \
+            --header "Authorization: Bearer ${{ secrets.INTERNAL_CRON_SECRET }}" \
+            --header 'Content-Type: application/json' \
+            --data "$payload" \
+            "$ADS_AUTOFILL_ENDPOINT"

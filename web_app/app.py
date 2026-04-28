@@ -2106,6 +2106,77 @@ def sync_ads_sheet_from_meta(sheet_id: str, date_preset: str = "today", owner_us
     }
 
 
+def run_ads_autofill_job(date_preset: str = "today") -> dict:
+    registry = parse_sheet_registry()
+    if not registry:
+        return {
+            "success": False,
+            "mode": date_preset,
+            "error": "Không có sheet nào trong danh sách sheet_urls.",
+            "sheets_total": 0,
+            "sheets_processed": 0,
+            "total_written_rows": 0,
+            "results": [],
+        }
+
+    unique_sheet_ids = set()
+    results = []
+    sheets_processed = 0
+    total_written_rows = 0
+    success_count = 0
+
+    for item in registry:
+        sheet_url = (item.get("url") or "").strip()
+        sheet_name = (item.get("name") or "").strip() or "Sheet"
+        sheet_id = extract_sheet_id(sheet_url)
+        if not sheet_id or sheet_id in unique_sheet_ids:
+            continue
+
+        unique_sheet_ids.add(sheet_id)
+        sheets_processed += 1
+        try:
+            sync_result = sync_ads_sheet_from_meta(sheet_id, date_preset=date_preset, owner_username="")
+            written_rows = int(sync_result.get("written_rows", 0) or 0)
+            total_written_rows += written_rows
+            if sync_result.get("success", False):
+                success_count += 1
+            results.append(
+                {
+                    "sheet_name": sheet_name,
+                    "sheet_id": sheet_id,
+                    "success": bool(sync_result.get("success", False)),
+                    "written_rows": written_rows,
+                    "accounts_total": int(sync_result.get("accounts_total", 0) or 0),
+                    "accounts_synced": int(sync_result.get("accounts_synced", 0) or 0),
+                    "hint": sync_result.get("hint", ""),
+                    "errors": sync_result.get("errors", [])[:5],
+                }
+            )
+        except Exception as exc:
+            results.append(
+                {
+                    "sheet_name": sheet_name,
+                    "sheet_id": sheet_id,
+                    "success": False,
+                    "written_rows": 0,
+                    "accounts_total": 0,
+                    "accounts_synced": 0,
+                    "hint": f"Lỗi xử lý sheet: {str(exc)}",
+                    "errors": [str(exc)],
+                }
+            )
+
+    return {
+        "success": success_count > 0,
+        "mode": date_preset,
+        "sheets_total": len(unique_sheet_ids),
+        "sheets_processed": sheets_processed,
+        "sheets_success": success_count,
+        "total_written_rows": total_written_rows,
+        "results": results,
+    }
+
+
 def parse_number_like(value: str) -> Optional[float]:
     text = str(value or "").strip()
     if not text:
@@ -3361,6 +3432,31 @@ def run_internal_telegram_reports():
 
     payload = request.get_json(silent=True) or {}
     result = run_telegram_report_job(force=bool(payload.get("force", False)))
+    return jsonify(result)
+
+
+@app.route("/internal/ads/autofill/run", methods=["POST"])
+def run_internal_ads_autofill():
+    auth_header = request.headers.get("Authorization", "")
+    expected = f"Bearer {INTERNAL_CRON_SECRET}" if INTERNAL_CRON_SECRET else ""
+    if not expected or auth_header != expected:
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+
+    payload = request.get_json(silent=True) or {}
+    force = bool(payload.get("force", False))
+    mode = str(payload.get("mode", "today")).strip().lower() or "today"
+    if mode not in {"today", "yesterday"}:
+        return jsonify({"success": False, "error": "mode chỉ hỗ trợ 'today' hoặc 'yesterday'."}), 400
+
+    if not force and not load_auto_fill_enabled():
+        return jsonify({
+            "success": True,
+            "skipped": True,
+            "reason": "Auto Fill đang tắt.",
+            "mode": mode,
+        })
+
+    result = run_ads_autofill_job(date_preset=mode)
     return jsonify(result)
 
 # ─────────────────── ADMIN USER MANAGEMENT ───────────────────
