@@ -131,7 +131,13 @@ async function loadAllData() {
         if (!data.success) { showError("❌ " + (data.error || "Không thể tải dữ liệu tổng")); return; }
         if (!data.data || data.data.length === 0) { showError("⚠️ Chưa có dữ liệu trong các sheet."); return; }
 
-        currentData = { rows: data.data, headers: data.headers, ads_percent: "", memberSummaries: data.member_summaries || [] };
+        currentData = {
+            rows: data.data,
+            headers: data.headers,
+            ads_percent: "",
+            profitability_metrics: null,
+            memberSummaries: data.member_summaries || [],
+        };
         currentPerformanceMetrics = null;
         filteredRows = [...currentData.rows];
         resetDateInputs();
@@ -224,7 +230,13 @@ function maybeAutoOpenSheetForAccess(data) {
             return;
         }
 
-        currentData  = { rows: data.data, headers: data.headers, ads_percent: data.ads_percent || "", memberSummaries: [] };
+        currentData = {
+            rows: data.data,
+            headers: data.headers,
+            ads_percent: data.ads_percent || "",
+            profitability_metrics: data.profitability_metrics || null,
+            memberSummaries: [],
+        };
         filteredRows = [...currentData.rows];
         resetDateInputs();
         renderData();
@@ -370,6 +382,10 @@ function renderData() {
 }
 
 function renderStats(rows) {
+    const profitability = currentData.profitability_metrics || null;
+    const completionMetrics = profitability?.completion_percent || null;
+    const grossProfitMetrics = profitability?.gross_profit || null;
+
     if (currentPerformanceMetrics) {
         const spend = currentPerformanceMetrics.total_spend || { month: 0, day: 0, unit: "VND" };
         const results = currentPerformanceMetrics.total_results || { month: 0, day: 0, unit: "data" };
@@ -382,6 +398,30 @@ function renderStats(rows) {
         setStatValue("costPerResult", formatMetricNumber(cpr.month), cpr.unit, "Hôm nay", formatMetricNumber(cpr.day));
         setStatValue("adsPercent", formatMetricNumber(ads.month, true), ads.unit, "Hôm nay", formatMetricNumber(ads.day, true));
         setStatValue("avgOrderValue", formatMetricNumber(avgOrder.month), avgOrder.unit, "Hôm nay", formatMetricNumber(avgOrder.day));
+
+        if (completionMetrics) {
+            setStatValue(
+                "completionPercent",
+                formatMetricNumber(completionMetrics.month, true),
+                completionMetrics.unit || "%",
+                "Hôm nay",
+                formatMetricNumber(completionMetrics.day, true)
+            );
+        } else {
+            setStatValue("completionPercent", "—", "%", "Hôm nay", "—");
+        }
+
+        if (grossProfitMetrics) {
+            setStatValue(
+                "grossProfit",
+                formatMetricNumber(grossProfitMetrics.month),
+                grossProfitMetrics.unit || "VND",
+                "Hôm nay",
+                formatMetricNumber(grossProfitMetrics.day)
+            );
+        } else {
+            setStatValue("grossProfit", "—", "", "Hôm nay", "—");
+        }
         return;
     }
 
@@ -419,6 +459,30 @@ function renderStats(rows) {
     const adsMain = (!adsRaw || adsRaw === "—") ? "—" : (adsRaw.endsWith("%") ? adsRaw.slice(0, -1) : adsRaw);
     setStatValue("adsPercent", adsMain, "%", "Hôm nay", "—");
     setStatValue("avgOrderValue", "—", "", "Hôm nay", "—");
+
+    if (completionMetrics) {
+        setStatValue(
+            "completionPercent",
+            formatMetricNumber(completionMetrics.month, true),
+            completionMetrics.unit || "%",
+            "Hôm nay",
+            formatMetricNumber(completionMetrics.day, true)
+        );
+    } else {
+        setStatValue("completionPercent", "—", "%", "Hôm nay", "—");
+    }
+
+    if (grossProfitMetrics) {
+        setStatValue(
+            "grossProfit",
+            formatMetricNumber(grossProfitMetrics.month),
+            grossProfitMetrics.unit || "VND",
+            "Hôm nay",
+            formatMetricNumber(grossProfitMetrics.day)
+        );
+    } else {
+        setStatValue("grossProfit", "—", "", "Hôm nay", "—");
+    }
 }
 
 function setStatValue(elementId, mainValue, unit = "", subLabel = "", subValue = "") {

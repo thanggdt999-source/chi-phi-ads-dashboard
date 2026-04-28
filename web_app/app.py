@@ -2457,6 +2457,69 @@ def resolve_ads_worksheet(spreadsheet):
 
     raise gspread.exceptions.WorksheetNotFound("Chi phí ADS")
 
+
+def resolve_profitability_worksheet(spreadsheet):
+    preferred_titles = [
+        "LN gộp dự tính",
+        "LN gop du tinh",
+        "Lợi nhuận gộp dự tính",
+        "Loi nhuan gop du tinh",
+    ]
+
+    for title in preferred_titles:
+        try:
+            return spreadsheet.worksheet(title)
+        except Exception:
+            continue
+
+    candidates = []
+    try:
+        for ws in spreadsheet.worksheets():
+            norm = normalize_sheet_tab_name(ws.title)
+            if "lngop" in norm or "loinhuangop" in norm:
+                candidates.append(ws)
+    except Exception:
+        candidates = []
+
+    if candidates:
+        return candidates[0]
+
+    return None
+
+
+def fetch_profitability_summary(spreadsheet) -> dict:
+    worksheet = resolve_profitability_worksheet(spreadsheet)
+    if worksheet is None:
+        return {
+            "completion_percent": {"month": 0.0, "day": 0.0, "unit": "%"},
+            "gross_profit": {"month": 0.0, "day": 0.0, "unit": "VND"},
+        }
+
+    try:
+        rows = worksheet.get_all_values()
+    except Exception:
+        rows = []
+
+    if not rows:
+        return {
+            "completion_percent": {"month": 0.0, "day": 0.0, "unit": "%"},
+            "gross_profit": {"month": 0.0, "day": 0.0, "unit": "VND"},
+        }
+
+    completion_month, completion_day = extract_metric_values(
+        rows,
+        ["phantramhoan", "tylehoan", "%hoan", "hoanthanh", "hoan"],
+    )
+    gross_month, gross_day = extract_metric_values(
+        rows,
+        ["loinhuangop", "lngop", "grossprofit", "loinhuangopdutinh"],
+    )
+
+    return {
+        "completion_percent": {"month": round(completion_month, 2), "day": round(completion_day, 2), "unit": "%"},
+        "gross_profit": {"month": round(gross_month), "day": round(gross_day), "unit": "VND"},
+    }
+
 def fetch_chi_phi_ads_data(sheet_id):
     """Fetch all data from 'Chi phí ADS' tab."""
     try:
@@ -2508,7 +2571,15 @@ def fetch_chi_phi_ads_data(sheet_id):
         except Exception:
             pass
 
-        return {"success": True, "data": rows, "headers": DISPLAY_COLUMNS, "ads_percent": ads_percent}
+        profitability_metrics = fetch_profitability_summary(spreadsheet)
+
+        return {
+            "success": True,
+            "data": rows,
+            "headers": DISPLAY_COLUMNS,
+            "ads_percent": ads_percent,
+            "profitability_metrics": profitability_metrics,
+        }
     except Exception as e:
         raw_error = str(e)
         lower_error = raw_error.lower()
