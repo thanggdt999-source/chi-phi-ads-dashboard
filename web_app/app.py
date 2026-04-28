@@ -243,17 +243,25 @@ def load_users_config() -> dict:
             return merged
         return users_from_file
 
-    if users_from_env:
-        return users_from_env
-
     # Recover from backup if main file is corrupted/empty.
     users_from_backup = load_json_dict_file(USERS_FILE_BACKUP_PATH)
     if users_from_backup:
+        if users_from_env:
+            merged = dict(users_from_env)
+            merged.update(users_from_backup)
+            try:
+                atomic_write_json_file(USERS_FILE_PATH, merged)
+            except Exception:
+                pass
+            return merged
         try:
             atomic_write_json_file(USERS_FILE_PATH, users_from_backup)
         except Exception:
             pass
         return users_from_backup
+
+    if users_from_env:
+        return users_from_env
 
     # Only auto-generate defaults when users file does not exist yet.
     if USERS_FILE_PATH.exists():
@@ -279,8 +287,35 @@ def load_users_config() -> dict:
     }
 
 
+def normalize_username(value: str) -> str:
+    raw = unicodedata.normalize("NFKC", str(value or ""))
+    raw = re.sub(r"[\u200b\u200c\u200d\ufeff]", "", raw)
+    compact = re.sub(r"\s+", "", raw).strip().lower()
+    return compact
+
+
+def get_user_entry(username: str, users: Optional[dict] = None) -> tuple[str, Optional[dict]]:
+    source = users if isinstance(users, dict) else load_users_config()
+    if not source:
+        return "", None
+
+    direct_key = str(username or "").strip()
+    if direct_key in source:
+        return direct_key, source.get(direct_key)
+
+    target = normalize_username(username)
+    if not target:
+        return "", None
+
+    for key, user in source.items():
+        if normalize_username(key) == target:
+            return key, user if isinstance(user, dict) else None
+    return "", None
+
+
 def get_user(username: str) -> Optional[dict]:
-    return load_users_config().get(username)
+    _, user = get_user_entry(username)
+    return user
 
 
 def is_valid_sheet_url(sheet_url: str) -> bool:
@@ -2239,12 +2274,12 @@ def login():
             mode="employee",
         )
 
-    username = request.form.get("username", "").strip()
+    username = normalize_username(request.form.get("username", ""))
     password = request.form.get("password", "")
-    user = get_user(username)
+    username_key, user = get_user_entry(username)
 
     if user and user.get("password") == password and user.get("role") == "employee":
-        set_session_user(username, user, elevated=False)
+        set_session_user(username_key or username, user, elevated=False)
         next_url = get_safe_next_url(request.args.get("next", ""))
         if employee_requires_telegram_setup(username, user):
             return redirect(url_for("employee_telegram_connect", next=next_url))
@@ -2295,12 +2330,12 @@ def privileged_login():
             mode="privileged",
         )
 
-    username = request.form.get("username", "").strip()
+    username = normalize_username(request.form.get("username", ""))
     password = request.form.get("password", "")
-    user = get_user(username)
+    username_key, user = get_user_entry(username)
 
     if user and user.get("password") == password and user.get("role") in {"lead", "admin"}:
-        set_session_user(username, user, elevated=True)
+        set_session_user(username_key or username, user, elevated=True)
         return redirect(url_for("index"))
 
     return render_template(
@@ -2351,7 +2386,7 @@ def register_employee():
             form_values=form_values,
         )
 
-    username = request.form.get("username", "").strip()
+    username = normalize_username(request.form.get("username", ""))
     display_name = request.form.get("display_name", "").strip()
     team = request.form.get("team", "").strip()
     password = request.form.get("password", "")
@@ -2367,6 +2402,15 @@ def register_employee():
         return render_template(
             "register.html",
             error="Vui lòng nhập đầy đủ thông tin đăng ký.",
+            board_name=LOGIN_BOARD_NAME,
+            team_codes=TEAM_CODES,
+            form_values=form_values,
+        )
+
+    if not re.fullmatch(r"[a-z0-9._-]{3,64}", username):
+        return render_template(
+            "register.html",
+            error="Tên đăng nhập chỉ gồm chữ thường, số, dấu chấm, gạch dưới hoặc gạch ngang (3-64 ký tự).",
             board_name=LOGIN_BOARD_NAME,
             team_codes=TEAM_CODES,
             form_values=form_values,
@@ -2391,7 +2435,8 @@ def register_employee():
         )
 
     users = load_users_config()
-    if username in users:
+    existing_key, _existing_user = get_user_entry(username, users)
+    if existing_key:
         return render_template(
             "register.html",
             error=f'Tên đăng nhập "{username}" đã tồn tại.',
