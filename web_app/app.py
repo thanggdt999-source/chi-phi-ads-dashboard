@@ -3759,6 +3759,46 @@ def _clear_pw_otp_session() -> None:
         session.pop(k, None)
 
 
+def _clear_forgot_pw_otp_session() -> None:
+    for k in [
+        "fp_otp_code",
+        "fp_otp_expires",
+        "fp_otp_new_password",
+        "fp_otp_attempts",
+        "fp_otp_step",
+        "fp_otp_username",
+    ]:
+        session.pop(k, None)
+
+
+def _validate_new_password(new_password: str, confirm_password: str, current_password: str = "") -> str:
+    if not new_password or len(new_password) < 6:
+        return "Mật khẩu mới phải có ít nhất 6 ký tự."
+    if new_password != confirm_password:
+        return "Mật khẩu xác nhận không khớp."
+    if current_password and new_password == current_password:
+        return "Mật khẩu mới phải khác mật khẩu hiện tại."
+    return ""
+
+
+def _send_password_otp_message(user: dict, username: str, otp_code: str, title_text: str) -> tuple[bool, str]:
+    chat_id = normalize_telegram_chat_id(str(user.get("telegram_chat_id", "")))
+    if not chat_id:
+        return False, "Tài khoản chưa liên kết Telegram. Vui lòng liên hệ admin để reset mật khẩu."
+
+    bot_token = normalize_telegram_bot_token(str(user.get("telegram_bot_token", ""))) or TELEGRAM_BOT_TOKEN
+    display = html.escape(user.get("display_name", username))
+    msg_text = (
+        f"🔐 <b>{title_text}</b>\n\n"
+        f"Xin chào <b>{display}</b>,\n\n"
+        f"Mã xác nhận của bạn là:\n\n"
+        f"<b>🔢 {otp_code}</b>\n\n"
+        f"Mã có hiệu lực trong <b>5 phút</b>.\n"
+        f"Nếu bạn không yêu cầu thao tác này, hãy bỏ qua tin nhắn này."
+    )
+    return send_telegram_message(chat_id, msg_text, bot_token)
+
+
 @app.route("/change-password", methods=["GET"])
 @login_required
 def change_password_page():
@@ -3872,6 +3912,84 @@ def change_password_verify():
 
     return render_template("change_password.html", step="done", error="",
                            success="Mật khẩu đã được đổi thành công!")
+
+
+@app.route("/forgot-password", methods=["GET"])
+def forgot_password_page():
+    step = session.get("fp_otp_step", "form")
+    return render_template("forgot_password.html", step=step, error="", success="")
+
+
+@app.route("/forgot-password/request", methods=["POST"])
+def forgot_password_request():
+    username = normalize_username(request.form.get("username", ""))
+    new_password = request.form.get("new_password", "")
+    confirm_password = request.form.get("confirm_password", "")
+
+    if not username:
+        return render_template("forgot_password.html", step="form", error="Vui lòng nhập tên đăng nhập.", success="")
+
+    users = load_users_config()
+    username_key, user = get_user_entry(username, users)
+    if not user:
+        return render_template("forgot_password.html", step="form", error="Tài khoản chưa tồn tại trong hệ thống.", success="")
+
+    password_error = _validate_new_password(new_password, confirm_password, str(user.get("password", "")))
+    if password_error:
+        return render_template("forgot_password.html", step="form", error=password_error, success="")
+
+    otp_code = str(secrets.randbelow(10000)).zfill(4)
+    session["fp_otp_code"] = otp_code
+    session["fp_otp_expires"] = (datetime.now() + timedelta(minutes=5)).timestamp()
+    session["fp_otp_new_password"] = new_password
+    session["fp_otp_attempts"] = 0
+    session["fp_otp_username"] = username_key or username
+    session["fp_otp_step"] = "otp"
+
+    ok, err = _send_password_otp_message(user, username_key or username, otp_code, "Xác nhận quên mật khẩu")
+    if not ok:
+        _clear_forgot_pw_otp_session()
+        return render_template("forgot_password.html", step="form", error=f"Không thể gửi mã xác nhận qua Telegram: {err}", success="")
+
+    return render_template("forgot_password.html", step="otp", error="", success="")
+
+
+@app.route("/forgot-password/verify", methods=["POST"])
+def forgot_password_verify():
+    entered_code = request.form.get("otp_code", "").strip()
+    stored_code = str(session.get("fp_otp_code", ""))
+    expires = float(session.get("fp_otp_expires", 0))
+    new_password = str(session.get("fp_otp_new_password", ""))
+    username = str(session.get("fp_otp_username", ""))
+    attempts = int(session.get("fp_otp_attempts", 0))
+
+    if not stored_code or not new_password or not username:
+        _clear_forgot_pw_otp_session()
+        return render_template("forgot_password.html", step="form", error="Phiên quên mật khẩu đã hết hạn. Vui lòng thử lại.", success="")
+
+    if datetime.now().timestamp() > expires:
+        _clear_forgot_pw_otp_session()
+        return render_template("forgot_password.html", step="form", error="Mã xác nhận đã hết hạn (5 phút). Vui lòng thử lại.", success="")
+
+    if attempts >= 3:
+        _clear_forgot_pw_otp_session()
+        return render_template("forgot_password.html", step="form", error="Đã nhập sai quá 3 lần. Vui lòng yêu cầu mã mới.", success="")
+
+    if not secrets.compare_digest(entered_code, stored_code):
+        session["fp_otp_attempts"] = attempts + 1
+        remaining = 3 - (attempts + 1)
+        return render_template("forgot_password.html", step="otp", error=f"Mã xác nhận không đúng. Còn {remaining} lần thử.", success="")
+
+    users = load_users_config()
+    if username not in users:
+        _clear_forgot_pw_otp_session()
+        return render_template("forgot_password.html", step="form", error="Không tìm thấy tài khoản.", success="")
+
+    users[username]["password"] = new_password
+    save_users_config(users)
+    _clear_forgot_pw_otp_session()
+
+    return render_template("forgot_password.html", step="done", error="", success="Đặt lại mật khẩu thành công!")
 
 
 if __name__ == "__main__":

@@ -139,6 +139,8 @@
             margin-top: 18px;
             display: flex;
             justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
         }
 
         .login-secondary-btn {
@@ -241,6 +243,15 @@
                 <div class="login-actions">
                     <a href="{{ url_for('register_employee') }}" class="login-secondary-btn">
                         <i class="fas fa-user-plus"></i> Đăng ký
+                    </a>
+                    <a href="{{ url_for('forgot_password_page') }}" class="login-secondary-btn">
+                        <i class="fas fa-key"></i> Quên mật khẩu
+                    </a>
+                </div>
+                {% elif mode != 'privileged' %}
+                <div class="login-actions">
+                    <a href="{{ url_for('forgot_password_page') }}" class="login-secondary-btn">
+                        <i class="fas fa-key"></i> Quên mật khẩu
                     </a>
                 </div>
                 {% endif %}
