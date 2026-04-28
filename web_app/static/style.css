@@ -441,23 +441,22 @@ small {
 }
 
 .stats-grid {
-    display: flex;
-    gap: 16px;
-    overflow-x: auto;
-    padding-bottom: 6px;
-    scrollbar-width: thin;
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 10px;
+    overflow: visible;
+    padding-bottom: 0;
 }
 
 .stat-card {
     background: white;
-    padding: 25px;
+    padding: 14px 10px;
     border-radius: 10px;
     box-shadow: var(--shadow-lg);
     text-align: center;
     border-top: 4px solid var(--primary);
     transition: all 0.3s;
-    flex: 1 1 0;
-    min-width: 210px;
+    min-width: 0;
 }
 
 .stat-card:hover {
@@ -466,28 +465,38 @@ small {
 
 .stat-label {
     color: #95a5a6;
-    font-size: 0.9em;
+    font-size: clamp(0.66rem, 0.85vw, 0.82rem);
     text-transform: uppercase;
-    letter-spacing: 1px;
-    margin-bottom: 10px;
+    letter-spacing: 0.06em;
+    margin-bottom: 6px;
+    line-height: 1.2;
+    min-height: 2.2em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
 }
 
 .stat-value {
-    font-size: 2.3em;
+    font-size: clamp(1.2rem, 1.85vw, 2rem);
     font-weight: 800;
     color: var(--primary);
-    margin-bottom: 4px;
+    margin-bottom: 2px;
     display: flex;
     align-items: flex-end;
     justify-content: center;
-    gap: 8px;
+    gap: 5px;
     letter-spacing: 0.01em;
     line-height: 1;
+    min-width: 0;
 }
 
 .stat-value .value-main {
     line-height: 1;
     font-variant-numeric: tabular-nums;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .stat-value .value-stack {
@@ -498,24 +507,26 @@ small {
 }
 
 .stat-value .value-sub {
-    font-size: 0.32em;
+    font-size: 0.36em;
     font-weight: 700;
     color: #5b7188;
     letter-spacing: 0;
     line-height: 1.2;
+    white-space: nowrap;
 }
 
 .stat-value .value-unit {
-    font-size: 0.34em;
+    font-size: 0.33em;
     font-weight: 700;
     color: #5f8fb4;
     background: #edf6ff;
     border: 1px solid #d8eafe;
     border-radius: 999px;
-    padding: 4px 9px;
-    letter-spacing: 0.08em;
+    padding: 3px 7px;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
     transform: translateY(-2px);
+    white-space: nowrap;
 }
 
 /* Charts Section */
@@ -607,11 +618,21 @@ small {
     }
 
     .stats-grid {
-        gap: 12px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
     }
 
     .stat-card {
-        min-width: 220px;
+        padding: 12px 8px;
+    }
+
+    .stat-label {
+        font-size: 0.68rem;
+        min-height: 2.1em;
+    }
+
+    .stat-value {
+        font-size: 1.25rem;
     }
 
     .charts-grid {
