@@ -13,21 +13,23 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 10px;
-            flex-wrap: wrap;
-            margin-bottom: 6px;
+            gap: 8px;
+            flex-wrap: nowrap;
+            margin-bottom: 4px;
         }
 
         .session-card {
             display: flex;
             flex-direction: row;
             align-items: center;
-            gap: 12px;
-            padding: 10px 14px;
-            border-radius: 14px;
+            gap: 10px;
+            padding: 7px 10px;
+            border-radius: 12px;
             background: linear-gradient(135deg, rgba(255,255,255,0.16), rgba(255,255,255,0.06));
             border: 1px solid rgba(255,255,255,0.18);
             backdrop-filter: blur(10px);
+            flex: 1;
+            min-width: 0;
         }
 
         .session-kicker {
@@ -37,37 +39,47 @@
         .session-main {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 8px;
             color: #fff;
+            min-width: 0;
         }
 
         .session-avatar {
-            width: 42px;
-            height: 42px;
-            border-radius: 14px;
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1rem;
+            font-size: 0.86rem;
             background: rgba(255,255,255,0.16);
             border: 1px solid rgba(255,255,255,0.22);
+            flex: 0 0 auto;
         }
 
         .session-name {
-            font-size: 1rem;
+            font-size: 0.94rem;
             font-weight: 700;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 240px;
         }
 
         .session-subtext {
-            font-size: 0.84rem;
+            font-size: 0.75rem;
             color: rgba(226, 232, 240, 0.72);
-            margin-top: 2px;
+            margin-top: 1px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 300px;
         }
 
         .session-meta {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
             flex-wrap: wrap;
         }
 
@@ -75,9 +87,9 @@
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            padding: 7px 12px;
+            padding: 5px 10px;
             border-radius: 999px;
-            font-size: 0.8rem;
+            font-size: 0.74rem;
             font-weight: 700;
         }
 
@@ -86,9 +98,9 @@
         .session-pill.admin { background: rgba(139,92,246,0.18); color: #ede9fe; border: 1px solid rgba(167,139,250,0.34); }
 
         .session-chip {
-            padding: 7px 12px;
+            padding: 5px 10px;
             border-radius: 999px;
-            font-size: 0.78rem;
+            font-size: 0.72rem;
             color: rgba(226, 232, 240, 0.88);
             background: rgba(15,23,42,0.22);
             border: 1px solid rgba(255,255,255,0.14);
@@ -97,21 +109,23 @@
         .quick-actions {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 6px;
             flex-wrap: wrap;
             justify-content: flex-end;
+            flex: 0 0 auto;
         }
 
         .action-link {
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            padding: 10px 16px;
+            padding: 7px 11px;
             border-radius: 999px;
             text-decoration: none;
-            font-size: 0.86rem;
+            font-size: 0.78rem;
             font-weight: 700;
             transition: transform 0.18s ease, opacity 0.18s ease;
+            white-space: nowrap;
         }
 
         .action-link:hover {
@@ -191,6 +205,7 @@
         @media (max-width: 720px) {
             .access-toolbar {
                 flex-direction: column;
+                flex-wrap: wrap;
             }
 
             .session-card {

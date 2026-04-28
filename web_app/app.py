@@ -2555,7 +2555,7 @@ def fetch_profitability_summary(spreadsheet) -> dict:
             "gross_profit_percent": {"total": 0.0, "unit": "%"},
         }
 
-    completion_col_idx = 10  # K: Tỷ lệ hoàn dự tính
+    completion_col_idx = 9  # J: dữ liệu tổng ngay dưới "Tỷ lệ hoàn dự tính"
     gross_profit_col_idx = 20  # U: Lợi nhuận gộp
     gross_profit_pct_col_idx = 21  # V: %LN gộp
 
@@ -2570,9 +2570,25 @@ def fetch_profitability_summary(spreadsheet) -> dict:
         norm = normalize_sheet_tab_name(text)
         return any(key in norm for key in ["tong", "tongcong", "tongket", "total"])
 
+    def find_value_below_label(target_col_idx: int, label_keywords: list[str]) -> float | None:
+        for row_index, row in enumerate(rows):
+            if target_col_idx >= len(row):
+                continue
+            cell_text = normalize_sheet_tab_name(row[target_col_idx])
+            if not cell_text:
+                continue
+            if all(keyword in cell_text for keyword in label_keywords):
+                for next_row in rows[row_index + 1: row_index + 6]:
+                    val = get_numeric_at(next_row, target_col_idx)
+                    if val is not None:
+                        return val
+        return None
+
     total_row = next((row for row in rows if is_total_row(row)), None)
 
-    completion_total = get_numeric_at(total_row, completion_col_idx) if total_row else None
+    completion_total = find_value_below_label(completion_col_idx, ["ty", "le", "hoan", "du", "tinh"])
+    if completion_total is None:
+        completion_total = get_numeric_at(total_row, completion_col_idx) if total_row else None
     gross_total = get_numeric_at(total_row, gross_profit_col_idx) if total_row else None
     gross_pct_total = get_numeric_at(total_row, gross_profit_pct_col_idx) if total_row else None
 

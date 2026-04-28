@@ -457,6 +457,7 @@ small {
     border-top: 4px solid var(--primary);
     transition: all 0.3s;
     min-width: 0;
+    overflow: hidden;
 }
 
 .stat-card:hover {
@@ -483,50 +484,64 @@ small {
     color: var(--primary);
     margin-bottom: 2px;
     display: flex;
-    align-items: flex-end;
+    flex-direction: column;
+    align-items: center;
     justify-content: center;
-    gap: 5px;
+    gap: 4px;
     letter-spacing: 0.01em;
-    line-height: 1;
+    line-height: 1.05;
     min-width: 0;
+    max-width: 100%;
 }
 
 .stat-value .value-main {
-    line-height: 1;
+    display: block;
+    line-height: 1.05;
     font-variant-numeric: tabular-nums;
     max-width: 100%;
+    min-width: 0;
+    text-align: center;
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
 .stat-value .value-stack {
-    display: inline-flex;
+    display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 4px;
+    gap: 3px;
+    width: 100%;
+    min-width: 0;
 }
 
 .stat-value .value-sub {
-    font-size: 0.36em;
+    font-size: 0.38em;
     font-weight: 700;
     color: #5b7188;
     letter-spacing: 0;
     line-height: 1.2;
+    max-width: 100%;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .stat-value .value-unit {
-    font-size: 0.33em;
+    font-size: 0.34em;
     font-weight: 700;
     color: #5f8fb4;
     background: #edf6ff;
     border: 1px solid #d8eafe;
     border-radius: 999px;
-    padding: 3px 7px;
+    padding: 2px 7px;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    transform: translateY(-2px);
+    transform: none;
     white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* Charts Section */
