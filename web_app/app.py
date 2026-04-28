@@ -774,17 +774,32 @@ def build_employee_report_message(username: str, user: dict, now: datetime) -> t
         product_lines.append(f"• ... và còn {len(products) - TELEGRAM_REPORT_MAX_PRODUCTS} sản phẩm khác.")
 
     advice_text = "\n".join(f"• {line}" for line in advice_lines)
+    profitability_metrics = result.get("profitability_metrics") or {}
+    completion_pct = profitability_metrics.get("completion_percent", {}).get("total", 0.0)
+    gross_profit = profitability_metrics.get("gross_profit", {}).get("total", 0.0)
+    gross_pct = profitability_metrics.get("gross_profit_percent", {}).get("total", 0.0)
+
+    profit_lines = []
+    if completion_pct:
+        profit_lines.append(f"• % Hoàn dự tính: <b>{completion_pct:,.2f}%</b>")
+    if gross_profit:
+        profit_lines.append(f"• LN gộp (tháng): <b>{gross_profit:,.0f} VND</b>")
+    if gross_pct:
+        profit_lines.append(f"• %LN gộp: <b>{gross_pct:,.2f}%</b>")
+    profit_section = ("\n<b>Lợi nhuận (tổng tháng)</b>\n" + "\n".join(profit_lines)) if profit_lines else ""
+
     message = (
         "<b>📊 Báo cáo Ads realtime</b>\n"
         f"👤 {display_name}\n"
         f"🕒 {timestamp}\n\n"
-        "<b>Báo cáo tổng quan</b>\n"
+        "<b>Báo cáo tổng quan hôm nay</b>\n"
         f"• Chi tiêu: <b>{total_spend:,} VND</b>\n"
         f"• Data: <b>{total_data:,}</b>\n"
         f"• Chi phí/data: <b>{cost_per_data:,} VND</b>\n"
-        f"• % Ads: <b>{html.escape(ads_percent)}</b>\n\n"
+        f"• % Ads: <b>{html.escape(ads_percent)}</b>"
+        f"{profit_section}\n\n"
         "<b>Báo cáo theo sản phẩm</b>\n"
-        f"{"\n".join(product_lines)}\n\n"
+        f"{chr(10).join(product_lines)}\n\n"
         "<b>Cảnh báo / lời khuyên tạm thời</b>\n"
         f"{advice_text}"
     )
@@ -823,6 +838,7 @@ def run_telegram_report_job(*, force: bool = False, dry_run: bool = False, usern
         if not ok:
             results.append({"username": username, "status": "failed", "reason": info})
             continue
+
 
         if dry_run:
             print(f"\n===== {username} =====\n{message}\n")
@@ -2372,10 +2388,17 @@ def fetch_performance_weekly_trend(rows: list) -> list:
     col_idx = {}
     for i, row in enumerate(rows):
         cand = _extract_col_idx(row)
-        if "doanh_so" in cand and "results" in cand and "ads_pct" in cand:
+        # Relaxed: need at least results + (doanh_so or spend)
+        has_result = "results" in cand
+        has_revenue = "doanh_so" in cand or "spend" in cand
+        if has_result and has_revenue:
             header_row_idx = i
             col_idx = cand
             break
+        # Even more relaxed: just results
+        if has_result and header_row_idx is None:
+            header_row_idx = i
+            col_idx = cand
 
     if header_row_idx is None:
         return []
@@ -2401,7 +2424,18 @@ def fetch_performance_weekly_trend(rows: list) -> list:
         )
 
     series.sort(key=lambda item: item.get("date_key", ""))
-    return series[-7:]
+    # Build a 7-day window ending today so today is always last
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    by_key = {item["date_key"]: item for item in series}
+    window = []
+    for offset in range(6, -1, -1):
+        day = (datetime.now() - timedelta(days=offset)).strftime("%Y-%m-%d")
+        if day in by_key:
+            window.append(by_key[day])
+        else:
+            label = (datetime.now() - timedelta(days=offset)).strftime("%d/%m/%Y")
+            window.append({"date": label, "date_key": day, "data": 0, "revenue": 0, "ads_percent": 0.0})
+    return window
 
 
 def fetch_performance_summary(performance_sheet_url: str) -> dict:
@@ -2456,7 +2490,7 @@ def fetch_performance_summary(performance_sheet_url: str) -> dict:
         "sheet_name": spreadsheet.title or "Bảng hiệu suất",
     }
 
-DISPLAY_COLUMNS = ["Ngày", "Tên tài khoản", "Tên sản phẩm - VN", "Số Data", "Số tiền chi tiêu - VND"]
+DISPLAY_COLUMNS = ["Ngày", "Tên tài khoản", "Tên sản phẩm - VN", "Số Data", "Số tiền chi tiêu - VND", "Số tiền chi tiêu - USD"]
 
 
 def normalize_sheet_tab_name(value: str) -> str:
@@ -2679,10 +2713,15 @@ def build_product_lng_summary(spreadsheet) -> dict:
         normalized = [normalize_sheet_tab_name(cell) for cell in row]
         if any("sanpham" in cell for cell in normalized):
             header_idx = i
-            for j, cell in enumerate(normalized):
-                if "sanpham" in cell or "tensp" in cell:
-                    product_col_idx = j
-                    break
+            # Prefer the Vietnamese name column (contains "vn")
+            vn_idx = next((j for j, cell in enumerate(normalized)
+                           if ("sanpham" in cell or "tensp" in cell) and "vn" in cell), None)
+            fallback_idx = next((j for j, cell in enumerate(normalized)
+                                  if "sanpham" in cell or "tensp" in cell), None)
+            if vn_idx is not None:
+                product_col_idx = vn_idx
+            elif fallback_idx is not None:
+                product_col_idx = fallback_idx
             break
 
     products = []
@@ -3729,8 +3768,20 @@ def run_internal_ads_autofill():
 
 def save_users_config(config: dict) -> None:
     """Persist user config to the JSON file (used by admin UI)."""
-    atomic_write_json_file(USERS_FILE_PATH, config)
-    atomic_write_json_file(USERS_FILE_BACKUP_PATH, config)
+    # Always merge env-var baseline so those accounts survive alongside file-registered ones.
+    env_baseline: dict = {}
+    config_json = os.getenv("USERS_CONFIG", "").strip()
+    if config_json:
+        try:
+            parsed = json.loads(config_json)
+            if isinstance(parsed, dict):
+                env_baseline = parsed
+        except Exception:
+            pass
+    merged = dict(env_baseline)
+    merged.update(config)  # config (file) wins on conflicts
+    atomic_write_json_file(USERS_FILE_PATH, merged)
+    atomic_write_json_file(USERS_FILE_BACKUP_PATH, merged)
 
 
 def admin_page_required(view_func):
@@ -3760,6 +3811,16 @@ def admin_users_page():
         team_codes=TEAM_CODES,
         display_name=session.get("display_name", ""),
     )
+
+
+@app.route("/api/admin/users-config-export", methods=["GET"])
+@api_role_required("admin")
+def api_admin_export_users_config():
+    """Return full users config JSON so admin can copy it into the USERS_CONFIG env var on Render.
+    This ensures registered employees survive across deployments."""
+    users = load_users_config()
+    compact = json.dumps(users, ensure_ascii=False, separators=(",", ":"))
+    return jsonify({"success": True, "users_config_json": compact, "count": len(users)})
 
 
 @app.route("/api/admin/users", methods=["GET"])

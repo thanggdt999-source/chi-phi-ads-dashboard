@@ -620,10 +620,18 @@ function renderTable(rows) {
     const totalRows = rows.length;
     const pageRows = rows;
 
-    document.getElementById("tableHeader").innerHTML = headers.map(h => `<th>${h}</th>`).join("");
-    document.getElementById("tableBody").innerHTML   = pageRows.map(row =>
-        "<tr>" + headers.map(h => `<td>${row[h] || "-"}</td>`).join("") + "</tr>"
-    ).join("");
+    const COMPUTED_COL = "Chi phí/KQ (USD)";
+    const headerHTML = headers.map(h => `<th>${h}</th>`).join("") + `<th>${COMPUTED_COL}</th>`;
+    document.getElementById("tableHeader").innerHTML = headerHTML;
+
+    document.getElementById("tableBody").innerHTML = pageRows.map(row => {
+        const cells = headers.map(h => `<td>${row[h] || "-"}</td>`).join("");
+        const usdRaw = row["Số tiền chi tiêu - USD"] || "";
+        const usdVal = parseSpendJS(usdRaw);
+        const dataVal = parseInt(row["Số Data"] || "0", 10) || 0;
+        const cpr = (usdVal > 0 && dataVal > 0) ? (usdVal / dataVal).toFixed(3) : "-";
+        return `<tr>${cells}<td>${cpr}</td></tr>`;
+    }).join("");
 
     updatePagination(totalRows, pageRows.length);
 }
@@ -735,12 +743,22 @@ function renderWeeklyInsight(container) {
         return;
     }
 
-    container.innerHTML = weekly.map((item) => `<div class="insight-row">
-        <div class="insight-main">
-            <span class="insight-name">${escapeHtml(item.date || "—")}</span>
-        </div>
-        <span class="insight-meta">Data: ${formatMetricNumber(item.data, false)} | DS: ${formatMetricNumber(item.revenue)} | %Ads: ${formatMetricNumber(item.ads_percent, true)}%</span>
-    </div>`).join("");
+    const now = new Date();
+    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+    container.innerHTML = weekly.map((item) => {
+        const isToday = item.date_key === todayKey;
+        const noData = !item.data && !item.revenue;
+        const rowStyle = isToday ? ' style="background:#eef9f0;border-color:#86efac;font-weight:700;"' : (noData ? ' style="opacity:0.5;"' : "");
+        const label = isToday ? `${escapeHtml(item.date || "—")} ◀ Hôm nay` : escapeHtml(item.date || "—");
+        const meta = noData
+            ? "Không có dữ liệu"
+            : `Data: ${formatMetricNumber(item.data, false)} | DS: ${formatMetricNumber(item.revenue)} | %Ads: ${formatMetricNumber(item.ads_percent, true)}%`;
+        return `<div class="insight-row"${rowStyle}>
+            <div class="insight-main"><span class="insight-name">${label}</span></div>
+            <span class="insight-meta">${meta}</span>
+        </div>`;
+    }).join("");
 }
 
 function renderLNGInsight(container) {
