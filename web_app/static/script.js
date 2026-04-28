@@ -618,32 +618,33 @@ function renderAccountStatuses(payload) {
 function renderTable(rows) {
     const headers = currentData.headers;
     const totalRows = rows.length;
-    const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
-    if (currentPage > totalPages) currentPage = totalPages;
-    const start = (currentPage - 1) * pageSize;
-    const end = start + pageSize;
-    const pageRows = rows.slice(start, end);
+    const pageRows = rows;
 
     document.getElementById("tableHeader").innerHTML = headers.map(h => `<th>${h}</th>`).join("");
     document.getElementById("tableBody").innerHTML   = pageRows.map(row =>
         "<tr>" + headers.map(h => `<td>${row[h] || "-"}</td>`).join("") + "</tr>"
     ).join("");
 
-    updatePagination(totalRows, totalPages, start, pageRows.length);
+    updatePagination(totalRows, pageRows.length);
 }
 
-function updatePagination(totalRows, totalPages, startIndex, currentCount) {
+function updatePagination(totalRows, currentCount) {
     const pageInfo = document.getElementById("pageInfo");
     const prevBtn = document.getElementById("prevPageBtn");
     const nextBtn = document.getElementById("nextPageBtn");
     const countInfo = document.getElementById("tableCountInfo");
+    const paginationBar = document.querySelector(".pagination-bar");
+    const pageSizeWrap = document.querySelector(".table-page-size-wrap");
 
-    if (pageInfo) pageInfo.textContent = `Trang ${currentPage}/${totalPages}`;
-    if (prevBtn) prevBtn.disabled = currentPage <= 1;
-    if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
+    if (paginationBar) paginationBar.style.display = "none";
+    if (pageSizeWrap) pageSizeWrap.style.display = "none";
+
+    if (pageInfo) pageInfo.textContent = "Hiển thị toàn bộ";
+    if (prevBtn) prevBtn.disabled = true;
+    if (nextBtn) nextBtn.disabled = true;
     if (countInfo) {
-        const from = totalRows === 0 ? 0 : startIndex + 1;
-        const to = startIndex + currentCount;
+        const from = totalRows === 0 ? 0 : 1;
+        const to = totalRows === 0 ? 0 : currentCount;
         countInfo.textContent = `${from}-${to} / ${totalRows} dòng`;
     }
 }
