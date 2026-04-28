@@ -310,6 +310,15 @@ def get_user_entry(username: str, users: Optional[dict] = None) -> tuple[str, Op
     for key, user in source.items():
         if normalize_username(key) == target:
             return key, user if isinstance(user, dict) else None
+
+    # Friendly fallback: allow shorthand login without "emp_" prefix.
+    # Example: thang -> emp_thang
+    if not target.startswith("emp_"):
+        alias = f"emp_{target}"
+        for key, user in source.items():
+            if normalize_username(key) == alias:
+                return key, user if isinstance(user, dict) else None
+
     return "", None
 
 
