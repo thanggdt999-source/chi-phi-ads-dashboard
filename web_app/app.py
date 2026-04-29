@@ -58,8 +58,18 @@ TELEGRAM_REPORT_START_MINUTE = max(0, min(59, int(os.getenv("TELEGRAM_REPORT_STA
 TELEGRAM_REPORT_END_HOUR = int(os.getenv("TELEGRAM_REPORT_END_HOUR", "22"))
 TELEGRAM_REPORT_END_MINUTE = max(0, min(59, int(os.getenv("TELEGRAM_REPORT_END_MINUTE", "30"))))
 TELEGRAM_REPORT_INTERVAL_MINUTES = max(1, min(60, int(os.getenv("TELEGRAM_REPORT_INTERVAL_MINUTES", "5"))))
+TELEGRAM_REPORT_ALWAYS_ON = (os.getenv("TELEGRAM_REPORT_ALWAYS_ON", "1") or "1").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 TELEGRAM_REPORT_MAX_PRODUCTS = max(1, int(os.getenv("TELEGRAM_REPORT_MAX_PRODUCTS", "8")))
 SESSION_TIMEOUT_SECONDS = int(os.getenv("SESSION_TIMEOUT_SECONDS", "600"))  # 10 minutes
+AI_CHAT_ENABLED = (os.getenv("AI_CHAT_ENABLED", "1") or "1").strip().lower() in {"1", "true", "yes", "on"}
+OPENAI_API_KEY = (os.getenv("OPENAI_API_KEY") or "").strip()
+AI_CHAT_MODEL = (os.getenv("AI_CHAT_MODEL") or "gpt-4o-mini").strip() or "gpt-4o-mini"
+AI_CHAT_MAX_TOKENS = max(128, min(1200, int(os.getenv("AI_CHAT_MAX_TOKENS", "500"))))
 META_GRAPH_VERSION = os.getenv("META_GRAPH_VERSION", "v20.0").strip() or "v20.0"
 META_ACCESS_TOKEN_PATH = Path(
     os.getenv(
@@ -761,6 +771,9 @@ def get_notification_now() -> datetime:
 
 
 def is_notification_window(now: datetime) -> bool:
+    if TELEGRAM_REPORT_ALWAYS_ON:
+        return True
+
     start_at = now.replace(
         hour=TELEGRAM_REPORT_START_HOUR,
         minute=TELEGRAM_REPORT_START_MINUTE,
@@ -851,6 +864,121 @@ def send_telegram_message(chat_id: str, text: str, bot_token: str = "") -> tuple
             return False, f"Telegram HTTP {exc.code}"
     except Exception:
         return False, "Không thể kết nối Telegram lúc này."
+
+
+def _extract_openai_text(payload: dict) -> str:
+    text = str(payload.get("output_text") or "").strip()
+    if text:
+        return text
+
+    output = payload.get("output")
+    if not isinstance(output, list):
+        return ""
+
+    chunks = []
+    for item in output:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            value = str(part.get("text") or "").strip()
+            if value:
+                chunks.append(value)
+
+    return "\n".join(chunks).strip()
+
+
+def ask_openai_chat(user_message: str, history: Optional[list] = None) -> tuple[bool, str]:
+    if not AI_CHAT_ENABLED:
+        return False, "Tính năng AI đang tắt trên hệ thống."
+    if not OPENAI_API_KEY:
+        return False, "AI chưa được cấu hình API key trên server."
+
+    safe_message = (user_message or "").strip()
+    if not safe_message:
+        return False, "Tin nhắn đang trống."
+
+    history_items = history if isinstance(history, list) else []
+    history_items = history_items[-8:]
+
+    input_items = [
+        {
+            "role": "system",
+            "content": [
+                {
+                    "type": "input_text",
+                    "text": (
+                        "Bạn là trợ lý AI cho dashboard chi phí ads. "
+                        "Trả lời ngắn gọn, thực tế, ưu tiên số liệu và hành động rõ ràng bằng tiếng Việt."
+                    ),
+                }
+            ],
+        }
+    ]
+
+    for item in history_items:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "").strip().lower()
+        if role not in {"user", "assistant"}:
+            continue
+        content_text = str(item.get("content") or "").strip()
+        if not content_text:
+            continue
+        input_items.append(
+            {
+                "role": role,
+                "content": [{"type": "input_text", "text": content_text[:2000]}],
+            }
+        )
+
+    input_items.append(
+        {
+            "role": "user",
+            "content": [{"type": "input_text", "text": safe_message[:3000]}],
+        }
+    )
+
+    payload = json.dumps(
+        {
+            "model": AI_CHAT_MODEL,
+            "input": input_items,
+            "max_output_tokens": AI_CHAT_MAX_TOKENS,
+        }
+    ).encode("utf-8")
+
+    req = urllib_request.Request(
+        url="https://api.openai.com/v1/responses",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib_request.urlopen(req, timeout=45) as resp:
+            body = resp.read().decode("utf-8", errors="ignore")
+            parsed = json.loads(body) if body else {}
+            text = _extract_openai_text(parsed)
+            if text:
+                return True, text
+            return False, "AI chưa trả về nội dung phù hợp."
+    except urllib_error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="ignore")
+        try:
+            parsed = json.loads(body) if body else {}
+            message = (((parsed.get("error") or {}).get("message")) or "").strip()
+            return False, message or f"OpenAI HTTP {exc.code}"
+        except Exception:
+            return False, f"OpenAI HTTP {exc.code}"
+    except Exception:
+        return False, "Không thể kết nối AI lúc này."
 
 
 def get_current_telegram_setup_actor() -> tuple[str, Optional[dict]]:
@@ -4825,6 +4953,24 @@ def list_sheets():
     return jsonify({"success": True, "sheets": sheets})
 
 
+@app.route("/api/ai/chat", methods=["POST"])
+def ai_chat_message():
+    data = request.get_json(silent=True) or {}
+    message = str(data.get("message") or "").strip()
+    history = data.get("history") if isinstance(data.get("history"), list) else []
+
+    if not message:
+        return jsonify({"success": False, "error": "Vui lòng nhập nội dung cần hỏi AI."}), 400
+    if len(message) > 3000:
+        return jsonify({"success": False, "error": "Nội dung quá dài (tối đa 3000 ký tự)."}), 400
+
+    ok, reply = ask_openai_chat(message, history)
+    if not ok:
+        return jsonify({"success": False, "error": reply}), 400
+
+    return jsonify({"success": True, "reply": reply})
+
+
 @app.route("/internal/telegram/reports/run", methods=["POST"])
 def run_internal_telegram_reports():
     auth_header = request.headers.get("Authorization", "")
@@ -4881,6 +5027,7 @@ def run_internal_daily_sheet_reset():
 
 
 
+@app.route("/internal/ads/autofill/run", methods=["POST"])
 def run_internal_ads_autofill():
     auth_header = request.headers.get("Authorization", "")
     expected = f"Bearer {INTERNAL_CRON_SECRET}" if INTERNAL_CRON_SECRET else ""

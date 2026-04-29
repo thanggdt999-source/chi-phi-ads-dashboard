@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Đăng ký nhân viên - Chi Phí Ads Dashboard</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='ai-chat-widget.css', v=asset_version) }}">
     <style>
         body {
             margin: 0;
@@ -319,5 +320,6 @@
         <div class="app-footer-brand">GDT Group | Chi Phi Ads Dashboard</div>
         <div class="app-footer-meta">Phat trien phan mem: Nguyen Ba Thang | Version 1.0.0</div>
     </footer>
+    <script src="{{ url_for('static', filename='ai-chat-widget.js', v=asset_version) }}"></script>
 </body>
 </html>

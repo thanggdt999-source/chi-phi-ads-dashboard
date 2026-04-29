@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chi Phí Ads - Dashboard</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='ai-chat-widget.css', v=asset_version) }}">
     {% if inline_style_css %}
     <style id="inline-dashboard-style">{{ inline_style_css | safe }}</style>
     {% endif %}
@@ -845,5 +846,6 @@
     {% if inline_script_js %}
     <script id="inline-dashboard-script">{{ inline_script_js | safe }}</script>
     {% endif %}
+    <script src="{{ url_for('static', filename='ai-chat-widget.js', v=asset_version) }}"></script>
 </body>
 </html>

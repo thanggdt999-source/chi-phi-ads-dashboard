@@ -6,6 +6,7 @@
     <title>Đăng nhập - Chi Phí Ads Dashboard</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=asset_version) }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='ai-chat-widget.css', v=asset_version) }}">
     <style>
         body {
             margin: 0;
@@ -289,5 +290,6 @@
             }
         }
     </script>
+    <script src="{{ url_for('static', filename='ai-chat-widget.js', v=asset_version) }}"></script>
 </body>
 </html>
