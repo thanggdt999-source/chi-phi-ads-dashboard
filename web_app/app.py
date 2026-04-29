@@ -1078,7 +1078,7 @@ def render_telegram_setup_page(
 
 def send_telegram_test_message(chat_id: str, display_name: str, bot_token: str = "") -> tuple[str, str]:
     text = (
-        f"Dạ thưa kính bẩm đại ca {display_name}!\n\n"
+        f"Dạ bẩm đại ca {display_name}!\n\n"
         "Em xin phép gửi tin nhắn test từ hệ thống Chi Phí Ads Dashboard.\n"
         "Nếu đại ca nhận được tin này, em sẽ tiếp tục gửi báo cáo tự động đúng lịch về Telegram này."
     )
@@ -1206,7 +1206,7 @@ def build_employee_report_message(username: str, user: dict, now: datetime) -> t
     profit_section = ("\n<b>Lợi nhuận (tổng tháng)</b>\n" + "\n".join(profit_lines)) if profit_lines else ""
 
     message = (
-        "<b>📊 Dạ thưa kính bẩm đại ca, em gửi báo cáo Ads realtime</b>\n"
+        "<b>📊 Dạ bẩm đại ca, em gửi báo cáo Ads realtime</b>\n"
         f"👤 {display_name}\n"
         f"🕒 {timestamp}\n\n"
         "<b>Báo cáo tổng quan hôm nay</b>\n"
@@ -1289,7 +1289,7 @@ def build_management_report_message(username: str, user: dict, now: datetime, us
         display_name = html.escape(user.get("display_name", username))
         timestamp = html.escape(now.strftime("%H:%M %d/%m/%Y"))
         message = (
-            "<b>📊 Dạ thưa kính bẩm đại ca, em gửi báo cáo tổng hợp Ads realtime</b>\n"
+            "<b>📊 Dạ bẩm đại ca, em gửi báo cáo tổng hợp Ads realtime</b>\n"
             f"👤 {display_name}\n"
             f"🕒 {timestamp}\n\n"
             "<b>Tổng quan KPI (nguồn: sheet hiệu suất)</b>\n"
@@ -1378,7 +1378,7 @@ def build_management_report_message(username: str, user: dict, now: datetime, us
     timestamp = html.escape(now.strftime("%H:%M %d/%m/%Y"))
     total_cost_per_data = round(total_spend / total_data) if total_data > 0 else 0
     message = (
-        "<b>📊 Dạ thưa kính bẩm đại ca, em gửi báo cáo tổng hợp Ads realtime</b>\n"
+        "<b>📊 Dạ bẩm đại ca, em gửi báo cáo tổng hợp Ads realtime</b>\n"
         f"👤 {display_name}\n"
         f"🕒 {timestamp}\n\n"
         "<b>Tổng quan quản trị hôm nay</b>\n"
