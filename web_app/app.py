@@ -77,8 +77,8 @@ TELEGRAM_SELF_SCHEDULER_TICK_SECONDS = max(10, min(300, int(os.getenv("TELEGRAM_
 TELEGRAM_REPORT_MAX_PRODUCTS = max(1, int(os.getenv("TELEGRAM_REPORT_MAX_PRODUCTS", "8")))
 SESSION_TIMEOUT_SECONDS = int(os.getenv("SESSION_TIMEOUT_SECONDS", "600"))  # 10 minutes
 AI_CHAT_ENABLED = (os.getenv("AI_CHAT_ENABLED", "1") or "1").strip().lower() in {"1", "true", "yes", "on"}
-OPENAI_API_KEY = (os.getenv("OPENAI_API_KEY") or "").strip()
-AI_CHAT_MODEL = (os.getenv("AI_CHAT_MODEL") or "gpt-4o-mini").strip() or "gpt-4o-mini"
+GROQ_API_KEY = (os.getenv("GROQ_API_KEY") or "").strip()
+AI_CHAT_MODEL = (os.getenv("AI_CHAT_MODEL") or "mixtral-8x7b-32768").strip() or "mixtral-8x7b-32768"
 AI_CHAT_MAX_TOKENS = max(128, min(1200, int(os.getenv("AI_CHAT_MAX_TOKENS", "500"))))
 META_GRAPH_VERSION = os.getenv("META_GRAPH_VERSION", "v20.0").strip() or "v20.0"
 META_ACCESS_TOKEN_PATH = Path(
@@ -915,30 +915,22 @@ def send_telegram_message(chat_id: str, text: str, bot_token: str = "") -> tuple
         return False, "Không thể kết nối Telegram lúc này."
 
 
-def _extract_openai_text(payload: dict) -> str:
-    text = str(payload.get("output_text") or "").strip()
-    if text:
-        return text
-
-    output = payload.get("output")
-    if not isinstance(output, list):
+def _extract_groq_text(payload: dict) -> str:
+    """Extract text from Groq chat completions API response."""
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or len(choices) == 0:
         return ""
 
-    chunks = []
-    for item in output:
-        if not isinstance(item, dict):
-            continue
-        content = item.get("content")
-        if not isinstance(content, list):
-            continue
-        for part in content:
-            if not isinstance(part, dict):
-                continue
-            value = str(part.get("text") or "").strip()
-            if value:
-                chunks.append(value)
+    choice = choices[0]
+    if not isinstance(choice, dict):
+        return ""
 
-    return "\n".join(chunks).strip()
+    message = choice.get("message")
+    if not isinstance(message, dict):
+        return ""
+
+    content = str(message.get("content") or "").strip()
+    return content
 
 
 def build_ai_sheet_context() -> str:
@@ -1040,10 +1032,11 @@ def build_ai_sheet_context() -> str:
     return "\n".join(lines)
 
 
-def ask_openai_chat(user_message: str, history: Optional[list] = None, data_context: str = "") -> tuple[bool, str]:
+def ask_groq_chat(user_message: str, history: Optional[list] = None, data_context: str = "") -> tuple[bool, str]:
+    """Call Groq API (free tier) for chat completions."""
     if not AI_CHAT_ENABLED:
         return False, "Tính năng AI đang tắt trên hệ thống."
-    if not OPENAI_API_KEY:
+    if not GROQ_API_KEY:
         return False, "AI chưa được cấu hình API key trên server."
 
     safe_message = (user_message or "").strip()
@@ -1065,15 +1058,10 @@ def ask_openai_chat(user_message: str, history: Optional[list] = None, data_cont
             "Neu ngu canh khong co du lieu can thiet, phai noi ro khong du du lieu."
         )
 
-    input_items = [
+    messages = [
         {
             "role": "system",
-            "content": [
-                {
-                    "type": "input_text",
-                    "text": system_text,
-                }
-            ],
+            "content": system_text,
         }
     ]
 
@@ -1086,33 +1074,34 @@ def ask_openai_chat(user_message: str, history: Optional[list] = None, data_cont
         content_text = str(item.get("content") or "").strip()
         if not content_text:
             continue
-        input_items.append(
+        messages.append(
             {
                 "role": role,
-                "content": [{"type": "input_text", "text": content_text[:2000]}],
+                "content": content_text[:2000],
             }
         )
 
-    input_items.append(
+    messages.append(
         {
             "role": "user",
-            "content": [{"type": "input_text", "text": safe_message[:3000]}],
+            "content": safe_message[:3000],
         }
     )
 
     payload = json.dumps(
         {
             "model": AI_CHAT_MODEL,
-            "input": input_items,
-            "max_output_tokens": AI_CHAT_MAX_TOKENS,
+            "messages": messages,
+            "max_tokens": AI_CHAT_MAX_TOKENS,
+            "temperature": 0.7,
         }
     ).encode("utf-8")
 
     req = urllib_request.Request(
-        url="https://api.openai.com/v1/responses",
+        url="https://api.groq.com/openai/v1/chat/completions",
         data=payload,
         headers={
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Authorization": f"Bearer {GROQ_API_KEY}",
             "Content-Type": "application/json",
         },
         method="POST",
@@ -1122,7 +1111,7 @@ def ask_openai_chat(user_message: str, history: Optional[list] = None, data_cont
         with urllib_request.urlopen(req, timeout=45) as resp:
             body = resp.read().decode("utf-8", errors="ignore")
             parsed = json.loads(body) if body else {}
-            text = _extract_openai_text(parsed)
+            text = _extract_groq_text(parsed)
             if text:
                 return True, text
             return False, "AI chưa trả về nội dung phù hợp."
@@ -1130,12 +1119,18 @@ def ask_openai_chat(user_message: str, history: Optional[list] = None, data_cont
         body = exc.read().decode("utf-8", errors="ignore")
         try:
             parsed = json.loads(body) if body else {}
-            message = (((parsed.get("error") or {}).get("message")) or "").strip()
-            return False, message or f"OpenAI HTTP {exc.code}"
+            error_obj = parsed.get("error") or {}
+            message = str(error_obj.get("message") or "").strip()
+            return False, message or f"Groq HTTP {exc.code}"
         except Exception:
-            return False, f"OpenAI HTTP {exc.code}"
+            return False, f"Groq HTTP {exc.code}"
     except Exception:
         return False, "Không thể kết nối AI lúc này."
+
+
+def ask_openai_chat(user_message: str, history: Optional[list] = None, data_context: str = "") -> tuple[bool, str]:
+    """Wrapper that delegates to Groq API."""
+    return ask_groq_chat(user_message, history, data_context)
 
 
 def get_current_telegram_setup_actor() -> tuple[str, Optional[dict]]:

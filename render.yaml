@@ -40,6 +40,14 @@ services:
         value: "true"
       - key: TELEGRAM_SELF_SCHEDULER_TICK_SECONDS
         value: "25"
+      - key: GROQ_API_KEY
+        sync: false
+      - key: AI_CHAT_ENABLED
+        value: "true"
+      - key: AI_CHAT_MODEL
+        value: "mixtral-8x7b-32768"
+      - key: AI_CHAT_MAX_TOKENS
+        value: "500"
 
   - type: cron
     name: chi-phi-ads-telegram-cron
