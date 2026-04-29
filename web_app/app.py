@@ -53,8 +53,9 @@ TELEGRAM_REPORT_STATE_PATH = Path(
     )
 )
 TELEGRAM_REPORT_TIMEZONE = os.getenv("TELEGRAM_REPORT_TIMEZONE", "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
-TELEGRAM_REPORT_START_HOUR = int(os.getenv("TELEGRAM_REPORT_START_HOUR", "6"))
+TELEGRAM_REPORT_START_HOUR = int(os.getenv("TELEGRAM_REPORT_START_HOUR", "0"))
 TELEGRAM_REPORT_END_HOUR = int(os.getenv("TELEGRAM_REPORT_END_HOUR", "23"))
+TELEGRAM_REPORT_INTERVAL_MINUTES = max(1, min(60, int(os.getenv("TELEGRAM_REPORT_INTERVAL_MINUTES", "10"))))
 TELEGRAM_REPORT_MAX_PRODUCTS = max(1, int(os.getenv("TELEGRAM_REPORT_MAX_PRODUCTS", "8")))
 SESSION_TIMEOUT_SECONDS = int(os.getenv("SESSION_TIMEOUT_SECONDS", "600"))  # 10 minutes
 META_GRAPH_VERSION = os.getenv("META_GRAPH_VERSION", "v20.0").strip() or "v20.0"
@@ -652,7 +653,7 @@ def is_notification_window(now: datetime) -> bool:
 
 
 def get_notification_slot(now: datetime) -> str:
-    slot_minute = 0 if now.minute < 30 else 30
+    slot_minute = (now.minute // TELEGRAM_REPORT_INTERVAL_MINUTES) * TELEGRAM_REPORT_INTERVAL_MINUTES
     return now.replace(minute=slot_minute, second=0, microsecond=0).strftime("%Y-%m-%d %H:%M")
 
 
@@ -689,9 +690,9 @@ def parse_row_date(value: str) -> Optional[date]:
 
 
 def send_telegram_message(chat_id: str, text: str, bot_token: str = "") -> tuple[bool, str]:
-    effective_token = normalize_telegram_bot_token(bot_token)
+    effective_token = normalize_telegram_bot_token(bot_token) or normalize_telegram_bot_token(TELEGRAM_BOT_TOKEN)
     if not effective_token:
-        return False, "Bot token chưa được cấu hình hợp lệ."
+        return False, "Bot token chưa được cấu hình hợp lệ (cả token cá nhân và token hệ thống)."
     if not chat_id:
         return False, "Thiếu Telegram Chat ID."
 
