@@ -1072,7 +1072,42 @@ def get_management_scope_users(owner_username: str, owner_user: dict, users: dic
 def build_management_report_message(username: str, user: dict, now: datetime, users: dict) -> tuple[bool, str, str]:
     scope_users = get_management_scope_users(username, user, users)
     if not scope_users:
-        return False, "", "Không có nhân viên nào có sheet để tổng hợp báo cáo."
+        performance_sheet_url = (user.get("performance_sheet_url") or "").strip()
+        if not performance_sheet_url:
+            return False, "", "Không có nhân viên nào có sheet để tổng hợp báo cáo."
+
+        perf = fetch_performance_summary(performance_sheet_url)
+        if not perf.get("success"):
+            return False, "", perf.get("error", "Không đọc được bảng hiệu suất tổng.")
+
+        metrics = perf.get("metrics") or {}
+        revenue = metrics.get("revenue") or {}
+        total_results = metrics.get("total_results") or {}
+        total_spend = metrics.get("total_spend") or {}
+        cpr = metrics.get("cost_per_result") or {}
+        ads = metrics.get("ads_percent") or {}
+        aov = metrics.get("avg_order_value") or {}
+        completion = metrics.get("completion_percent") or {}
+        gross = metrics.get("gross_profit") or {}
+
+        display_name = html.escape(user.get("display_name", username))
+        timestamp = html.escape(now.strftime("%H:%M %d/%m/%Y"))
+        message = (
+            "<b>📊 Dạ thưa kính bẩm đại ca, em gửi báo cáo tổng hợp Ads realtime</b>\n"
+            f"👤 {display_name}\n"
+            f"🕒 {timestamp}\n\n"
+            "<b>Tổng quan KPI (nguồn: sheet hiệu suất)</b>\n"
+            f"• Doanh số: <b>{round(float(revenue.get('month') or 0)):,} VND</b>\n"
+            f"• Tổng kết quả: <b>{round(float(total_results.get('month') or 0)):,}</b>\n"
+            f"• Chi phí: <b>{round(float(total_spend.get('month') or 0)):,} VND</b>\n"
+            f"• Chi phí / kết quả: <b>{round(float(cpr.get('month') or 0)):,} VND</b>\n"
+            f"• % Ads: <b>{round(float(ads.get('month') or 0), 2):,.2f}%</b>\n"
+            f"• Giá trị TB đơn: <b>{round(float(aov.get('month') or 0)):,} VND</b>\n"
+            f"• % Hoàn: <b>{round(float(completion.get('total') or 0), 2):,.2f}%</b>\n"
+            f"• Lợi nhuận gộp: <b>{round(float(gross.get('total') or 0)):,} VND</b>\n\n"
+            "<i>Dạ đại ca, em sẽ tiếp tục gửi đều theo lịch tự động.</i>"
+        )
+        return True, message, "OK"
 
     employee_summaries = []
     failed_users = []
