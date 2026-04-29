@@ -3109,11 +3109,6 @@ def fetch_performance_summary(performance_sheet_url: str) -> dict:
     client = get_gspread_client()
     spreadsheet = client.open_by_key(sheet_id)
     tong_ws = resolve_optional_worksheet(spreadsheet, ["TỔNG", "Tong", "Tổng"]) or resolve_performance_worksheet(spreadsheet)
-    today_str = datetime.now().strftime("%d/%m/%Y")
-    try:
-        tong_ws.update(values=[[today_str, today_str]], range_name="AC1:AD1")
-    except Exception:
-        pass
 
     rows = tong_ws.get_all_values()
     product_rows = []
@@ -4839,7 +4834,50 @@ def run_internal_telegram_reports():
     return jsonify(result)
 
 
-@app.route("/internal/ads/autofill/run", methods=["POST"])
+@app.route("/internal/sheets/daily-reset", methods=["POST"])
+def run_internal_daily_sheet_reset():
+    """Chạy lúc 00h: xóa bộ lọc tab Tổng, cập nhật AC1:AD1 = ngày hôm nay (USER_ENTERED)."""
+    auth_header = request.headers.get("Authorization", "")
+    expected = f"Bearer {INTERNAL_CRON_SECRET}" if INTERNAL_CRON_SECRET else ""
+    if not expected or auth_header != expected:
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+
+    perf_url = os.environ.get("BUILTIN_ADMIN_PERFORMANCE_SHEET_URL", "")
+    if not perf_url:
+        return jsonify({"success": False, "error": "Chưa cấu hình BUILTIN_ADMIN_PERFORMANCE_SHEET_URL"}), 400
+
+    try:
+        sheet_id = extract_sheet_id(perf_url)
+        client = get_gspread_client()
+        spreadsheet = client.open_by_key(sheet_id)
+        tong_ws = resolve_optional_worksheet(spreadsheet, ["TỔNG", "Tong", "Tổng"])
+        if tong_ws is None:
+            return jsonify({"success": False, "error": "Không tìm thấy tab Tổng"}), 400
+
+        # Bước 1: xóa bộ lọc đang active (nếu có)
+        try:
+            spreadsheet.batch_update({
+                "requests": [{"clearBasicFilter": {"sheetId": tong_ws.id}}]
+            })
+        except Exception:
+            pass  # Không có filter thì bỏ qua
+
+        # Bước 2: ghi ngày hôm nay vào AC1:AD1 với USER_ENTERED
+        # để Google Sheets xử lý như người dùng nhập → khớp data validation dropdown
+        today_str = datetime.now(tz=ZoneInfo(TELEGRAM_REPORT_TIMEZONE)).strftime("%d/%m/%Y")
+        tong_ws.update(
+            values=[[today_str, today_str]],
+            range_name="AC1:AD1",
+            value_input_option="USER_ENTERED",
+        )
+
+        return jsonify({"success": True, "date_set": today_str})
+
+    except Exception as exc:
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+
+
 def run_internal_ads_autofill():
     auth_header = request.headers.get("Authorization", "")
     expected = f"Bearer {INTERNAL_CRON_SECRET}" if INTERNAL_CRON_SECRET else ""

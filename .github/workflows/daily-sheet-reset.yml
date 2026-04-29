@@ -1,0 +1,27 @@
+name: Daily Sheet Reset (00h ICT)
+
+on:
+  schedule:
+    # 17:00 UTC = 00:00 ICT (UTC+7)
+    - cron: '0 17 * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: daily-sheet-reset
+  cancel-in-progress: false
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ENDPOINT: https://ads.hexistoree.click/internal/sheets/daily-reset
+    steps:
+      - name: Clear filter & set AC1/AD1 to today
+        run: |
+          curl --fail --show-error --silent \
+            --request POST \
+            --header "Authorization: Bearer ${{ secrets.INTERNAL_CRON_SECRET }}" \
+            --header 'Content-Type: application/json' \
+            --data '{}' \
+            "$ENDPOINT"
