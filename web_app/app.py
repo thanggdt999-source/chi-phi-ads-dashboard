@@ -958,8 +958,32 @@ def build_ai_sheet_context() -> str:
         f"- Nguoi dung hien tai: {user.get('display_name', username)} ({username})",
     ]
 
-    accessible_sheets = get_accessible_sheets_for_user(username)[:3]
-    lines.append(f"- So bang duoc phep truy cap: {len(accessible_sheets)}")
+    raw_sheets = []
+    own_sheet_url = str(user.get("sheet_url") or "").strip()
+    if own_sheet_url:
+        raw_sheets.append(
+            {
+                "name": user.get("display_name", username),
+                "url": own_sheet_url,
+                "team": user.get("team", ""),
+                "username": username,
+            }
+        )
+
+    for item in get_accessible_sheets_for_user(username):
+        raw_sheets.append(item)
+
+    unique_sheets = []
+    seen_urls = set()
+    for item in raw_sheets:
+        url = str(item.get("url") or "").strip()
+        if not url or url in seen_urls:
+            continue
+        seen_urls.add(url)
+        unique_sheets.append(item)
+
+    accessible_sheets = unique_sheets[:3]
+    lines.append(f"- So bang duoc phep truy cap: {len(unique_sheets)}")
 
     for idx, sheet in enumerate(accessible_sheets, start=1):
         sheet_name = str(sheet.get("name") or f"Sheet {idx}").strip()
