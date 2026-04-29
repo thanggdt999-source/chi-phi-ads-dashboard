@@ -45,7 +45,7 @@ services:
       - key: AI_CHAT_ENABLED
         value: "true"
       - key: AI_CHAT_MODEL
-        value: "llama-3.3-70b-versatile"
+        value: "llama-3.1-8b-instant"
       - key: AI_CHAT_MAX_TOKENS
         value: "500"
 
