@@ -2980,7 +2980,7 @@ DISPLAY_COLUMN_ALIASES = {
     "Ngày": ["ngay", "date"],
     "Tên tài khoản": ["tentaikhoan", "tai khoan", "account"],
     "Tên sản phẩm - VN": ["tensanphamvn", "tenspvn", "tensanpham", "sanpham"],
-    "Số Data": ["sodata", "data", "tongketqua", "ketqua"],
+    "Số Data": ["sodata", "tongdata", "tongketqua", "ketqua"],
     "Số tiền chi tiêu - VND": ["sotienchitieuvnd", "chiphivnd", "tongchiphi", "spendvnd", "vnd"],
     "Số tiền chi tiêu - USD": ["sotienchitieuusd", "chiphiusd", "spendusd", "usd"],
 }
@@ -3007,7 +3007,8 @@ def _find_ads_header_row(all_values: list) -> tuple[int, dict]:
     for row_idx in range(scan_limit):
         row = all_values[row_idx] if row_idx < len(all_values) else []
         col_idx = _extract_display_col_idx(row)
-        if len(col_idx) >= 3 and ("Ngày" in col_idx or "Tên tài khoản" in col_idx):
+        has_core = "Ngày" in col_idx and ("Số Data" in col_idx or "Số tiền chi tiêu - VND" in col_idx)
+        if len(col_idx) >= 4 and has_core:
             return row_idx, col_idx
     fallback_idx = _extract_display_col_idx(all_values[0] if all_values else [])
     return 0, fallback_idx
@@ -3019,7 +3020,7 @@ def _parse_ads_rows_from_worksheet(worksheet) -> list:
         return []
 
     header_row_idx, col_idx = _find_ads_header_row(all_values)
-    if not col_idx:
+    if not col_idx or "Ngày" not in col_idx:
         return []
 
     rows = []
@@ -3046,6 +3047,11 @@ def _parse_ads_rows_from_worksheet(worksheet) -> list:
 
         if not has_content:
             continue
+
+        date_text = str(row_data.get("Ngày", "")).strip()
+        if not re.match(r"^\d{1,2}/\d{1,2}/\d{2,4}$", date_text):
+            continue
+
         rows.append(row_data)
 
     return rows
