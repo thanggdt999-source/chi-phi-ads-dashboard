@@ -3157,6 +3157,66 @@ def resolve_optional_worksheet(spreadsheet, preferred_titles: list[str]):
     return None
 
 
+def extract_member_matrix_summary(spreadsheet) -> list:
+    data_ws = resolve_optional_worksheet(spreadsheet, ["Data FB"])
+    if data_ws is None:
+        return []
+
+    try:
+        data_values = data_ws.get_all_values()
+    except Exception:
+        return []
+
+    if len(data_values) < 3:
+        return []
+
+    header_row = data_values[1] if len(data_values) > 1 else []
+    total_row = data_values[2] if len(data_values) > 2 else []
+
+    cost_map = {}
+    cost_ws = resolve_optional_worksheet(spreadsheet, ["Chi phí ads FB", "Chi Phi ads FB", "Chi phi ads FB"])
+    if cost_ws is not None:
+        try:
+            cost_values = cost_ws.get_all_values()
+            if len(cost_values) >= 6:
+                cost_header = cost_values[4]
+                cost_total = cost_values[5]
+                for idx in range(1, min(len(cost_header), len(cost_total))):
+                    member_name = str(cost_header[idx] or "").strip()
+                    if not member_name:
+                        continue
+                    cost_val = parse_number_like(str(cost_total[idx] or ""))
+                    if cost_val is not None:
+                        cost_map[member_name] = float(cost_val)
+        except Exception:
+            pass
+
+    summaries = []
+    for idx in range(1, min(len(header_row), len(total_row))):
+        member_name = str(header_row[idx] or "").strip()
+        if not member_name or normalize_sheet_tab_name(member_name) in {"tennv", "tong"}:
+            continue
+
+        total_data_val = parse_number_like(str(total_row[idx] or ""))
+        total_data = round(float(total_data_val)) if total_data_val is not None else 0
+        if total_data <= 0:
+            continue
+
+        summaries.append(
+            {
+                "name": member_name,
+                "team": "",
+                "total_spend": 0,
+                "total_data": total_data,
+                "cost_per_data": 0,
+                "ads_percent": round(cost_map.get(member_name, 0.0), 2),
+            }
+        )
+
+    summaries.sort(key=lambda x: x.get("total_data", 0), reverse=True)
+    return summaries
+
+
 def build_lng_items_from_rows(rows: list) -> dict:
     if not rows:
         return {"items": []}
@@ -3487,6 +3547,7 @@ def fetch_chi_phi_ads_data(sheet_id):
         profitability_metrics = fetch_profitability_summary(spreadsheet)
         profitability_metrics["product_lng"] = build_product_lng_summary(spreadsheet)
         account_summary = build_account_spend_summary(rows)
+        matrix_member_summary = extract_member_matrix_summary(spreadsheet)
 
         return {
             "success": True,
@@ -3495,6 +3556,7 @@ def fetch_chi_phi_ads_data(sheet_id):
             "ads_percent": ads_percent,
             "profitability_metrics": profitability_metrics,
             "account_summary": account_summary,
+            "matrix_member_summary": matrix_member_summary,
         }
     except Exception as e:
         raw_error = str(e)
@@ -4308,16 +4370,27 @@ def fetch_all_data():
         if result.get("success"):
             member_rows = result.get("data", [])
             all_rows.extend(member_rows)
-            total_spend = sum(parse_spend(r.get("Số tiền chi tiêu - VND", "")) for r in member_rows)
-            total_data = sum(parse_int(r.get("Số Data", "")) for r in member_rows)
-            member_summaries.append({
-                "name": sheet["name"],
-                "team": sheet.get("team", ""),
-                "total_spend": total_spend,
-                "total_data": total_data,
-                "cost_per_data": round(total_spend / total_data) if total_data > 0 else 0,
-                "sheet_url": sheet["url"],
-            })
+            if member_rows:
+                total_spend = sum(parse_spend(r.get("Số tiền chi tiêu - VND", "")) for r in member_rows)
+                total_data = sum(parse_int(r.get("Số Data", "")) for r in member_rows)
+                member_summaries.append({
+                    "name": sheet["name"],
+                    "team": sheet.get("team", ""),
+                    "total_spend": total_spend,
+                    "total_data": total_data,
+                    "cost_per_data": round(total_spend / total_data) if total_data > 0 else 0,
+                    "sheet_url": sheet["url"],
+                })
+            else:
+                for item in result.get("matrix_member_summary", []) or []:
+                    member_summaries.append({
+                        "name": item.get("name", ""),
+                        "team": item.get("team", "") or sheet.get("team", ""),
+                        "total_spend": item.get("total_spend", 0),
+                        "total_data": item.get("total_data", 0),
+                        "cost_per_data": item.get("cost_per_data", 0),
+                        "sheet_url": sheet["url"],
+                    })
         else:
             errors.append({"name": sheet["name"], "error": result.get("error", "Lỗi không xác định")})
 

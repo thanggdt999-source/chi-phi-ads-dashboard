@@ -182,7 +182,10 @@ async function loadAllData() {
         if (handleTelegramSetupGate(data, res.status)) return;
 
         if (!data.success) { showError("❌ " + (data.error || "Không thể tải dữ liệu tổng")); return; }
-        if (!data.data || data.data.length === 0) { showError("⚠️ Chưa có dữ liệu trong các sheet."); return; }
+        if ((!data.data || data.data.length === 0) && (!data.member_summaries || data.member_summaries.length === 0)) {
+            showError("⚠️ Chưa có dữ liệu trong các sheet.");
+            return;
+        }
 
         currentData = {
             rows: data.data,
@@ -420,7 +423,9 @@ function resetDateInputs() {
 
 // ─── Render ───────────────────────────────────────────
 function renderData() {
-    if (!currentData.rows || currentData.rows.length === 0) { showError("Không có dữ liệu trong sheet"); return; }
+    const hasRows = Array.isArray(currentData.rows) && currentData.rows.length > 0;
+    const hasRanking = Array.isArray(currentData.memberSummaries) && currentData.memberSummaries.length > 0;
+    if (!hasRows && !hasRanking) { showError("Không có dữ liệu trong sheet"); return; }
     filteredRows = [...currentData.rows];
     currentPage = 1;
     const isAdminView = ROLE === "admin";
