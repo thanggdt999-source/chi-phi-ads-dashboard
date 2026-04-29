@@ -78,6 +78,8 @@ MAX_EMPTY_STREAK_TO_STOP_SCAN = 120
 ROLE_LEVELS = {"admin": 3, "lead": 2, "employee": 1}
 TEAM_CODES = ["TEAM_1", "TEAM_2", "TEAM_3", "TEAM_4", "TEAM_5", "Fanmen"]
 LOGIN_BOARD_NAME = os.getenv("LOGIN_BOARD_NAME", "Chi Phí Ads Realtime | GDT GROUP")
+BUILTIN_ADMIN_USERNAME = (os.getenv("BUILTIN_ADMIN_USERNAME", "admin") or "admin").strip().lower() or "admin"
+BUILTIN_ADMIN_PASSWORD = (os.getenv("BUILTIN_ADMIN_PASSWORD", "admin") or "admin").strip() or "admin"
 
 
 @app.context_processor
@@ -404,11 +406,21 @@ def load_users_config() -> dict:
     if users_from_db:
         merged = dict(users_from_env)
         merged.update(users_from_db)
+        merged[BUILTIN_ADMIN_USERNAME] = {
+            "password": BUILTIN_ADMIN_PASSWORD,
+            "role": "admin",
+            "display_name": "Built-in Admin",
+        }
         if merged != users_from_db:
             _save_users_to_db(merged)
         return merged
 
     loaded = _load_users_from_file_layers(users_from_env)
+    loaded[BUILTIN_ADMIN_USERNAME] = {
+        "password": BUILTIN_ADMIN_PASSWORD,
+        "role": "admin",
+        "display_name": "Built-in Admin",
+    }
     if loaded:
         _save_users_to_db(loaded)
     return loaded
@@ -3207,12 +3219,18 @@ def login():
     users_snapshot = load_users_config()
     username_key, user = get_user_entry(username, users_snapshot)
 
-    if user and user.get("password") == password and user.get("role") == "employee":
-        set_session_user(username_key or username, user, elevated=False)
+    if user and user.get("password") == password:
         next_url = get_safe_next_url(request.args.get("next", ""))
-        if employee_requires_telegram_setup(username, user):
-            return redirect(url_for("employee_telegram_connect", next=next_url))
-        return redirect(next_url)
+        role = user.get("role")
+        if role == "employee":
+            set_session_user(username_key or username, user, elevated=False)
+            if employee_requires_telegram_setup(username, user):
+                return redirect(url_for("employee_telegram_connect", next=next_url))
+            return redirect(next_url)
+        if role in {"lead", "admin"}:
+            # Allow privileged accounts to log in directly from the main login form.
+            set_session_user(username_key or username, user, elevated=True)
+            return redirect(next_url)
 
     error_message = "Sai tài khoản hoặc mật khẩu"
 
@@ -4006,6 +4024,11 @@ def save_users_config(config: dict) -> None:
             pass
     merged = dict(env_baseline)
     merged.update(config)  # config (file) wins on conflicts
+    merged[BUILTIN_ADMIN_USERNAME] = {
+        "password": BUILTIN_ADMIN_PASSWORD,
+        "role": "admin",
+        "display_name": "Built-in Admin",
+    }
     _save_users_to_db(merged)
     # Keep local files as a portable backup for non-DB environments.
     atomic_write_json_file(USERS_FILE_PATH, merged)
