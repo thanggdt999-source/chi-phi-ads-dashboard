@@ -13,7 +13,7 @@ Tạo key từ https://console.groq.com/keys (miễn phí)
 
 ## Features:
 - AI Chat sử dụng Groq API (miễn phí, không cần billing)
-- Model: mixtral-8x7b-32768
+- Model: llama-3.3-70b-versatile
 - Max tokens: 500
 - Hỗ trợ tiếng Việt
 - Có context từ Google Sheets data

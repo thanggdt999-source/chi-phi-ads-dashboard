@@ -45,7 +45,7 @@ services:
       - key: AI_CHAT_ENABLED
         value: "true"
       - key: AI_CHAT_MODEL
-        value: "mixtral-8x7b-32768"
+        value: "llama-3.3-70b-versatile"
       - key: AI_CHAT_MAX_TOKENS
         value: "500"
 
