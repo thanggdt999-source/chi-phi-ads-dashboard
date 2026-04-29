@@ -2856,15 +2856,36 @@ def fetch_performance_summary(performance_sheet_url: str) -> dict:
 
     client = get_gspread_client()
     spreadsheet = client.open_by_key(sheet_id)
-    worksheet = resolve_performance_worksheet(spreadsheet)
-    rows = worksheet.get_all_values()
+    tong_ws = resolve_optional_worksheet(spreadsheet, ["TỔNG", "Tong", "Tổng"]) or resolve_performance_worksheet(spreadsheet)
+    rows = tong_ws.get_all_values()
+    tiktok_ws = resolve_optional_worksheet(spreadsheet, ["Tiktok", "TikTok", "TIKTOK"])
+    lng_ws = resolve_optional_worksheet(spreadsheet, ["LNG", "LNG Sản phẩm", "LNG San pham", "LN gộp dự tính"])
 
     if not rows:
         return {"success": False, "error": "Bảng hiệu suất chưa có dữ liệu."}
 
+    weekly_rows = rows
+    if tiktok_ws is not None:
+        try:
+            tiktok_rows = tiktok_ws.get_all_values()
+            if tiktok_rows:
+                weekly_rows = tiktok_rows
+        except Exception:
+            pass
+
+    lng_summary = {"items": []}
+    if lng_ws is not None:
+        try:
+            lng_rows = lng_ws.get_all_values()
+            lng_summary = build_lng_items_from_rows(lng_rows)
+        except Exception:
+            lng_summary = {"items": []}
+
     # Try column-based parser first (Báo cáo hiệu suất format)
     col_result = fetch_performance_summary_column_based(rows)
-    weekly_trend = fetch_performance_weekly_trend(rows)
+    weekly_trend = fetch_performance_weekly_trend(weekly_rows)
+    if not weekly_trend and weekly_rows is not rows:
+        weekly_trend = fetch_performance_weekly_trend(rows)
     if col_result:
         spend_month  = col_result["spend_month"]
         spend_day    = col_result["spend_day"]
@@ -2897,6 +2918,7 @@ def fetch_performance_summary(performance_sheet_url: str) -> dict:
             "ads_percent": {"month": round(ads_month, 2), "day": round(ads_day, 2), "unit": "%"},
             "avg_order_value": {"month": round(aov_month), "day": round(aov_day), "unit": "VND"},
             "weekly_trend": weekly_trend,
+            "product_lng": lng_summary,
         },
         "sheet_name": spreadsheet.title or "Bảng hiệu suất",
     }
@@ -2952,6 +2974,172 @@ def resolve_ads_worksheet(spreadsheet):
         return candidates[0]
 
     raise gspread.exceptions.WorksheetNotFound("Chi phí ADS")
+
+
+DISPLAY_COLUMN_ALIASES = {
+    "Ngày": ["ngay", "date"],
+    "Tên tài khoản": ["tentaikhoan", "tai khoan", "account"],
+    "Tên sản phẩm - VN": ["tensanphamvn", "tenspvn", "tensanpham", "sanpham"],
+    "Số Data": ["sodata", "data", "tongketqua", "ketqua"],
+    "Số tiền chi tiêu - VND": ["sotienchitieuvnd", "chiphivnd", "tongchiphi", "spendvnd", "vnd"],
+    "Số tiền chi tiêu - USD": ["sotienchitieuusd", "chiphiusd", "spendusd", "usd"],
+}
+
+
+def _match_display_header(header: str, col_name: str) -> bool:
+    norm = normalize_sheet_tab_name(header)
+    aliases = DISPLAY_COLUMN_ALIASES.get(col_name, [])
+    return any(alias in norm for alias in aliases)
+
+
+def _extract_display_col_idx(header_row: list) -> dict:
+    idx = {}
+    for i, cell in enumerate(header_row):
+        cell_text = str(cell or "")
+        for col in DISPLAY_COLUMNS:
+            if col not in idx and _match_display_header(cell_text, col):
+                idx[col] = i
+    return idx
+
+
+def _find_ads_header_row(all_values: list) -> tuple[int, dict]:
+    scan_limit = min(len(all_values), 15)
+    for row_idx in range(scan_limit):
+        row = all_values[row_idx] if row_idx < len(all_values) else []
+        col_idx = _extract_display_col_idx(row)
+        if len(col_idx) >= 3 and ("Ngày" in col_idx or "Tên tài khoản" in col_idx):
+            return row_idx, col_idx
+    fallback_idx = _extract_display_col_idx(all_values[0] if all_values else [])
+    return 0, fallback_idx
+
+
+def _parse_ads_rows_from_worksheet(worksheet) -> list:
+    all_values = worksheet.get_all_values()
+    if not all_values:
+        return []
+
+    header_row_idx, col_idx = _find_ads_header_row(all_values)
+    if not col_idx:
+        return []
+
+    rows = []
+    for i in range(header_row_idx + 1, len(all_values)):
+        row = all_values[i]
+        if not row:
+            continue
+
+        first_cell = str(row[0] if row else "").strip()
+        first_norm = normalize_sheet_tab_name(first_cell)
+        if any(token in first_norm for token in ["tong", "tongcong", "total"]) and not re.match(r"^\d{1,2}/\d{1,2}/\d{2,4}$", first_cell):
+            continue
+
+        row_data = {}
+        has_content = False
+        for col in DISPLAY_COLUMNS:
+            idx = col_idx.get(col)
+            value = str(row[idx]).strip() if idx is not None and idx < len(row) else ""
+            if "#N/A" in value or "#REF" in value or "#VALUE" in value:
+                value = ""
+            if value:
+                has_content = True
+            row_data[col] = value
+
+        if not has_content:
+            continue
+        rows.append(row_data)
+
+    return rows
+
+
+def resolve_ads_worksheets(spreadsheet) -> list:
+    preferred_titles = [
+        "Chi phí ads FB",
+        "Chi Phi ads FB",
+        "Chi phi ads FB",
+        "Data FB",
+    ]
+    found = []
+    seen = set()
+
+    for title in preferred_titles:
+        try:
+            ws = spreadsheet.worksheet(title)
+            key = normalize_sheet_tab_name(ws.title)
+            if key and key not in seen:
+                seen.add(key)
+                found.append(ws)
+        except Exception:
+            continue
+
+    if found:
+        return found
+
+    # Backward-compatible fallback for older sheet naming.
+    return [resolve_ads_worksheet(spreadsheet)]
+
+
+def resolve_optional_worksheet(spreadsheet, preferred_titles: list[str]):
+    for title in preferred_titles:
+        try:
+            return spreadsheet.worksheet(title)
+        except Exception:
+            continue
+    return None
+
+
+def build_lng_items_from_rows(rows: list) -> dict:
+    if not rows:
+        return {"items": []}
+
+    header_idx = None
+    product_idx = None
+    lng_idx = None
+    lng_pct_idx = None
+
+    scan_limit = min(len(rows), 12)
+    for i in range(scan_limit):
+        row = rows[i]
+        normalized = [normalize_sheet_tab_name(cell) for cell in row]
+        for j, cell in enumerate(normalized):
+            if product_idx is None and ("sanpham" in cell or "tensp" in cell):
+                product_idx = j
+            if lng_idx is None and ("lng" in cell or "loinhuangop" in cell or "lngop" in cell):
+                lng_idx = j
+            if lng_pct_idx is None and ("phantramlng" in cell or "phantramln" in cell or ("phantram" in cell and "lng" in cell)):
+                lng_pct_idx = j
+        if product_idx is not None and lng_idx is not None:
+            header_idx = i
+            break
+
+    if header_idx is None or product_idx is None or lng_idx is None:
+        return {"items": []}
+
+    items = []
+    for row in rows[header_idx + 1:]:
+        if not row:
+            continue
+        name = str(row[product_idx] if product_idx < len(row) else "").strip()
+        if not name:
+            continue
+        name_norm = normalize_sheet_tab_name(name)
+        if any(token in name_norm for token in ["tong", "tongcong", "total"]):
+            continue
+
+        lng_raw = row[lng_idx] if lng_idx < len(row) else ""
+        lng_val = parse_number_like(str(lng_raw))
+        if lng_val is None:
+            continue
+
+        lng_pct_val = None
+        if lng_pct_idx is not None and lng_pct_idx < len(row):
+            pct_raw = parse_number_like(str(row[lng_pct_idx]))
+            if pct_raw is not None:
+                lng_pct_val = round(float(pct_raw), 2)
+
+        items.append({"product_name": name, "lng": round(float(lng_val)), "lng_pct": lng_pct_val})
+
+    items.sort(key=lambda x: float(x.get("lng", 0)), reverse=True)
+    return {"items": items}
 
 
 def resolve_profitability_worksheet(spreadsheet):
@@ -3199,45 +3387,22 @@ def build_product_lng_summary(spreadsheet) -> dict:
     return {"items": desc}
 
 def fetch_chi_phi_ads_data(sheet_id):
-    """Fetch all data from 'Chi phí ADS' tab."""
+    """Fetch merged data from Chi phí ads FB + Data FB tabs (fallback to legacy ads tab)."""
     try:
         client = get_gspread_client()
         spreadsheet = client.open_by_key(sheet_id)
-        worksheet = resolve_ads_worksheet(spreadsheet)
-        
-        all_values = worksheet.get_all_values()
-        
-        if not all_values:
-            return {"success": True, "data": [], "headers": DISPLAY_COLUMNS}
-        
-        # Header ở row 1 (index 0)
-        raw_headers = [h.strip() for h in all_values[0]]
-        
-        # Map header -> index
-        col_idx = {}
-        for col in DISPLAY_COLUMNS:
-            for i, h in enumerate(raw_headers):
-                if h == col:
-                    col_idx[col] = i
-                    break
-        
-        # Data từ row 3 trở đi (index 2), bỏ row 2 là row tổng
+        worksheets = resolve_ads_worksheets(spreadsheet)
+
         rows = []
-        for i in range(2, len(all_values)):
-            row = all_values[i]
-            if not row or not row[0].strip():
-                continue
-            
-            row_data = {}
-            for col in DISPLAY_COLUMNS:
-                idx = col_idx.get(col)
-                value = row[idx].strip() if idx is not None and idx < len(row) else ""
-                # Bỏ qua dòng có lỗi công thức
-                if "#N/A" in value or "#REF" in value or "#VALUE" in value:
-                    value = ""
-                row_data[col] = value
-            
-            rows.append(row_data)
+        seen_keys = set()
+        for ws in worksheets:
+            parsed_rows = _parse_ads_rows_from_worksheet(ws)
+            for row_data in parsed_rows:
+                key = "|".join(str(row_data.get(col, "")).strip() for col in DISPLAY_COLUMNS)
+                if not key or key in seen_keys:
+                    continue
+                seen_keys.add(key)
+                rows.append(row_data)
         
         # Đọc % Ads từ tab TỔNG, cột L, dòng 3 (index [2][11])
         ads_percent = ""

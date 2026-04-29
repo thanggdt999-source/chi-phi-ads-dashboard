@@ -423,20 +423,21 @@ function renderData() {
     if (!currentData.rows || currentData.rows.length === 0) { showError("Không có dữ liệu trong sheet"); return; }
     filteredRows = [...currentData.rows];
     currentPage = 1;
+    const isAdminView = ROLE === "admin";
     document.getElementById("statsSection").style.display = "block";
-    document.getElementById("tableSection").style.display = "block";
-    document.getElementById("chartsSection").style.display = "grid";
+    document.getElementById("tableSection").style.display = isAdminView ? "none" : "block";
+    document.getElementById("chartsSection").style.display = isAdminView ? "none" : "grid";
     const rankSec = document.getElementById("rankingsSection");
     if (rankSec) rankSec.style.display = currentData.memberSummaries.length ? "block" : "none";
 
     // Keep core data visible even if a secondary renderer (e.g. chart CDN) fails.
     try { renderStats(filteredRows); } catch (_) {}
     try { renderRankings(); } catch (_) {}
-    try { renderTable(filteredRows); } catch (_) {}
-    try { renderInsights(filteredRows); } catch (_) {
-        const chartSection = document.getElementById("chartsSection");
-            // Removed the call to loadAccountStatuses after reading dashboard data
-        showToast("⚠️ Không tải được khung tổng hợp. Dữ liệu bảng vẫn hiển thị bình thường.");
+    if (!isAdminView) {
+        try { renderTable(filteredRows); } catch (_) {}
+        try { renderInsights(filteredRows); } catch (_) {
+            showToast("⚠️ Không tải được khung tổng hợp. Dữ liệu bảng vẫn hiển thị bình thường.");
+        }
     }
 }
 
@@ -830,7 +831,7 @@ function renderWeeklyInsight(container) {
 }
 
 function renderLNGInsight(container) {
-    const lng = currentData.profitability_metrics?.product_lng || {};
+    const lng = currentData.profitability_metrics?.product_lng || currentPerformanceMetrics?.product_lng || {};
     // Support both new format {items:[]} and legacy {top:[], bottom:[]}
     let items = null;
     if (Array.isArray(lng.items)) {
