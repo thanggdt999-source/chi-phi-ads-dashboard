@@ -448,9 +448,9 @@ def ensure_builtin_admin_profile(raw_user: object) -> dict:
     builtin_admin["role"] = "admin"
     builtin_admin["display_name"] = builtin_admin.get("display_name") or "Built-in Admin"
     if BUILTIN_ADMIN_SHEET_URL:
-        builtin_admin.setdefault("sheet_url", BUILTIN_ADMIN_SHEET_URL)
+        builtin_admin["sheet_url"] = BUILTIN_ADMIN_SHEET_URL
     if BUILTIN_ADMIN_PERFORMANCE_SHEET_URL:
-        builtin_admin.setdefault("performance_sheet_url", BUILTIN_ADMIN_PERFORMANCE_SHEET_URL)
+        builtin_admin["performance_sheet_url"] = BUILTIN_ADMIN_PERFORMANCE_SHEET_URL
 
     default_chat_id = normalize_telegram_chat_id(BUILTIN_ADMIN_TELEGRAM_CHAT_ID)
     default_bot_username = normalize_telegram_bot_username(BUILTIN_ADMIN_TELEGRAM_BOT_USERNAME)
