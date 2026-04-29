@@ -518,7 +518,7 @@
         <!-- Main Content -->
         <main class="main-content">
             <!-- ── Input Section (hidden for employee) ── -->
-            {% if role != 'employee' %}
+            {% if role == 'lead' %}
             <section class="input-section">
                 <div class="card">
                     <div class="input-header-row">
@@ -541,7 +541,7 @@
                     </div>
                 </div>
             </section>
-            {% else %}
+            {% elif role == 'employee' %}
             <section class="input-section employee-sheet-panel">
                 <div class="card" style="background: transparent; box-shadow: none; padding: 0; border-radius: 0;">
                     <h2><i class="fas fa-link"></i> Sheet dữ liệu của bạn</h2>
