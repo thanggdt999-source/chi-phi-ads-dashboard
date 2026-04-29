@@ -3314,6 +3314,12 @@ def fetch_chi_phi_ads_data(sheet_id):
                 ],
             }
 
+        if "resource_exhausted" in lower_error or "quota exceeded" in lower_error or "rate_limit_exceeded" in lower_error:
+            return {
+                "success": False,
+                "error": "Google Sheets đang tạm giới hạn số lần đọc dữ liệu (quota/phút). Vui lòng đợi 60-90 giây rồi bấm Tải Dữ Liệu lại.",
+            }
+
         return {"success": False, "error": raw_error}
 
 @app.route("/")
@@ -4107,6 +4113,7 @@ def account_status():
                 "success": False,
                 "error": "Không thấy tab Cài đặt/Settings để lấy danh sách tài khoản quảng cáo.",
                 "hint": "Nhân viên chỉ cần tạo tab Cài đặt và điền cột tài khoản quảng cáo như mẫu cũ (cột G).",
+                "can_auto_open_sheet": True,
             }
         ), 400
     except Exception as e:
@@ -4163,6 +4170,11 @@ def performance_summary():
                 "request_access_url": access_links.get("request_access_url", ""),
                 "can_auto_open_sheet": True,
             }), 403
+        if "resource_exhausted" in lower_error or "quota exceeded" in lower_error or "rate_limit_exceeded" in lower_error:
+            return jsonify({
+                "success": False,
+                "error": "Google Sheets đang tạm giới hạn số lần đọc dữ liệu (quota/phút). Vui lòng đợi 60-90 giây rồi bấm Tải Dữ Liệu lại.",
+            }), 429
         return jsonify({"success": False, "error": f"Không đọc được bảng hiệu suất: {raw_error}"}), 500
 
 
