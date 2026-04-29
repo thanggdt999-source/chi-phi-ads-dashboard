@@ -2861,10 +2861,15 @@ def _extract_fixed_summary_values(rows: list, col_idx: int) -> tuple[float, floa
             continue
 
         first_cell = str(row[0] if len(row) > 0 else "").strip()
+        row_text = " ".join(str(cell or "") for cell in row)
         row_key = normalize_sheet_tab_name(first_cell)
+        row_text_key = normalize_sheet_tab_name(row_text)
         row_value = _get_cell(row, col_idx)
 
-        if month_val is None and row_key in {"tong", "tongcong", "tongso", "total"}:
+        if month_val is None and (
+            row_key in {"tong", "tongcong", "tongso", "total"}
+            or any(token in row_text_key for token in ["tong", "tongcong", "tongso", "total"])
+        ):
             month_val = row_value
 
         if day_val is None:
@@ -2882,6 +2887,15 @@ def _extract_fixed_summary_values(rows: list, col_idx: int) -> tuple[float, floa
             first_cell = str(row[0] if len(row) > 0 else "").strip()
             if _parse_date_flexible(first_cell) is not None:
                 month_val = _get_cell(row, col_idx)
+                break
+
+    if month_val is None:
+        for row in rows:
+            if not row:
+                continue
+            candidate = _get_cell(row, col_idx)
+            if candidate != 0:
+                month_val = candidate
                 break
 
     return float(month_val or 0.0), float(day_val or 0.0)
@@ -2996,26 +3010,21 @@ def fetch_performance_summary(performance_sheet_url: str) -> dict:
         aov_month = col_result["aov_month"]
         aov_day = col_result["aov_day"]
 
-    has_lng_cols = any(len(r) > 21 for r in lng_rows)
-    completion_payload = None
-    gross_payload = None
-    gross_pct_payload = None
-    if has_lng_cols:
-        completion_payload = {
-            "total": round(fixed_result["completion_month"], 2),
-            "day": round(fixed_result["completion_day"], 2),
-            "unit": "%",
-        }
-        gross_payload = {
-            "total": round(fixed_result["gross_month"]),
-            "day": round(fixed_result["gross_day"]),
-            "unit": "VND",
-        }
-        gross_pct_payload = {
-            "total": round(fixed_result["gross_pct_month"], 2),
-            "day": round(fixed_result["gross_pct_day"], 2),
-            "unit": "%",
-        }
+    completion_payload = {
+        "total": round(fixed_result["completion_month"], 2),
+        "day": round(fixed_result["completion_day"], 2),
+        "unit": "%",
+    }
+    gross_payload = {
+        "total": round(fixed_result["gross_month"]),
+        "day": round(fixed_result["gross_day"]),
+        "unit": "VND",
+    }
+    gross_pct_payload = {
+        "total": round(fixed_result["gross_pct_month"], 2),
+        "day": round(fixed_result["gross_pct_day"], 2),
+        "unit": "%",
+    }
 
     weekly_trend = fetch_performance_weekly_trend(weekly_rows)
     if not weekly_trend and weekly_rows is not rows:
