@@ -243,8 +243,6 @@
             color: rgba(203, 213, 225, 0.88);
         }
 
-        .main-content { flex: 1; }
-
         .app-footer {
             margin: 0 auto;
             width: 100%;
@@ -311,6 +309,7 @@
             grid-template-columns: repeat(12, minmax(0, 1fr));
             gap: 16px;
             align-items: start;
+            align-content: start;
         }
 
         body.manager-view .section-title {
@@ -321,7 +320,6 @@
 
         body.manager-view .input-section,
         body.manager-view .action-bar-section,
-        body.manager-view .manager-flow-section,
         body.manager-view #errorMessage,
         body.manager-view #statsSection,
         body.manager-view #tableSection {
@@ -351,50 +349,6 @@
 
         body.manager-view .stat-card {
             min-height: 102px;
-        }
-
-        .manager-flow {
-            display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 10px;
-        }
-
-        .manager-flow-section {
-            margin-top: -4px;
-            margin-bottom: 2px;
-        }
-
-        .flow-box {
-            border-radius: 12px;
-            padding: 11px 12px;
-            background: rgba(15, 23, 42, 0.48);
-            border: 1px solid rgba(148, 163, 184, 0.28);
-            color: #e2e8f0;
-            min-height: 76px;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .flow-box::before {
-            content: "";
-            position: absolute;
-            inset: 0 auto 0 0;
-            width: 3px;
-            background: linear-gradient(180deg, #38bdf8, #0ea5e9);
-        }
-
-        .flow-title {
-            font-size: 0.77rem;
-            text-transform: uppercase;
-            letter-spacing: 0.7px;
-            color: #93c5fd;
-            margin-bottom: 5px;
-        }
-
-        .flow-text {
-            font-size: 0.8rem;
-            color: #dbeafe;
-            line-height: 1.35;
         }
 
         body.manager-view .charts-grid {
@@ -468,7 +422,6 @@
                 gap: 16px;
             }
 
-            .manager-flow,
             body.manager-view .stats-grid {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
@@ -631,29 +584,6 @@
                         <select id="memberSelect" class="member-select" onchange="loadMemberSheet(this.value)">
                             <option value="">-- Chọn thành viên --</option>
                         </select>
-                    </div>
-                </div>
-            </section>
-            {% endif %}
-
-            {% if role in ['lead', 'admin'] %}
-            <section class="manager-flow-section">
-                <div class="manager-flow">
-                    <div class="flow-box">
-                        <div class="flow-title">Bước 1</div>
-                        <div class="flow-text">Nguồn dữ liệu từ tab Chi phí ads FB, Data FB.</div>
-                    </div>
-                    <div class="flow-box">
-                        <div class="flow-title">Bước 2</div>
-                        <div class="flow-text">Khối KPI tổng hợp: doanh số, kết quả, chi phí, lợi nhuận.</div>
-                    </div>
-                    <div class="flow-box">
-                        <div class="flow-title">Bước 3</div>
-                        <div class="flow-text">Khối phân tích theo tài khoản, xu hướng 7 ngày, LNG sản phẩm.</div>
-                    </div>
-                    <div class="flow-box">
-                        <div class="flow-title">Bước 4</div>
-                        <div class="flow-text">Bảng chi tiết có lọc ngày, phân trang và cuộn khi dữ liệu dài.</div>
                     </div>
                 </div>
             </section>

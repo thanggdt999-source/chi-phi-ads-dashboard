@@ -49,6 +49,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         } else {
             showError("⚠️ Vui lòng nhập Link chi phí ads để bắt đầu.");
         }
+        return;
+    }
+
+    if ((ROLE === "admin" || ROLE === "lead") && document.getElementById("btnLoadAll")) {
+        await loadAllData();
     }
 });
 
