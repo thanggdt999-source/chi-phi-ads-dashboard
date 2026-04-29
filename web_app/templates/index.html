@@ -14,18 +14,18 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 8px;
+            gap: 6px;
             flex-wrap: nowrap;
-            margin-bottom: 4px;
+            margin-bottom: 2px;
         }
 
         .session-card {
             display: flex;
             flex-direction: row;
             align-items: center;
-            gap: 10px;
-            padding: 7px 10px;
-            border-radius: 12px;
+            gap: 8px;
+            padding: 5px 8px;
+            border-radius: 10px;
             background: linear-gradient(135deg, rgba(255,255,255,0.16), rgba(255,255,255,0.06));
             border: 1px solid rgba(255,255,255,0.18);
             backdrop-filter: blur(10px);
@@ -40,26 +40,32 @@
         .session-main {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 7px;
             color: #fff;
             min-width: 0;
         }
 
         .session-avatar {
-            width: 34px;
-            height: 34px;
-            border-radius: 10px;
+            width: 30px;
+            height: 30px;
+            border-radius: 8px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 0.86rem;
+            font-size: 0.8rem;
             background: rgba(255,255,255,0.16);
             border: 1px solid rgba(255,255,255,0.22);
             flex: 0 0 auto;
         }
 
+        .session-name-row {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+        }
+
         .session-name {
-            font-size: 0.94rem;
+            font-size: 0.9rem;
             font-weight: 700;
             white-space: nowrap;
             overflow: hidden;
@@ -68,9 +74,9 @@
         }
 
         .session-subtext {
-            font-size: 0.75rem;
+            font-size: 0.71rem;
             color: rgba(226, 232, 240, 0.72);
-            margin-top: 1px;
+            margin-top: 0;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -87,11 +93,12 @@
         .session-pill {
             display: inline-flex;
             align-items: center;
-            gap: 6px;
-            padding: 5px 10px;
+            gap: 5px;
+            padding: 3px 8px;
             border-radius: 999px;
-            font-size: 0.74rem;
+            font-size: 0.69rem;
             font-weight: 700;
+            line-height: 1;
         }
 
         .session-pill.employee { background: rgba(34,197,94,0.18); color: #dcfce7; border: 1px solid rgba(34,197,94,0.34); }
@@ -110,7 +117,7 @@
         .quick-actions {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 5px;
             flex-wrap: wrap;
             justify-content: flex-end;
             flex: 0 0 auto;
@@ -119,14 +126,31 @@
         .action-link {
             display: inline-flex;
             align-items: center;
-            gap: 8px;
-            padding: 7px 11px;
+            gap: 6px;
+            padding: 6px 10px;
             border-radius: 999px;
             text-decoration: none;
-            font-size: 0.78rem;
+            font-size: 0.75rem;
             font-weight: 700;
             transition: transform 0.18s ease, opacity 0.18s ease;
             white-space: nowrap;
+        }
+
+        .header {
+            padding: 8px 16px;
+            border-radius: 16px;
+            margin-bottom: 14px;
+        }
+
+        .header h1 {
+            font-size: 1.82em;
+            margin-bottom: 0;
+            gap: 10px;
+        }
+
+        .company-name {
+            font-size: 0.76em;
+            margin-bottom: 0;
         }
 
         .action-link:hover {
@@ -529,7 +553,14 @@
                                 {% else %}<i class="fas fa-user"></i>{% endif %}
                             </div>
                             <div>
-                                <div class="session-name">{{ display_name }}</div>
+                                <div class="session-name-row">
+                                    <div class="session-name">{{ display_name }}</div>
+                                    <span class="session-pill {{ role }}">
+                                        {% if role == 'admin' %}<i class="fas fa-shield-alt"></i> Admin
+                                        {% elif role == 'lead' %}<i class="fas fa-users"></i> Leader
+                                        {% else %}<i class="fas fa-user"></i> Nhân viên{% endif %}
+                                    </span>
+                                </div>
                                 <div class="session-subtext">
                                     {% if is_elevated and base_employee %}
                                     Nâng quyền từ tài khoản nhân viên: {{ base_employee.display_name }}
@@ -540,18 +571,10 @@
                             </div>
                         </div>
                         <div class="session-meta">
-                            <span class="session-pill {{ role }}">
-                                {% if role == 'admin' %}<i class="fas fa-shield-alt"></i> Admin
-                                {% elif role == 'lead' %}<i class="fas fa-users"></i> Leader
-                                {% else %}<i class="fas fa-user"></i> Nhân viên{% endif %}
-                            </span>
                             {% if role == 'employee' and sheet_url %}
                             <span class="session-chip"><i class="fas fa-link"></i> Đã gán Google Sheet</span>
                             {% elif role == 'employee' %}
                             <span class="session-chip"><i class="fas fa-triangle-exclamation"></i> Chưa gán Google Sheet</span>
-                            {% endif %}
-                            {% if is_elevated %}
-                            <span class="session-chip"><i class="fas fa-bolt"></i> Phiên đang ở chế độ nâng quyền</span>
                             {% endif %}
                         </div>
                     </div>
@@ -730,6 +753,7 @@
                         <table class="data-table rankings-table">
                             <thead>
                                 <tr>
+                                    <th>STT</th>
                                     <th>Sản phẩm</th>
                                     <th>Số data ra</th>
                                     <th>Doanh số</th>

@@ -649,11 +649,11 @@ function renderProductRealtime() {
 
     if (!items.length) {
         section.style.display = "block";
-        tbody.innerHTML = '<tr><td colspan="7" class="account-status-empty">Chưa có dữ liệu sản phẩm realtime cho ngày hôm nay.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="account-status-empty">Chưa có dữ liệu sản phẩm realtime cho ngày hôm nay.</td></tr>';
         return;
     }
 
-    tbody.innerHTML = items.map((item) => {
+    tbody.innerHTML = items.map((item, idx) => {
         const dataOut = Number(item.data_out || 0);
         const revenue = Number(item.revenue || 0);
         const spend = Number(item.spend || 0);
@@ -661,6 +661,7 @@ function renderProductRealtime() {
         const stock = Number(item.stock || 0);
         const lng = Number(item.lng_percent || 0);
         return `<tr>
+            <td>${idx + 1}</td>
             <td>${escapeHtml(item.name_vn || "—")}</td>
             <td>${Math.round(dataOut).toLocaleString("vi-VN")}</td>
             <td class="spend-cell">${formatCurrency(revenue)}</td>
