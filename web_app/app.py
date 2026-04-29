@@ -592,17 +592,39 @@ def find_chat_from_bind_code(bot_token: str, bind_code: str) -> tuple[bool, dict
     return False, {}, "Chưa tìm thấy tin nhắn /start đúng mã liên kết."
 
 
-def employee_requires_telegram_setup(username: str, user: Optional[dict] = None) -> bool:
+def is_telegram_report_role(user: Optional[dict]) -> bool:
+    if not user:
+        return False
+    return str(user.get("role", "") or "").strip() in {"employee", "lead", "admin"}
+
+
+def resolve_telegram_setup_bot(raw_bot_token: str = "", raw_bot_username: str = "") -> tuple[bool, str, str, str]:
+    effective_token = normalize_telegram_bot_token(raw_bot_token) or normalize_telegram_bot_token(TELEGRAM_BOT_TOKEN)
+    if not effective_token:
+        return False, "", "", "Bot token chưa sẵn sàng. Hãy tạo bot bằng BotFather hoặc cấu hình bot hệ thống."
+
+    resolve_ok, resolved_bot_username, resolve_error = resolve_bot_username_from_token(effective_token)
+    if not resolve_ok:
+        return False, "", "", resolve_error
+
+    normalized_bot_username = normalize_telegram_bot_username(raw_bot_username)
+    if normalized_bot_username and normalized_bot_username != resolved_bot_username:
+        return False, "", "", "Bot username không khớp với token đã nhập. Hãy kiểm tra lại bot token."
+
+    return True, effective_token, resolved_bot_username, "OK"
+
+
+def user_requires_telegram_setup(username: str, user: Optional[dict] = None) -> bool:
     target_user = user or get_user(username)
-    if not target_user or target_user.get("role") != "employee":
+    if not is_telegram_report_role(target_user):
         return False
 
     chat_id = normalize_telegram_chat_id(str(target_user.get("telegram_chat_id", "")))
     if not chat_id:
         return True
 
-    bot_username = normalize_telegram_bot_username(str(target_user.get("telegram_bot_username", "")))
-    bot_token = normalize_telegram_bot_token(str(target_user.get("telegram_bot_token", "")))
+    bot_username = normalize_telegram_bot_username(str(target_user.get("telegram_bot_username", ""))) or normalize_telegram_bot_username(TELEGRAM_BOT_USERNAME)
+    bot_token = normalize_telegram_bot_token(str(target_user.get("telegram_bot_token", ""))) or normalize_telegram_bot_token(TELEGRAM_BOT_TOKEN)
     if not bot_username or not bot_token:
         return True
 
@@ -615,7 +637,11 @@ def employee_requires_telegram_setup(username: str, user: Optional[dict] = None)
     return not bool(target_user.get("telegram_verified", False))
 
 
-def save_employee_telegram_setup(
+def employee_requires_telegram_setup(username: str, user: Optional[dict] = None) -> bool:
+    return user_requires_telegram_setup(username, user)
+
+
+def save_user_telegram_setup(
     username: str,
     *,
     chat_id: str,
@@ -626,7 +652,7 @@ def save_employee_telegram_setup(
 ) -> tuple[bool, dict]:
     users = load_users_config()
     user = users.get(username)
-    if not user or user.get("role") != "employee":
+    if not is_telegram_report_role(user):
         return False, {}
 
     user["telegram_chat_id"] = chat_id
@@ -647,6 +673,25 @@ def save_employee_telegram_setup(
     user["telegram_last_test_at"] = datetime.now().isoformat(timespec="seconds")
     save_users_config(users)
     return True, user
+
+
+def save_employee_telegram_setup(
+    username: str,
+    *,
+    chat_id: str,
+    telegram_username: str,
+    bot_username: str,
+    bot_token: str,
+    test_status: str,
+) -> tuple[bool, dict]:
+    return save_user_telegram_setup(
+        username,
+        chat_id=chat_id,
+        telegram_username=telegram_username,
+        bot_username=bot_username,
+        bot_token=bot_token,
+        test_status=test_status,
+    )
 
 
 def get_safe_next_url(raw_next: str) -> str:
@@ -743,12 +788,12 @@ def send_telegram_message(chat_id: str, text: str, bot_token: str = "") -> tuple
 
 
 def get_current_telegram_setup_actor() -> tuple[str, Optional[dict]]:
-    if is_logged_in() and session.get("role") == "employee":
+    if is_logged_in() and session.get("role") in {"employee", "lead", "admin"}:
         username = str(session.get("username", "")).strip()
         if not username:
             return "", None
         user = get_user(username)
-        if user and user.get("role") == "employee":
+        if is_telegram_report_role(user):
             return username, user
 
     pending_username = str(session.get("pending_telegram_setup", "")).strip()
@@ -935,6 +980,99 @@ def build_employee_report_message(username: str, user: dict, now: datetime) -> t
     return True, message, "OK"
 
 
+def get_management_scope_users(owner_username: str, owner_user: dict, users: dict) -> list[tuple[str, dict]]:
+    role = str(owner_user.get("role", "") or "").strip()
+    if role == "admin":
+        return [
+            (uname, udata)
+            for uname, udata in users.items()
+            if udata.get("role") == "employee" and (udata.get("sheet_url") or "").strip()
+        ]
+
+    if role == "lead":
+        team = str(owner_user.get("team", "") or "").strip()
+        return [
+            (uname, udata)
+            for uname, udata in users.items()
+            if udata.get("role") == "employee"
+            and udata.get("team") == team
+            and (udata.get("sheet_url") or "").strip()
+        ]
+
+    return []
+
+
+def build_management_report_message(username: str, user: dict, now: datetime, users: dict) -> tuple[bool, str, str]:
+    scope_users = get_management_scope_users(username, user, users)
+    if not scope_users:
+        return False, "", "Không có nhân viên nào có sheet để tổng hợp báo cáo."
+
+    employee_summaries = []
+    failed_users = []
+    total_spend = 0
+    total_data = 0
+
+    for employee_username, employee_user in scope_users:
+        sheet_url = (employee_user.get("sheet_url") or "").strip()
+        sheet_id = extract_sheet_id(sheet_url)
+        if not sheet_id:
+            failed_users.append(employee_user.get("display_name", employee_username))
+            continue
+
+        result = fetch_chi_phi_ads_data(sheet_id)
+        if not result.get("success"):
+            failed_users.append(employee_user.get("display_name", employee_username))
+            continue
+
+        today = now.date()
+        rows = [row for row in result.get("data", []) if parse_row_date(row.get("Ngày", "")) == today]
+        spend = round(sum(parse_spend(row.get("Số tiền chi tiêu - VND", "")) for row in rows))
+        data_count = sum(parse_int(row.get("Số Data", "")) for row in rows)
+        total_spend += spend
+        total_data += data_count
+        employee_summaries.append({
+            "name": employee_user.get("display_name", employee_username),
+            "spend": spend,
+            "data": data_count,
+            "cost_per_data": round(spend / data_count) if data_count > 0 else 0,
+        })
+
+    employee_summaries.sort(key=lambda item: (item["spend"], item["data"]), reverse=True)
+    summary_lines = []
+    for item in employee_summaries[:10]:
+        summary_lines.append(
+            f"• <b>{html.escape(item['name'])}</b>: {item['spend']:,} VND | {item['data']:,} data | {item['cost_per_data']:,} VND/data"
+        )
+
+    if not summary_lines:
+        summary_lines.append("• Hôm nay chưa đọc được dữ liệu nào từ các sheet nhân viên.")
+
+    if len(employee_summaries) > 10:
+        summary_lines.append(f"• ... và còn {len(employee_summaries) - 10} nhân viên khác.")
+
+    if failed_users:
+        failed_preview = ", ".join(html.escape(name) for name in failed_users[:5])
+        summary_lines.append(f"• Không đọc được {len(failed_users)} sheet: {failed_preview}")
+
+    display_name = html.escape(user.get("display_name", username))
+    timestamp = html.escape(now.strftime("%H:%M %d/%m/%Y"))
+    total_cost_per_data = round(total_spend / total_data) if total_data > 0 else 0
+    message = (
+        "<b>📊 Báo cáo Ads realtime</b>\n"
+        f"👤 {display_name}\n"
+        f"🕒 {timestamp}\n\n"
+        "<b>Tổng quan quản trị hôm nay</b>\n"
+        f"• Nhân viên có sheet: <b>{len(scope_users):,}</b>\n"
+        f"• Sheet đọc được: <b>{len(employee_summaries):,}</b>\n"
+        f"• Tổng chi tiêu: <b>{total_spend:,} VND</b>\n"
+        f"• Tổng data: <b>{total_data:,}</b>\n"
+        f"• Chi phí/data gộp: <b>{total_cost_per_data:,} VND</b>\n\n"
+        "<b>Tổng hợp theo nhân viên</b>\n"
+        f"{chr(10).join(summary_lines)}"
+    )
+    return True, message, "OK"
+
+
 def run_telegram_report_job(*, force: bool = False, dry_run: bool = False, usernames: Optional[list] = None) -> dict:
     now = get_notification_now()
     slot = get_notification_slot(now)
@@ -952,18 +1090,25 @@ def run_telegram_report_job(*, force: bool = False, dry_run: bool = False, usern
     sent_count = 0
 
     for username, user in users.items():
-        if user.get("role") != "employee":
+        if not is_telegram_report_role(user):
             continue
         if selected and username not in selected:
             continue
 
         chat_id = (user.get("telegram_chat_id") or "").strip()
-        sheet_url = (user.get("sheet_url") or "").strip()
-        if not chat_id or not sheet_url:
-            results.append({"username": username, "status": "skipped", "reason": "missing_chat_or_sheet"})
+        if not chat_id:
+            results.append({"username": username, "status": "skipped", "reason": "missing_chat"})
             continue
 
-        ok, message, info = build_employee_report_message(username, user, now)
+        role = str(user.get("role", "") or "").strip()
+        if role == "employee":
+            sheet_url = (user.get("sheet_url") or "").strip()
+            if not sheet_url:
+                results.append({"username": username, "status": "skipped", "reason": "missing_sheet"})
+                continue
+            ok, message, info = build_employee_report_message(username, user, now)
+        else:
+            ok, message, info = build_management_report_message(username, user, now, users)
         if not ok:
             results.append({"username": username, "status": "failed", "reason": info})
             continue
@@ -1451,11 +1596,7 @@ def login_required(view_func):
 
         username = session.get("username", "")
         role = session.get("role", "employee")
-        if (
-            role == "employee"
-            and request.endpoint != "employee_telegram_connect"
-            and employee_requires_telegram_setup(username)
-        ):
+        if request.endpoint != "employee_telegram_connect" and user_requires_telegram_setup(username):
             return redirect(url_for("employee_telegram_connect", next=request.path))
         return view_func(*args, **kwargs)
     return wrapper
@@ -1469,8 +1610,7 @@ def api_login_required(view_func):
             return jsonify({"success": False, "error": "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."}), 401
 
         username = session.get("username", "")
-        role = session.get("role", "employee")
-        if role == "employee" and employee_requires_telegram_setup(username):
+        if user_requires_telegram_setup(username):
             return jsonify({
                 "success": False,
                 "error": "Vui lòng kết nối Telegram và gửi test thành công trước khi sử dụng hệ thống.",
@@ -3554,7 +3694,7 @@ def employee_telegram_connect():
     username = session.get("username", "")
     users = load_users_config()
     user = users.get(username)
-    if not user or user.get("role") != "employee":
+    if not is_telegram_report_role(user):
         return redirect(url_for("index"))
 
     next_target = get_safe_next_url(request.args.get("next", ""))
@@ -3566,7 +3706,7 @@ def employee_telegram_connect():
     }
 
     if request.method == "GET":
-        if not employee_requires_telegram_setup(username, user):
+        if not user_requires_telegram_setup(username, user):
             return redirect(next_target)
         bind_code = ensure_telegram_bind_code(username)
         return render_telegram_setup_page(
@@ -3623,40 +3763,13 @@ def employee_telegram_connect():
             form_action=url_for("employee_telegram_connect", next=next_target),
         )
 
-    normalized_bot_token = normalize_telegram_bot_token(telegram_bot_token)
-    if not normalized_bot_token:
-        return render_telegram_setup_page(
-            error="Bot token chưa sẵn sàng. Hãy tạo bot bằng BotFather rồi dán token của bạn vào đây.",
-            username=username,
-            display_name=user.get("display_name", username),
-            form_values=form_values,
-            back_url=url_for("logout"),
-            back_text="Đăng xuất",
-            submit_label="Lưu và gửi test",
-            title_text="Kết nối Telegram trước khi vào hệ thống",
-            bind_code=ensure_telegram_bind_code(username),
-            form_action=url_for("employee_telegram_connect", next=next_target),
-        )
-
-    resolve_ok, resolved_bot_username, resolve_error = resolve_bot_username_from_token(normalized_bot_token)
+    resolve_ok, normalized_bot_token, resolved_bot_username, resolve_error = resolve_telegram_setup_bot(
+        telegram_bot_token,
+        telegram_bot_username,
+    )
     if not resolve_ok:
         return render_telegram_setup_page(
             error=f"Không thể xác thực bot từ token: {resolve_error}",
-            username=username,
-            display_name=user.get("display_name", username),
-            form_values=form_values,
-            back_url=url_for("logout"),
-            back_text="Đăng xuất",
-            submit_label="Lưu và gửi test",
-            title_text="Kết nối Telegram trước khi vào hệ thống",
-            bind_code=ensure_telegram_bind_code(username),
-            form_action=url_for("employee_telegram_connect", next=next_target),
-        )
-
-    normalized_bot_username = normalize_telegram_bot_username(telegram_bot_username)
-    if normalized_bot_username and normalized_bot_username != resolved_bot_username:
-        return render_telegram_setup_page(
-            error="Bot username không khớp với token đã nhập. Hãy kiểm tra lại bot token.",
             username=username,
             display_name=user.get("display_name", username),
             form_values=form_values,
@@ -3713,11 +3826,7 @@ def api_telegram_autofill():
 
     payload = request.get_json(silent=True) or {}
     raw_bot_token = str(payload.get("telegram_bot_token", "")).strip()
-    bot_token = normalize_telegram_bot_token(raw_bot_token)
-    if not bot_token:
-        return jsonify({"success": False, "error": "Bot token chưa sẵn sàng. Hãy copy token từ BotFather rồi thử lại."}), 400
-
-    ok, bot_username, err = resolve_bot_username_from_token(bot_token)
+    ok, bot_token, bot_username, err = resolve_telegram_setup_bot(raw_bot_token)
     if not ok:
         return jsonify({"success": False, "error": f"Không thể xác thực bot token: {err}"}), 400
 
