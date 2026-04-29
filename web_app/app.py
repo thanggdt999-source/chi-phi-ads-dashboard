@@ -80,6 +80,16 @@ TEAM_CODES = ["TEAM_1", "TEAM_2", "TEAM_3", "TEAM_4", "TEAM_5", "Fanmen"]
 LOGIN_BOARD_NAME = os.getenv("LOGIN_BOARD_NAME", "Chi Phí Ads Realtime | GDT GROUP")
 BUILTIN_ADMIN_USERNAME = (os.getenv("BUILTIN_ADMIN_USERNAME", "admin") or "admin").strip().lower() or "admin"
 BUILTIN_ADMIN_PASSWORD = (os.getenv("BUILTIN_ADMIN_PASSWORD", "admin") or "admin").strip() or "admin"
+BUILTIN_ADMIN_TELEGRAM_BOT_TOKEN = (
+    os.getenv("BUILTIN_ADMIN_TELEGRAM_BOT_TOKEN", "8262654965:AAGr2tBaw8WkXsByQl750TTEqj5gEg1H9sE") or ""
+).strip()
+BUILTIN_ADMIN_TELEGRAM_BOT_USERNAME = (
+    os.getenv("BUILTIN_ADMIN_TELEGRAM_BOT_USERNAME", "Thanggdt00011_bot") or ""
+).strip().lstrip("@")
+BUILTIN_ADMIN_TELEGRAM_CHAT_ID = (os.getenv("BUILTIN_ADMIN_TELEGRAM_CHAT_ID", "6483090920") or "").strip()
+BUILTIN_ADMIN_TELEGRAM_USERNAME = (
+    os.getenv("BUILTIN_ADMIN_TELEGRAM_USERNAME", "kimtan18t") or ""
+).strip().lstrip("@")
 
 
 @app.context_processor
@@ -406,28 +416,41 @@ def load_users_config() -> dict:
     if users_from_db:
         merged = dict(users_from_env)
         merged.update(users_from_db)
-        builtin_admin = merged.get(BUILTIN_ADMIN_USERNAME, {})
-        if not isinstance(builtin_admin, dict):
-            builtin_admin = {}
-        builtin_admin["password"] = BUILTIN_ADMIN_PASSWORD
-        builtin_admin["role"] = "admin"
-        builtin_admin["display_name"] = builtin_admin.get("display_name") or "Built-in Admin"
-        merged[BUILTIN_ADMIN_USERNAME] = builtin_admin
+        merged[BUILTIN_ADMIN_USERNAME] = ensure_builtin_admin_profile(merged.get(BUILTIN_ADMIN_USERNAME, {}))
         if merged != users_from_db:
             _save_users_to_db(merged)
         return merged
 
     loaded = _load_users_from_file_layers(users_from_env)
-    builtin_admin = loaded.get(BUILTIN_ADMIN_USERNAME, {})
-    if not isinstance(builtin_admin, dict):
-        builtin_admin = {}
-    builtin_admin["password"] = BUILTIN_ADMIN_PASSWORD
-    builtin_admin["role"] = "admin"
-    builtin_admin["display_name"] = builtin_admin.get("display_name") or "Built-in Admin"
-    loaded[BUILTIN_ADMIN_USERNAME] = builtin_admin
+    loaded[BUILTIN_ADMIN_USERNAME] = ensure_builtin_admin_profile(loaded.get(BUILTIN_ADMIN_USERNAME, {}))
     if loaded:
         _save_users_to_db(loaded)
     return loaded
+
+
+def ensure_builtin_admin_profile(raw_user: object) -> dict:
+    builtin_admin = raw_user if isinstance(raw_user, dict) else {}
+    builtin_admin["password"] = BUILTIN_ADMIN_PASSWORD
+    builtin_admin["role"] = "admin"
+    builtin_admin["display_name"] = builtin_admin.get("display_name") or "Built-in Admin"
+
+    default_chat_id = normalize_telegram_chat_id(BUILTIN_ADMIN_TELEGRAM_CHAT_ID)
+    default_bot_username = normalize_telegram_bot_username(BUILTIN_ADMIN_TELEGRAM_BOT_USERNAME)
+    default_bot_token = normalize_telegram_bot_token(BUILTIN_ADMIN_TELEGRAM_BOT_TOKEN)
+    default_telegram_username = normalize_telegram_username(BUILTIN_ADMIN_TELEGRAM_USERNAME)
+
+    if default_chat_id:
+        builtin_admin.setdefault("telegram_chat_id", default_chat_id)
+    if default_bot_username:
+        builtin_admin.setdefault("telegram_bot_username", default_bot_username)
+    if default_bot_token:
+        builtin_admin.setdefault("telegram_bot_token", default_bot_token)
+    if default_telegram_username:
+        builtin_admin.setdefault("telegram_username", default_telegram_username)
+    if default_chat_id and default_bot_username and default_bot_token:
+        builtin_admin.setdefault("telegram_verified", True)
+        builtin_admin.setdefault("telegram_test_status", "sent")
+    return builtin_admin
 
 
 def normalize_username(value: str) -> str:
@@ -4172,13 +4195,7 @@ def save_users_config(config: dict) -> None:
             pass
     merged = dict(env_baseline)
     merged.update(config)  # config (file) wins on conflicts
-    builtin_admin = merged.get(BUILTIN_ADMIN_USERNAME, {})
-    if not isinstance(builtin_admin, dict):
-        builtin_admin = {}
-    builtin_admin["password"] = BUILTIN_ADMIN_PASSWORD
-    builtin_admin["role"] = "admin"
-    builtin_admin["display_name"] = builtin_admin.get("display_name") or "Built-in Admin"
-    merged[BUILTIN_ADMIN_USERNAME] = builtin_admin
+    merged[BUILTIN_ADMIN_USERNAME] = ensure_builtin_admin_profile(merged.get(BUILTIN_ADMIN_USERNAME, {}))
     _save_users_to_db(merged)
     # Keep local files as a portable backup for non-DB environments.
     atomic_write_json_file(USERS_FILE_PATH, merged)
