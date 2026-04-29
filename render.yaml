@@ -23,9 +23,17 @@ services:
       - key: INTERNAL_CRON_SECRET
         generateValue: true
       - key: TELEGRAM_REPORT_INTERVAL_MINUTES
-        value: "5"
+        value: "30"
+      - key: TELEGRAM_REPORT_START_HOUR
+        value: "6"
+      - key: TELEGRAM_REPORT_START_MINUTE
+        value: "0"
+      - key: TELEGRAM_REPORT_END_HOUR
+        value: "22"
+      - key: TELEGRAM_REPORT_END_MINUTE
+        value: "0"
       - key: TELEGRAM_REPORT_ALWAYS_ON
-        value: "true"
+        value: "false"
       - key: TELEGRAM_REPORT_CATCHUP_MAX_SLOTS
         value: "24"
       - key: TELEGRAM_SELF_SCHEDULER_ENABLED
@@ -36,7 +44,7 @@ services:
   - type: cron
     name: chi-phi-ads-telegram-cron
     runtime: python
-    schedule: "*/5 * * * *"
+    schedule: "*/30 * * * *"
     buildCommand: pip install --disable-pip-version-check --quiet requests
     startCommand: >-
       python -c "import os, requests; r=requests.post(os.environ['TELEGRAM_REPORT_ENDPOINT'],
