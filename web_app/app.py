@@ -53,9 +53,11 @@ TELEGRAM_REPORT_STATE_PATH = Path(
     )
 )
 TELEGRAM_REPORT_TIMEZONE = os.getenv("TELEGRAM_REPORT_TIMEZONE", "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
-TELEGRAM_REPORT_START_HOUR = int(os.getenv("TELEGRAM_REPORT_START_HOUR", "0"))
-TELEGRAM_REPORT_END_HOUR = int(os.getenv("TELEGRAM_REPORT_END_HOUR", "23"))
-TELEGRAM_REPORT_INTERVAL_MINUTES = max(1, min(60, int(os.getenv("TELEGRAM_REPORT_INTERVAL_MINUTES", "10"))))
+TELEGRAM_REPORT_START_HOUR = int(os.getenv("TELEGRAM_REPORT_START_HOUR", "6"))
+TELEGRAM_REPORT_START_MINUTE = max(0, min(59, int(os.getenv("TELEGRAM_REPORT_START_MINUTE", "30"))))
+TELEGRAM_REPORT_END_HOUR = int(os.getenv("TELEGRAM_REPORT_END_HOUR", "22"))
+TELEGRAM_REPORT_END_MINUTE = max(0, min(59, int(os.getenv("TELEGRAM_REPORT_END_MINUTE", "30"))))
+TELEGRAM_REPORT_INTERVAL_MINUTES = max(1, min(60, int(os.getenv("TELEGRAM_REPORT_INTERVAL_MINUTES", "2"))))
 TELEGRAM_REPORT_MAX_PRODUCTS = max(1, int(os.getenv("TELEGRAM_REPORT_MAX_PRODUCTS", "8")))
 SESSION_TIMEOUT_SECONDS = int(os.getenv("SESSION_TIMEOUT_SECONDS", "600"))  # 10 minutes
 META_GRAPH_VERSION = os.getenv("META_GRAPH_VERSION", "v20.0").strip() or "v20.0"
@@ -759,7 +761,21 @@ def get_notification_now() -> datetime:
 
 
 def is_notification_window(now: datetime) -> bool:
-    return TELEGRAM_REPORT_START_HOUR <= now.hour <= TELEGRAM_REPORT_END_HOUR
+    start_at = now.replace(
+        hour=TELEGRAM_REPORT_START_HOUR,
+        minute=TELEGRAM_REPORT_START_MINUTE,
+        second=0,
+        microsecond=0,
+    )
+    end_at = now.replace(
+        hour=TELEGRAM_REPORT_END_HOUR,
+        minute=TELEGRAM_REPORT_END_MINUTE,
+        second=59,
+        microsecond=999999,
+    )
+    if end_at < start_at:
+        return False
+    return start_at <= now <= end_at
 
 
 def get_notification_slot(now: datetime) -> str:
@@ -885,9 +901,9 @@ def render_telegram_setup_page(
 
 def send_telegram_test_message(chat_id: str, display_name: str, bot_token: str = "") -> tuple[str, str]:
     text = (
-        f"Xin chào {display_name}!\n\n"
-        "Đây là tin nhắn test từ hệ thống Chi Phí Ads Dashboard.\n"
-        "Nếu bạn nhận được tin này, các báo cáo sau sẽ được gửi đúng về Telegram này."
+        f"Dạ thưa kính bẩm đại ca {display_name}!\n\n"
+        "Em xin phép gửi tin nhắn test từ hệ thống Chi Phí Ads Dashboard.\n"
+        "Nếu đại ca nhận được tin này, em sẽ tiếp tục gửi báo cáo tự động đúng lịch về Telegram này."
     )
     effective_token = normalize_telegram_bot_token(bot_token)
     if not effective_token:
@@ -1013,7 +1029,7 @@ def build_employee_report_message(username: str, user: dict, now: datetime) -> t
     profit_section = ("\n<b>Lợi nhuận (tổng tháng)</b>\n" + "\n".join(profit_lines)) if profit_lines else ""
 
     message = (
-        "<b>📊 Báo cáo Ads realtime</b>\n"
+        "<b>📊 Dạ thưa kính bẩm đại ca, em gửi báo cáo Ads realtime</b>\n"
         f"👤 {display_name}\n"
         f"🕒 {timestamp}\n\n"
         "<b>Báo cáo tổng quan hôm nay</b>\n"
@@ -1025,7 +1041,8 @@ def build_employee_report_message(username: str, user: dict, now: datetime) -> t
         "<b>Báo cáo theo sản phẩm</b>\n"
         f"{chr(10).join(product_lines)}\n\n"
         "<b>Cảnh báo / lời khuyên tạm thời</b>\n"
-        f"{advice_text}"
+        f"{advice_text}\n\n"
+        "<i>Dạ đại ca, em sẽ tiếp tục cập nhật theo lịch tự động.</i>"
     )
     return True, message, "OK"
 
@@ -1108,7 +1125,7 @@ def build_management_report_message(username: str, user: dict, now: datetime, us
     timestamp = html.escape(now.strftime("%H:%M %d/%m/%Y"))
     total_cost_per_data = round(total_spend / total_data) if total_data > 0 else 0
     message = (
-        "<b>📊 Báo cáo Ads realtime</b>\n"
+        "<b>📊 Dạ thưa kính bẩm đại ca, em gửi báo cáo tổng hợp Ads realtime</b>\n"
         f"👤 {display_name}\n"
         f"🕒 {timestamp}\n\n"
         "<b>Tổng quan quản trị hôm nay</b>\n"
@@ -1118,7 +1135,8 @@ def build_management_report_message(username: str, user: dict, now: datetime, us
         f"• Tổng data: <b>{total_data:,}</b>\n"
         f"• Chi phí/data gộp: <b>{total_cost_per_data:,} VND</b>\n\n"
         "<b>Tổng hợp theo nhân viên</b>\n"
-        f"{chr(10).join(summary_lines)}"
+        f"{chr(10).join(summary_lines)}\n\n"
+        "<i>Dạ đại ca, em sẽ tiếp tục gửi đều theo lịch tự động.</i>"
     )
     return True, message, "OK"
 
