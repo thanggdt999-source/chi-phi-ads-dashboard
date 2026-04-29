@@ -2761,11 +2761,7 @@ def fetch_performance_weekly_trend(rows: list) -> list:
             col_idx = cand
 
     # --- Phase 2: fallback — scan ALL rows for date+numbers pattern ---
-    # If Phase 1 didn't find a header, try to auto-detect date rows from any row
-    # whose first non-empty cell is a parseable date.
     if header_row_idx is None:
-        # Try to find the first row that has a date in column 0
-        # and use the previous row as the "header" to detect columns
         date_row_indices = []
         for i, row in enumerate(rows):
             if not row:
@@ -2775,11 +2771,10 @@ def fetch_performance_weekly_trend(rows: list) -> list:
                 date_row_indices.append(i)
 
         if date_row_indices:
-            # Use the row just before the first date row as the header (if any)
             first_date_idx = date_row_indices[0]
             if first_date_idx > 0:
                 col_idx = _extract_col_idx(rows[first_date_idx - 1])
-            # Process all detected date rows
+
             series = []
             for i in date_row_indices:
                 row = rows[i]
@@ -2787,23 +2782,26 @@ def fetch_performance_weekly_trend(rows: list) -> list:
                 day_obj = _parse_date_flexible(raw_date)
                 if day_obj is None:
                     continue
-                # Collect numeric values from the row (skip date column)
+
                 nums = []
                 for cell in row[1:]:
                     v = parse_number_like(str(cell))
                     if v is not None:
                         nums.append(float(v))
-                # Map to metrics: use col_idx if available, else positional heuristic
+
                 results_val = _get_cell(row, col_idx.get("results")) if col_idx.get("results") else (nums[0] if nums else 0)
                 revenue_val = _get_cell(row, col_idx.get("doanh_so")) if col_idx.get("doanh_so") else (nums[1] if len(nums) > 1 else 0)
-                ads_val     = _get_cell(row, col_idx.get("ads_pct")) if col_idx.get("ads_pct") else 0.0
-                series.append({
-                    "date": day_obj.strftime("%d/%m/%Y"),
-                    "date_key": day_obj.strftime("%Y-%m-%d"),
-                    "data": round(results_val),
-                    "revenue": round(revenue_val),
-                    "ads_percent": round(ads_val, 2),
-                })
+                ads_val = _get_cell(row, col_idx.get("ads_pct")) if col_idx.get("ads_pct") else 0.0
+                series.append(
+                    {
+                        "date": day_obj.strftime("%d/%m/%Y"),
+                        "date_key": day_obj.strftime("%Y-%m-%d"),
+                        "data": round(results_val),
+                        "revenue": round(revenue_val),
+                        "ads_percent": round(ads_val, 2),
+                    }
+                )
+
             series.sort(key=lambda item: item.get("date_key", ""))
             by_key = {item["date_key"]: item for item in series}
             window = []
@@ -2815,7 +2813,6 @@ def fetch_performance_weekly_trend(rows: list) -> list:
                     label = (datetime.now() - timedelta(days=offset)).strftime("%d/%m/%Y")
                     window.append({"date": label, "date_key": day, "data": 0, "revenue": 0, "ads_percent": 0.0})
             return window
-        # No date rows found at all
         return []
 
     # --- Phase 1 succeeded: use detected header + col_idx ---
@@ -2828,13 +2825,15 @@ def fetch_performance_weekly_trend(rows: list) -> list:
         if day_obj is None:
             continue
 
-        series.append({
-            "date": day_obj.strftime("%d/%m/%Y"),
-            "date_key": day_obj.strftime("%Y-%m-%d"),
-            "data": round(_get_cell(row, col_idx.get("results"))),
-            "revenue": round(_get_cell(row, col_idx.get("doanh_so"))),
-            "ads_percent": round(_get_cell(row, col_idx.get("ads_pct")), 2),
-        })
+        series.append(
+            {
+                "date": day_obj.strftime("%d/%m/%Y"),
+                "date_key": day_obj.strftime("%Y-%m-%d"),
+                "data": round(_get_cell(row, col_idx.get("results"))),
+                "revenue": round(_get_cell(row, col_idx.get("doanh_so"))),
+                "ads_percent": round(_get_cell(row, col_idx.get("ads_pct")), 2),
+            }
+        )
 
     series.sort(key=lambda item: item.get("date_key", ""))
     by_key = {item["date_key"]: item for item in series}
@@ -2847,6 +2846,82 @@ def fetch_performance_weekly_trend(rows: list) -> list:
             label = (datetime.now() - timedelta(days=offset)).strftime("%d/%m/%Y")
             window.append({"date": label, "date_key": day, "data": 0, "revenue": 0, "ads_percent": 0.0})
     return window
+
+
+def _extract_fixed_summary_values(rows: list, col_idx: int) -> tuple[float, float]:
+    if not rows:
+        return 0.0, 0.0
+
+    today = date.today()
+    month_val = None
+    day_val = None
+
+    for row in rows:
+        if not row:
+            continue
+
+        first_cell = str(row[0] if len(row) > 0 else "").strip()
+        row_key = normalize_sheet_tab_name(first_cell)
+        row_value = _get_cell(row, col_idx)
+
+        if month_val is None and row_key in {"tong", "tongcong", "tongso", "total"}:
+            month_val = row_value
+
+        if day_val is None:
+            parsed_day = _parse_date_flexible(first_cell)
+            if parsed_day and parsed_day.date() == today:
+                day_val = row_value
+
+        if month_val is not None and day_val is not None:
+            break
+
+    if month_val is None:
+        for row in rows:
+            if not row:
+                continue
+            first_cell = str(row[0] if len(row) > 0 else "").strip()
+            if _parse_date_flexible(first_cell) is not None:
+                month_val = _get_cell(row, col_idx)
+                break
+
+    return float(month_val or 0.0), float(day_val or 0.0)
+
+
+def fetch_performance_summary_fixed_columns(tong_rows: list, lng_rows: list) -> dict:
+    # Fixed mapping requested by user.
+    result_month, result_day = _extract_fixed_summary_values(tong_rows, 1)  # B
+    doanh_so_month, doanh_so_day = _extract_fixed_summary_values(tong_rows, 2)  # C
+    spend_month, spend_day = _extract_fixed_summary_values(tong_rows, 3)  # D
+    ads_month, ads_day = _extract_fixed_summary_values(tong_rows, 4)  # E
+    aov_month, aov_day = _extract_fixed_summary_values(tong_rows, 6)  # G
+
+    completion_month, completion_day = _extract_fixed_summary_values(lng_rows, 9)  # J
+    gross_month, gross_day = _extract_fixed_summary_values(lng_rows, 20)  # U
+    gross_pct_month, gross_pct_day = _extract_fixed_summary_values(lng_rows, 21)  # V
+
+    cpr_month = (spend_month / result_month) if result_month > 0 else 0.0
+    cpr_day = (spend_day / result_day) if result_day > 0 else 0.0
+
+    return {
+        "spend_month": spend_month,
+        "spend_day": spend_day,
+        "doanh_so_month": doanh_so_month,
+        "doanh_so_day": doanh_so_day,
+        "result_month": result_month,
+        "result_day": result_day,
+        "cpr_month": cpr_month,
+        "cpr_day": cpr_day,
+        "ads_month": ads_month,
+        "ads_day": ads_day,
+        "aov_month": aov_month,
+        "aov_day": aov_day,
+        "completion_month": completion_month,
+        "completion_day": completion_day,
+        "gross_month": gross_month,
+        "gross_day": gross_day,
+        "gross_pct_month": gross_pct_month,
+        "gross_pct_day": gross_pct_day,
+    }
 
 
 def fetch_performance_summary(performance_sheet_url: str) -> dict:
@@ -2874,39 +2949,77 @@ def fetch_performance_summary(performance_sheet_url: str) -> dict:
             pass
 
     lng_summary = {"items": []}
+    lng_rows = []
     if lng_ws is not None:
         try:
             lng_rows = lng_ws.get_all_values()
             lng_summary = build_lng_items_from_rows(lng_rows)
         except Exception:
+            lng_rows = []
             lng_summary = {"items": []}
 
-    # Try column-based parser first (Báo cáo hiệu suất format)
+    fixed_result = fetch_performance_summary_fixed_columns(rows, lng_rows)
     col_result = fetch_performance_summary_column_based(rows)
-    weekly_trend = fetch_performance_weekly_trend(weekly_rows)
-    if not weekly_trend and weekly_rows is not rows:
-        weekly_trend = fetch_performance_weekly_trend(rows)
-    if col_result:
-        spend_month  = col_result["spend_month"]
-        spend_day    = col_result["spend_day"]
+
+    fixed_core_sum = (
+        abs(fixed_result["spend_month"])
+        + abs(fixed_result["doanh_so_month"])
+        + abs(fixed_result["result_month"])
+        + abs(fixed_result["ads_month"])
+        + abs(fixed_result["aov_month"])
+    )
+
+    if fixed_core_sum > 0 or not col_result:
+        spend_month = fixed_result["spend_month"]
+        spend_day = fixed_result["spend_day"]
+        doanh_so_month = fixed_result["doanh_so_month"]
+        doanh_so_day = fixed_result["doanh_so_day"]
+        result_month = fixed_result["result_month"]
+        result_day = fixed_result["result_day"]
+        cpr_month = fixed_result["cpr_month"]
+        cpr_day = fixed_result["cpr_day"]
+        ads_month = fixed_result["ads_month"]
+        ads_day = fixed_result["ads_day"]
+        aov_month = fixed_result["aov_month"]
+        aov_day = fixed_result["aov_day"]
+    else:
+        spend_month = col_result["spend_month"]
+        spend_day = col_result["spend_day"]
         doanh_so_month = col_result["doanh_so_month"]
         doanh_so_day = col_result["doanh_so_day"]
         result_month = col_result["result_month"]
-        result_day   = col_result["result_day"]
-        cpr_month    = col_result["cpr_month"]
-        cpr_day      = col_result["cpr_day"]
-        ads_month    = col_result["ads_month"]
-        ads_day      = col_result["ads_day"]
-        aov_month    = col_result["aov_month"]
-        aov_day      = col_result["aov_day"]
-    else:
-        # Fallback: keyword-based row matching
-        spend_month, spend_day = extract_metric_values(rows, ["tongchiphi", "tongchi", "tongspend", "chiphi"])
-        doanh_so_month, doanh_so_day = extract_metric_values(rows, ["doanhso", "doanhthu", "revenue"])
-        result_month, result_day = extract_metric_values(rows, ["tongketqua", "tongdata", "ketqua", "data"])
-        cpr_month, cpr_day = extract_metric_values(rows, ["chiphiketqua", "chiphidata", "cpa", "cpkq"])
-        ads_month, ads_day = extract_metric_values(rows, ["ads", "tyleads", "phantramads", "percentads"])
-        aov_month, aov_day = extract_metric_values(rows, ["giatritbdon", "giatritrungbinhdon", "aov", "giatridon"])
+        result_day = col_result["result_day"]
+        cpr_month = col_result["cpr_month"]
+        cpr_day = col_result["cpr_day"]
+        ads_month = col_result["ads_month"]
+        ads_day = col_result["ads_day"]
+        aov_month = col_result["aov_month"]
+        aov_day = col_result["aov_day"]
+
+    has_lng_cols = any(len(r) > 21 for r in lng_rows)
+    completion_payload = None
+    gross_payload = None
+    gross_pct_payload = None
+    if has_lng_cols:
+        completion_payload = {
+            "total": round(fixed_result["completion_month"], 2),
+            "day": round(fixed_result["completion_day"], 2),
+            "unit": "%",
+        }
+        gross_payload = {
+            "total": round(fixed_result["gross_month"]),
+            "day": round(fixed_result["gross_day"]),
+            "unit": "VND",
+        }
+        gross_pct_payload = {
+            "total": round(fixed_result["gross_pct_month"], 2),
+            "day": round(fixed_result["gross_pct_day"], 2),
+            "unit": "%",
+        }
+
+    weekly_trend = fetch_performance_weekly_trend(weekly_rows)
+    if not weekly_trend and weekly_rows is not rows:
+        weekly_trend = fetch_performance_weekly_trend(rows)
 
     return {
         "success": True,
@@ -2917,6 +3030,9 @@ def fetch_performance_summary(performance_sheet_url: str) -> dict:
             "cost_per_result": {"month": round(cpr_month), "day": round(cpr_day), "unit": "VND"},
             "ads_percent": {"month": round(ads_month, 2), "day": round(ads_day, 2), "unit": "%"},
             "avg_order_value": {"month": round(aov_month), "day": round(aov_day), "unit": "VND"},
+            "completion_percent": completion_payload,
+            "gross_profit": gross_payload,
+            "gross_profit_percent": gross_pct_payload,
             "weekly_trend": weekly_trend,
             "product_lng": lng_summary,
         },

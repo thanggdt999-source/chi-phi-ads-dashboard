@@ -201,6 +201,12 @@ async function loadAllData() {
         renderData();
         hideAccountStatusPanel();
 
+        const perfInputUrl = (document.getElementById("performanceSheetUrl")?.value || "").trim();
+        const perfUrl = perfInputUrl || PERFORMANCE_SHEET_URL || SHEET_URL;
+        if (perfUrl) {
+            await loadPerformanceSummary(perfUrl);
+        }
+
         if (data.errors && data.errors.length) {
             showToast("⚠️ Không tải được: " + data.errors.map(e => e.name).join(", "));
         }
@@ -448,9 +454,9 @@ function renderData() {
 
 function renderStats(rows) {
     const profitability = currentData.profitability_metrics || null;
-    const completionMetrics = profitability?.completion_percent || null;
-    const grossProfitMetrics = profitability?.gross_profit || null;
-    const grossProfitPercentMetrics = profitability?.gross_profit_percent || null;
+    const completionMetrics = currentPerformanceMetrics?.completion_percent || profitability?.completion_percent || null;
+    const grossProfitMetrics = currentPerformanceMetrics?.gross_profit || profitability?.gross_profit || null;
+    const grossProfitPercentMetrics = currentPerformanceMetrics?.gross_profit_percent || profitability?.gross_profit_percent || null;
 
     if (currentPerformanceMetrics) {
         const revenue = currentPerformanceMetrics.revenue || null;

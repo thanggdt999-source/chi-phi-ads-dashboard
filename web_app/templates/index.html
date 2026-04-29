@@ -343,12 +343,34 @@
         }
 
         body.manager-view .stats-grid {
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 10px;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 8px;
         }
 
         body.manager-view .stat-card {
-            min-height: 102px;
+            min-height: 88px;
+            padding: 10px 8px;
+        }
+
+        body.manager-view .stat-label {
+            font-size: clamp(0.62rem, 0.72vw, 0.74rem);
+            min-height: 1.8em;
+            margin-bottom: 4px;
+            letter-spacing: 0.03em;
+        }
+
+        body.manager-view .stat-value {
+            font-size: clamp(0.86rem, 1vw, 1.2rem);
+            gap: 2px;
+        }
+
+        body.manager-view .stat-value .value-sub {
+            font-size: 0.52em;
+        }
+
+        body.manager-view .stat-value .value-unit {
+            font-size: 0.48em;
+            padding: 1px 6px;
         }
 
         body.manager-view .charts-grid {
