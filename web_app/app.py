@@ -1490,17 +1490,26 @@ def get_user_monthly_sheets(username: str, fallback_sheet_url: str = "") -> list
     return result
 
 
-def set_session_user(username: str, user: dict, *, elevated: bool = False) -> None:
+def set_session_user(
+    username: str,
+    user: dict,
+    *,
+    elevated: bool = False,
+    session_role: Optional[str] = None,
+) -> None:
     session["logged_in"] = True
     session["username"] = username
-    session["role"] = user.get("role", "employee")
+    actual_role = str(user.get("role", "employee") or "employee")
+    effective_role = str(session_role or actual_role or "employee")
+    session["role"] = effective_role
+    session["account_role"] = actual_role
     session["team"] = user.get("team", "")
     session["display_name"] = user.get("display_name", username)
     session["sheet_url"] = user.get("sheet_url", "")
     session["performance_sheet_url"] = user.get("performance_sheet_url", "")
     session["is_elevated"] = elevated
     session["last_activity"] = datetime.now().timestamp()
-    if user.get("role") == "employee" and not elevated:
+    if actual_role == "employee" and not elevated:
         session["base_employee"] = {
             "username": username,
             "display_name": user.get("display_name", username),
@@ -3378,8 +3387,8 @@ def login():
                 return redirect(url_for("employee_telegram_connect", next=next_url))
             return redirect(next_url)
         if role in {"lead", "admin"}:
-            # Allow privileged accounts to log in directly from the main login form.
-            set_session_user(username_key or username, user, elevated=True)
+            # Step 1: privileged accounts enter employee-mode dashboard.
+            set_session_user(username_key or username, user, elevated=False, session_role="employee")
             return redirect(next_url)
 
     error_message = "Sai tài khoản hoặc mật khẩu"
@@ -3462,8 +3471,13 @@ def return_to_employee():
         return redirect(url_for("index"))
 
     if not restore_base_employee_session():
-        session.clear()
-        return redirect(url_for("login"))
+        username = str(session.get("username", "")).strip()
+        users = load_users_config()
+        user = users.get(username)
+        if not user:
+            session.clear()
+            return redirect(url_for("login"))
+        set_session_user(username, user, elevated=False, session_role="employee")
 
     return redirect(url_for("index"))
 
