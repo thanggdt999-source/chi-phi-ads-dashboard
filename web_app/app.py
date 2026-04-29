@@ -406,21 +406,25 @@ def load_users_config() -> dict:
     if users_from_db:
         merged = dict(users_from_env)
         merged.update(users_from_db)
-        merged[BUILTIN_ADMIN_USERNAME] = {
-            "password": BUILTIN_ADMIN_PASSWORD,
-            "role": "admin",
-            "display_name": "Built-in Admin",
-        }
+        builtin_admin = merged.get(BUILTIN_ADMIN_USERNAME, {})
+        if not isinstance(builtin_admin, dict):
+            builtin_admin = {}
+        builtin_admin["password"] = BUILTIN_ADMIN_PASSWORD
+        builtin_admin["role"] = "admin"
+        builtin_admin["display_name"] = builtin_admin.get("display_name") or "Built-in Admin"
+        merged[BUILTIN_ADMIN_USERNAME] = builtin_admin
         if merged != users_from_db:
             _save_users_to_db(merged)
         return merged
 
     loaded = _load_users_from_file_layers(users_from_env)
-    loaded[BUILTIN_ADMIN_USERNAME] = {
-        "password": BUILTIN_ADMIN_PASSWORD,
-        "role": "admin",
-        "display_name": "Built-in Admin",
-    }
+    builtin_admin = loaded.get(BUILTIN_ADMIN_USERNAME, {})
+    if not isinstance(builtin_admin, dict):
+        builtin_admin = {}
+    builtin_admin["password"] = BUILTIN_ADMIN_PASSWORD
+    builtin_admin["role"] = "admin"
+    builtin_admin["display_name"] = builtin_admin.get("display_name") or "Built-in Admin"
+    loaded[BUILTIN_ADMIN_USERNAME] = builtin_admin
     if loaded:
         _save_users_to_db(loaded)
     return loaded
@@ -4147,11 +4151,13 @@ def save_users_config(config: dict) -> None:
             pass
     merged = dict(env_baseline)
     merged.update(config)  # config (file) wins on conflicts
-    merged[BUILTIN_ADMIN_USERNAME] = {
-        "password": BUILTIN_ADMIN_PASSWORD,
-        "role": "admin",
-        "display_name": "Built-in Admin",
-    }
+    builtin_admin = merged.get(BUILTIN_ADMIN_USERNAME, {})
+    if not isinstance(builtin_admin, dict):
+        builtin_admin = {}
+    builtin_admin["password"] = BUILTIN_ADMIN_PASSWORD
+    builtin_admin["role"] = "admin"
+    builtin_admin["display_name"] = builtin_admin.get("display_name") or "Built-in Admin"
+    merged[BUILTIN_ADMIN_USERNAME] = builtin_admin
     _save_users_to_db(merged)
     # Keep local files as a portable backup for non-DB environments.
     atomic_write_json_file(USERS_FILE_PATH, merged)
