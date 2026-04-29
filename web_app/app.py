@@ -3059,8 +3059,11 @@ def extract_product_realtime_from_tong_rows(rows: list) -> dict:
         return {"items": [], "top5": [], "date_from": date_from, "date_to": date_to}
 
     items = []
+    def _safe(row, idx):
+        return row[idx] if idx < len(row) else ""
+
     for row in rows[header_idx + 1 :]:
-        if not row or len(row) < 8:
+        if not row:
             continue
 
         name_vn = str(row[0] or "").strip()
@@ -3070,12 +3073,12 @@ def extract_product_realtime_from_tong_rows(rows: list) -> dict:
         if name_key in {"tong", "tongcong", "total"}:
             continue
 
-        data_out = float(parse_number_like(row[2]) or 0)
-        revenue = float(parse_number_like(row[3]) or 0)
-        spend = float(parse_number_like(row[4]) or 0)
-        ads_percent = float(parse_number_like(row[5]) or 0)
-        stock = float(parse_number_like(row[6]) or 0)
-        lng_percent = float(parse_number_like(row[7]) or 0)
+        data_out = float(parse_number_like(_safe(row, 2)) or 0)
+        revenue = float(parse_number_like(_safe(row, 3)) or 0)
+        spend = float(parse_number_like(_safe(row, 4)) or 0)
+        ads_percent = float(parse_number_like(_safe(row, 5)) or 0)
+        stock = float(parse_number_like(_safe(row, 6)) or 0)
+        lng_percent = float(parse_number_like(_safe(row, 7)) or 0)
 
         items.append(
             {
@@ -3113,7 +3116,7 @@ def fetch_performance_summary(performance_sheet_url: str) -> dict:
     rows = tong_ws.get_all_values()
     product_rows = []
     try:
-        product_rows = tong_ws.get("AA1:AH400")
+        product_rows = tong_ws.get("AA1:AH2000")
     except Exception:
         product_rows = []
 
