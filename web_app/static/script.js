@@ -338,6 +338,7 @@ async function loadPerformanceSummary(performanceSheetUrl) {
     if (!performanceSheetUrl) {
         currentPerformanceMetrics = null;
         renderStats(filteredRows);
+        renderProductRealtime();
         return;
     }
 
@@ -352,6 +353,7 @@ async function loadPerformanceSummary(performanceSheetUrl) {
         if (!data.success) {
             currentPerformanceMetrics = null;
             renderStats(filteredRows);
+            renderProductRealtime();
             const detail = buildSheetAccessHint(data);
             maybeAutoOpenSheetForAccess(data);
             if (data.error) {
@@ -362,9 +364,11 @@ async function loadPerformanceSummary(performanceSheetUrl) {
 
         currentPerformanceMetrics = data.metrics || null;
         renderStats(filteredRows);
+        renderProductRealtime();
     } catch (_) {
         currentPerformanceMetrics = null;
         renderStats(filteredRows);
+        renderProductRealtime();
     }
 }
 
@@ -440,10 +444,13 @@ function renderData() {
     document.getElementById("chartsSection").style.display = isAdminView ? "none" : "grid";
     const rankSec = document.getElementById("rankingsSection");
     if (rankSec) rankSec.style.display = currentData.memberSummaries.length ? "block" : "none";
+    const productSec = document.getElementById("productSection");
+    if (productSec) productSec.style.display = "none";
 
     // Keep core data visible even if a secondary renderer (e.g. chart CDN) fails.
     try { renderStats(filteredRows); } catch (_) {}
     try { renderRankings(); } catch (_) {}
+    try { renderProductRealtime(); } catch (_) {}
     if (!isAdminView) {
         try { renderTable(filteredRows); } catch (_) {}
         try { renderInsights(filteredRows); } catch (_) {
@@ -614,6 +621,57 @@ function renderRankings() {
             <td>${formatCurrency(m.cost_per_data)}</td>
         </tr>`;
     }).join("");
+}
+
+function renderProductRealtime() {
+    const section = document.getElementById("productSection");
+    const tbody = document.getElementById("productRealtimeBody");
+    const meta = document.getElementById("productRealtimeMeta");
+    if (!section || !tbody || !meta) return;
+
+    if (!(ROLE === "admin" || ROLE === "lead")) {
+        section.style.display = "none";
+        return;
+    }
+
+    const payload = currentPerformanceMetrics?.product_realtime || {};
+    const items = Array.isArray(payload.items) ? [...payload.items] : [];
+    items.sort((a, b) => Number(b.data_out || 0) - Number(a.data_out || 0));
+
+    const fromDate = String(payload.date_from || "").trim();
+    const toDate = String(payload.date_to || "").trim();
+    if (fromDate || toDate) {
+        meta.textContent = `Khoảng ngày đang áp dụng: ${fromDate || "—"} đến ${toDate || "—"}`;
+        meta.style.display = "block";
+    } else {
+        meta.style.display = "none";
+    }
+
+    if (!items.length) {
+        section.style.display = "block";
+        tbody.innerHTML = '<tr><td colspan="7" class="account-status-empty">Chưa có dữ liệu sản phẩm realtime cho ngày hôm nay.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = items.map((item) => {
+        const dataOut = Number(item.data_out || 0);
+        const revenue = Number(item.revenue || 0);
+        const spend = Number(item.spend || 0);
+        const ads = Number(item.ads_percent || 0);
+        const stock = Number(item.stock || 0);
+        const lng = Number(item.lng_percent || 0);
+        return `<tr>
+            <td>${escapeHtml(item.name_vn || "—")}</td>
+            <td>${Math.round(dataOut).toLocaleString("vi-VN")}</td>
+            <td class="spend-cell">${formatCurrency(revenue)}</td>
+            <td class="spend-cell">${formatCurrency(spend)}</td>
+            <td>${ads.toLocaleString("vi-VN", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}%</td>
+            <td>${Math.round(stock).toLocaleString("vi-VN")}</td>
+            <td>${lng.toLocaleString("vi-VN", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}%</td>
+        </tr>`;
+    }).join("");
+
+    section.style.display = "block";
 }
 
 async function loadAccountStatuses(sheetUrl) {

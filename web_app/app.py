@@ -1070,6 +1070,23 @@ def get_management_scope_users(owner_username: str, owner_user: dict, users: dic
 
 
 def build_management_report_message(username: str, user: dict, now: datetime, users: dict) -> tuple[bool, str, str]:
+    def build_product_top5_text(metrics: dict) -> str:
+        product_payload = metrics.get("product_realtime") or {}
+        top_items = product_payload.get("top5") or []
+        if not top_items:
+            return ""
+
+        lines = []
+        for idx, item in enumerate(top_items[:5], start=1):
+            lines.append(
+                f"• Top {idx}: <b>{html.escape(str(item.get('name_vn') or '—'))}</b> | "
+                f"Data ra: <b>{round(float(item.get('data_out') or 0)):,}</b> | "
+                f"Doanh số: <b>{round(float(item.get('revenue') or 0)):,} VND</b> | "
+                f"Chi phí ads: <b>{round(float(item.get('spend') or 0)):,} VND</b>"
+            )
+
+        return "<b>Top 5 sản phẩm realtime hôm nay</b>\n" + "\n".join(lines)
+
     scope_users = get_management_scope_users(username, user, users)
     if not scope_users:
         performance_sheet_url = (user.get("performance_sheet_url") or "").strip()
@@ -1089,6 +1106,8 @@ def build_management_report_message(username: str, user: dict, now: datetime, us
         aov = metrics.get("avg_order_value") or {}
         completion = metrics.get("completion_percent") or {}
         gross = metrics.get("gross_profit") or {}
+        product_top_text = build_product_top5_text(metrics)
+        product_top_block = f"{product_top_text}\n\n" if product_top_text else ""
 
         display_name = html.escape(user.get("display_name", username))
         timestamp = html.escape(now.strftime("%H:%M %d/%m/%Y"))
@@ -1114,6 +1133,7 @@ def build_management_report_message(username: str, user: dict, now: datetime, us
             f"• Giá trị TB đơn hôm nay: <b>{round(float(aov.get('day') or 0)):,} VND</b>\n"
             f"• % Hoàn hôm nay: <b>{round(float(completion.get('day') or 0), 2):,.2f}%</b>\n"
             f"• Lợi nhuận gộp hôm nay: <b>{round(float(gross.get('day') or 0)):,} VND</b>\n\n"
+            f"{product_top_block}"
             "<i>Dạ đại ca, em sẽ tiếp tục gửi đều theo lịch tự động.</i>"
         )
         return True, message, "OK"
@@ -1165,6 +1185,18 @@ def build_management_report_message(username: str, user: dict, now: datetime, us
         failed_preview = ", ".join(html.escape(name) for name in failed_users[:5])
         summary_lines.append(f"• Không đọc được {len(failed_users)} sheet: {failed_preview}")
 
+    product_top_block = ""
+    performance_sheet_url = (user.get("performance_sheet_url") or "").strip()
+    if performance_sheet_url:
+        try:
+            perf = fetch_performance_summary(performance_sheet_url)
+            if perf.get("success"):
+                product_top_text = build_product_top5_text(perf.get("metrics") or {})
+                if product_top_text:
+                    product_top_block = f"\n\n{product_top_text}"
+        except Exception:
+            product_top_block = ""
+
     display_name = html.escape(user.get("display_name", username))
     timestamp = html.escape(now.strftime("%H:%M %d/%m/%Y"))
     total_cost_per_data = round(total_spend / total_data) if total_data > 0 else 0
@@ -1179,7 +1211,8 @@ def build_management_report_message(username: str, user: dict, now: datetime, us
         f"• Tổng data: <b>{total_data:,}</b>\n"
         f"• Chi phí/data gộp: <b>{total_cost_per_data:,} VND</b>\n\n"
         "<b>Tổng hợp theo nhân viên</b>\n"
-        f"{chr(10).join(summary_lines)}\n\n"
+        f"{chr(10).join(summary_lines)}"
+        f"{product_top_block}\n\n"
         "<i>Dạ đại ca, em sẽ tiếp tục gửi đều theo lịch tự động.</i>"
     )
     return True, message, "OK"
@@ -3000,6 +3033,74 @@ def fetch_performance_summary_fixed_columns(tong_rows: list, lng_rows: list) -> 
     }
 
 
+def extract_product_realtime_from_tong_rows(rows: list) -> dict:
+    if not rows:
+        return {"items": [], "top5": [], "date_from": "", "date_to": ""}
+
+    date_from = ""
+    date_to = ""
+    if len(rows) > 0:
+        top_row = rows[0]
+        if len(top_row) > 2:
+            date_from = str(top_row[2] or "").strip()
+        if len(top_row) > 3:
+            date_to = str(top_row[3] or "").strip()
+
+    header_idx = None
+    for idx, row in enumerate(rows[:12]):
+        if len(row) < 8:
+            continue
+        header_text = normalize_sheet_tab_name(" ".join(str(cell or "") for cell in row))
+        if "tenspvietnam" in header_text and "sodatara" in header_text:
+            header_idx = idx
+            break
+
+    if header_idx is None:
+        return {"items": [], "top5": [], "date_from": date_from, "date_to": date_to}
+
+    items = []
+    for row in rows[header_idx + 1 :]:
+        if not row or len(row) < 8:
+            continue
+
+        name_vn = str(row[0] or "").strip()
+        if not name_vn:
+            continue
+        name_key = normalize_sheet_tab_name(name_vn)
+        if name_key in {"tong", "tongcong", "total"}:
+            continue
+
+        data_out = float(parse_number_like(row[2]) or 0)
+        revenue = float(parse_number_like(row[3]) or 0)
+        spend = float(parse_number_like(row[4]) or 0)
+        ads_percent = float(parse_number_like(row[5]) or 0)
+        stock = float(parse_number_like(row[6]) or 0)
+        lng_percent = float(parse_number_like(row[7]) or 0)
+
+        items.append(
+            {
+                "name_vn": name_vn,
+                "data_out": data_out,
+                "revenue": revenue,
+                "spend": spend,
+                "ads_percent": ads_percent,
+                "stock": stock,
+                "lng_percent": lng_percent,
+            }
+        )
+
+    items.sort(key=lambda item: (item.get("data_out", 0), item.get("revenue", 0), -item.get("spend", 0)), reverse=True)
+    positive_top = [item for item in items if float(item.get("data_out", 0)) > 0]
+    top5 = (positive_top or items)[:5]
+
+    return {
+        "items": items,
+        "top5": top5,
+        "date_from": date_from,
+        "date_to": date_to,
+    }
+
+
 def fetch_performance_summary(performance_sheet_url: str) -> dict:
     sheet_id = extract_sheet_id(performance_sheet_url)
     if not sheet_id:
@@ -3008,7 +3109,20 @@ def fetch_performance_summary(performance_sheet_url: str) -> dict:
     client = get_gspread_client()
     spreadsheet = client.open_by_key(sheet_id)
     tong_ws = resolve_optional_worksheet(spreadsheet, ["TỔNG", "Tong", "Tổng"]) or resolve_performance_worksheet(spreadsheet)
+    today_str = datetime.now().strftime("%d/%m/%Y")
+    try:
+        tong_ws.update(values=[[today_str, today_str]], range_name="AC1:AD1")
+    except Exception:
+        pass
+
     rows = tong_ws.get_all_values()
+    product_rows = []
+    try:
+        product_rows = tong_ws.get("AA1:AH400")
+    except Exception:
+        product_rows = []
+
+    product_realtime = extract_product_realtime_from_tong_rows(product_rows)
     tiktok_ws = resolve_optional_worksheet(spreadsheet, ["Tiktok", "TikTok", "TIKTOK"])
     lng_ws = resolve_optional_worksheet(spreadsheet, ["LNG", "LNG Sản phẩm", "LNG San pham", "LN gộp dự tính"])
 
@@ -3106,6 +3220,7 @@ def fetch_performance_summary(performance_sheet_url: str) -> dict:
             "gross_profit_percent": gross_pct_payload,
             "weekly_trend": weekly_trend,
             "product_lng": lng_summary,
+            "product_realtime": product_realtime,
         },
         "sheet_name": spreadsheet.title or "Bảng hiệu suất",
     }

@@ -330,6 +330,10 @@
             grid-column: span 5;
         }
 
+        body.manager-view #productSection {
+            grid-column: span 7;
+        }
+
         body.manager-view #chartsSection {
             grid-column: span 7;
         }
@@ -394,6 +398,11 @@
             overflow: auto;
         }
 
+        body.manager-view #productSection .table-wrapper {
+            max-height: 345px;
+            overflow: auto;
+        }
+
         body.manager-view #tableSection .table-wrapper {
             max-height: 520px;
             overflow: auto;
@@ -401,6 +410,7 @@
 
         body.manager-view .insight-list::-webkit-scrollbar,
         body.manager-view #rankingsSection .table-wrapper::-webkit-scrollbar,
+        body.manager-view #productSection .table-wrapper::-webkit-scrollbar,
         body.manager-view #tableSection .table-wrapper::-webkit-scrollbar {
             width: 8px;
             height: 8px;
@@ -408,6 +418,7 @@
 
         body.manager-view .insight-list::-webkit-scrollbar-thumb,
         body.manager-view #rankingsSection .table-wrapper::-webkit-scrollbar-thumb,
+        body.manager-view #productSection .table-wrapper::-webkit-scrollbar-thumb,
         body.manager-view #tableSection .table-wrapper::-webkit-scrollbar-thumb {
             background: rgba(148, 163, 184, 0.55);
             border-radius: 999px;
@@ -666,6 +677,29 @@
                                 </tr>
                             </thead>
                             <tbody id="rankingsBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <section id="productSection" class="product-section" style="display: none;">
+                <div class="card">
+                    <h2><i class="fas fa-boxes-stacked"></i> Báo Cáo Sản Phẩm Realtime</h2>
+                    <div id="productRealtimeMeta" class="filter-info" style="display:none;"></div>
+                    <div class="table-wrapper">
+                        <table class="data-table rankings-table">
+                            <thead>
+                                <tr>
+                                    <th>Sản phẩm</th>
+                                    <th>Số data ra</th>
+                                    <th>Doanh số</th>
+                                    <th>Chi phí ads</th>
+                                    <th>% ADS</th>
+                                    <th>Tồn kho</th>
+                                    <th>%LNG</th>
+                                </tr>
+                            </thead>
+                            <tbody id="productRealtimeBody"></tbody>
                         </table>
                     </div>
                 </div>
