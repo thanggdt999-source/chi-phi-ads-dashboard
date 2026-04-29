@@ -311,9 +311,12 @@ def _load_users_from_file_layers(users_from_env: dict) -> dict:
     users_from_legacy = load_json_dict_file(LEGACY_USERS_FILE_PATH)
     if users_from_file:
         merged = dict(users_from_env)
-        merged.update(users_from_file)
+        # Migration-safe precedence: env baseline < legacy snapshot < current file.
+        # The current users file is authoritative and must not be overridden by legacy data.
         if users_from_legacy:
             merged.update(users_from_legacy)
+        merged.update(users_from_file)
+        if users_from_legacy:
             try:
                 atomic_write_json_file(USERS_FILE_PATH, merged)
                 atomic_write_json_file(USERS_FILE_BACKUP_PATH, merged)
@@ -3218,6 +3221,8 @@ def login():
             error_message = "Hệ thống tài khoản đang tạm lỗi dữ liệu. Tài khoản không bị xóa, vui lòng liên hệ admin để khôi phục file users."
         else:
             error_message = "Tài khoản chưa tồn tại trong hệ thống"
+    elif user.get("role") == "employee" and user.get("password") != password:
+        error_message = "Tài khoản tồn tại nhưng mật khẩu chưa đúng. Nếu quên mật khẩu, bấm 'Quên mật khẩu'."
     elif user.get("role") != "employee" and user.get("password") == password:
         error_message = "Tài khoản này là Leader/Admin. Vui lòng đăng nhập bằng tài khoản nhân viên ở bước 1 trước."
     elif user.get("role") != "employee":
