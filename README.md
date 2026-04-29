@@ -128,7 +128,7 @@ Cac cot:
 
 Project da chuyen sang dung GitHub Actions de goi lich gui bao cao Telegram thay vi Render Cron.
 
-Workflow nam o `.github/workflows/telegram-reports.yml` va chay vao cac moc lech `07` va `37` phut de tranh gio cao diem cua scheduler GitHub. Lich duoc dat theo mui gio `Asia/Ho_Chi_Minh` va bao phu tu 6h den 23h moi ngay.
+Workflow nam o `.github/workflows/telegram-reports.yml` va chay moi `10` phut (`*/10 * * * *`) de dam bao bao cao duoc lap lai on dinh.
 
 Can cau hinh them 1 repo secret tren GitHub:
 
