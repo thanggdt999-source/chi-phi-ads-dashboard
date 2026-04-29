@@ -3049,7 +3049,26 @@ def _parse_ads_rows_from_worksheet(worksheet) -> list:
             continue
 
         date_text = str(row_data.get("Ngày", "")).strip()
-        if not re.match(r"^\d{1,2}/\d{1,2}/\d{2,4}$", date_text):
+        parsed_date = _parse_date_flexible(date_text)
+        if parsed_date is None:
+            for col in DISPLAY_COLUMNS:
+                candidate = str(row_data.get(col, "")).strip()
+                candidate_date = _parse_date_flexible(candidate)
+                if candidate_date is not None:
+                    parsed_date = candidate_date
+                    row_data["Ngày"] = candidate_date.strftime("%d/%m/%Y")
+                    if col == "Số Data":
+                        row_data["Số Data"] = ""
+                    break
+
+        if parsed_date is None:
+            continue
+
+        has_numeric_metric = any(
+            parse_number_like(str(row_data.get(col, ""))) is not None
+            for col in ["Số Data", "Số tiền chi tiêu - VND", "Số tiền chi tiêu - USD"]
+        )
+        if not has_numeric_metric:
             continue
 
         rows.append(row_data)
