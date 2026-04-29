@@ -346,6 +346,45 @@
             background: linear-gradient(160deg, rgba(30, 41, 59, 0.92), rgba(15, 23, 42, 0.88));
         }
 
+        body.manager-view #rankingsSection .card,
+        body.manager-view #productSection .card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 4px 16px rgba(15, 23, 42, 0.10);
+        }
+
+        body.manager-view #rankingsSection .card h2,
+        body.manager-view #productSection .card h2 {
+            color: #1e293b;
+        }
+
+        body.manager-view #rankingsSection .data-table th,
+        body.manager-view #productSection .data-table th {
+            background: #f3f4f6;
+            color: #374151;
+        }
+
+        body.manager-view #rankingsSection .data-table thead,
+        body.manager-view #productSection .data-table thead {
+            background: #f3f4f6;
+            color: #374151;
+        }
+
+        body.manager-view #rankingsSection .data-table td,
+        body.manager-view #productSection .data-table td {
+            color: #1e293b;
+        }
+
+        body.manager-view #rankingsSection .data-table tbody tr:nth-child(even),
+        body.manager-view #productSection .data-table tbody tr:nth-child(even) {
+            background: #f8fafc;
+        }
+
+        body.manager-view #rankingsSection .data-table tbody tr:hover,
+        body.manager-view #productSection .data-table tbody tr:hover {
+            background: #eff6ff;
+        }
+
         body.manager-view .stats-grid {
             grid-template-columns: repeat(7, minmax(0, 1fr));
             gap: 8px;
