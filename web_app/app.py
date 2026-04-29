@@ -3390,7 +3390,7 @@ def index():
 @login_required
 def admin_dashboard():
     if ROLE_LEVELS.get(session.get("role", ""), 0) < ROLE_LEVELS["admin"]:
-        return render_template("403.html"), 403
+        return redirect(url_for("index"))
     return index()
 
 
@@ -4267,13 +4267,13 @@ def save_users_config(config: dict) -> None:
 
 
 def admin_page_required(view_func):
-    """Decorator for admin-only HTML pages (redirect to login/403 page)."""
+    """Decorator for admin-only HTML pages (redirect to login/dashboard)."""
     @wraps(view_func)
     def wrapper(*args, **kwargs):
         if not is_logged_in():
             return redirect(url_for("login", next=request.path))
         if ROLE_LEVELS.get(session.get("role", ""), 0) < ROLE_LEVELS["admin"]:
-            return render_template("403.html"), 403
+            return redirect(url_for("index"))
         return view_func(*args, **kwargs)
     return wrapper
 
