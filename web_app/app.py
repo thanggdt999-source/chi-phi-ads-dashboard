@@ -3073,6 +3073,51 @@ def _parse_ads_rows_from_worksheet(worksheet) -> list:
 
         rows.append(row_data)
 
+    # Fallback for sheets that keep data in fixed columns but have non-standard headers.
+    if rows:
+        return rows
+
+    for row in all_values:
+        if not row:
+            continue
+
+        parsed_date = None
+        date_text = ""
+        for candidate in row[:4]:
+            candidate_text = str(candidate or "").strip()
+            candidate_date = _parse_date_flexible(candidate_text)
+            if candidate_date is not None:
+                parsed_date = candidate_date
+                date_text = candidate_date.strftime("%d/%m/%Y")
+                break
+
+        if parsed_date is None:
+            continue
+
+        account_text = str(row[1] if len(row) > 1 else "").strip()
+        product_text = str(row[2] if len(row) > 2 else "").strip()
+        data_text = str(row[3] if len(row) > 3 else "").strip()
+        spend_vnd_text = str(row[4] if len(row) > 4 else "").strip()
+        spend_usd_text = str(row[5] if len(row) > 5 else "").strip()
+
+        has_metric = any(
+            parse_number_like(val) is not None
+            for val in [data_text, spend_vnd_text, spend_usd_text]
+        )
+        if not has_metric:
+            continue
+
+        rows.append(
+            {
+                "Ngày": date_text,
+                "Tên tài khoản": account_text,
+                "Tên sản phẩm - VN": product_text,
+                "Số Data": data_text,
+                "Số tiền chi tiêu - VND": spend_vnd_text,
+                "Số tiền chi tiêu - USD": spend_usd_text,
+            }
+        )
+
     return rows
 
 
