@@ -941,7 +941,82 @@ def _extract_openai_text(payload: dict) -> str:
     return "\n".join(chunks).strip()
 
 
-def ask_openai_chat(user_message: str, history: Optional[list] = None) -> tuple[bool, str]:
+def build_ai_sheet_context() -> str:
+    if not is_logged_in():
+        return ""
+
+    username = str(session.get("username", "")).strip()
+    if not username:
+        return ""
+
+    users = load_users_config()
+    user = users.get(username, {})
+    now = get_notification_now()
+    today = now.date()
+    lines = [
+        f"- Thoi diem he thong: {now.strftime('%H:%M %d/%m/%Y')}",
+        f"- Nguoi dung hien tai: {user.get('display_name', username)} ({username})",
+    ]
+
+    accessible_sheets = get_accessible_sheets_for_user(username)[:3]
+    lines.append(f"- So bang duoc phep truy cap: {len(accessible_sheets)}")
+
+    for idx, sheet in enumerate(accessible_sheets, start=1):
+        sheet_name = str(sheet.get("name") or f"Sheet {idx}").strip()
+        sheet_url = str(sheet.get("url") or "").strip()
+        sheet_id = extract_sheet_id(sheet_url)
+        if not sheet_id:
+            lines.append(f"- [{sheet_name}] khong doc duoc ID sheet.")
+            continue
+
+        result = fetch_chi_phi_ads_data(sheet_id)
+        if not result.get("success"):
+            lines.append(f"- [{sheet_name}] loi doc du lieu: {result.get('error', 'khong ro')}.")
+            continue
+
+        rows = [
+            row
+            for row in result.get("data", [])
+            if parse_row_date(str(row.get("Ngày") or row.get("Ngay") or "")) == today
+        ]
+        total_spend = round(
+            sum(
+                parse_spend(str(row.get("Số tiền chi tiêu - VND") or row.get("So tien chi tieu - VND") or ""))
+                for row in rows
+            )
+        )
+        total_data = sum(parse_int(str(row.get("Số Data") or row.get("So Data") or "")) for row in rows)
+        cpd = round(total_spend / total_data) if total_data > 0 else 0
+        top_products = aggregate_product_metrics(rows)[:3]
+
+        lines.append(
+            f"- [{sheet_name}] hom nay: chi phi={total_spend:,} VND, data={total_data:,}, chi_phi_data={cpd:,} VND"
+        )
+        for p in top_products:
+            lines.append(
+                f"  + SP: {p['name']} | chi phi={p['spend']:,} VND | data={p['data']:,} | chi_phi_data={p['cost_per_data']:,}"
+            )
+
+    perf_url = str(user.get("performance_sheet_url") or "").strip()
+    if perf_url:
+        perf = fetch_performance_summary(perf_url)
+        if perf.get("success"):
+            metrics = perf.get("metrics") or {}
+            revenue = metrics.get("revenue") or {}
+            total_spend_metrics = metrics.get("total_spend") or {}
+            total_results = metrics.get("total_results") or {}
+            lines.append(
+                "- KPI hieu suat: "
+                f"doanh_so_hom_nay={round(float(revenue.get('day') or 0)):,} VND, "
+                f"chi_phi_hom_nay={round(float(total_spend_metrics.get('day') or 0)):,} VND, "
+                f"ket_qua_hom_nay={round(float(total_results.get('day') or 0)):,}, "
+                f"doanh_so_thang={round(float(revenue.get('month') or 0)):,} VND"
+            )
+
+    return "\n".join(lines)
+
+
+def ask_openai_chat(user_message: str, history: Optional[list] = None, data_context: str = "") -> tuple[bool, str]:
     if not AI_CHAT_ENABLED:
         return False, "Tính năng AI đang tắt trên hệ thống."
     if not OPENAI_API_KEY:
@@ -954,16 +1029,25 @@ def ask_openai_chat(user_message: str, history: Optional[list] = None) -> tuple[
     history_items = history if isinstance(history, list) else []
     history_items = history_items[-8:]
 
+    system_text = (
+        "Ban la tro ly AI cho dashboard chi phi ads. "
+        "Tra loi ngan gon, thuc te, uu tien so lieu va hanh dong ro rang bang tieng Viet."
+    )
+    if data_context.strip():
+        system_text += (
+            "\n\nDu lieu noi bo tu cac bang ma nguoi dung duoc phep xem (cap nhat tai thoi diem goi):\n"
+            f"{data_context.strip()}\n\n"
+            "Chi su dung cac so lieu trong ngu canh tren khi tra loi ve du lieu. "
+            "Neu ngu canh khong co du lieu can thiet, phai noi ro khong du du lieu."
+        )
+
     input_items = [
         {
             "role": "system",
             "content": [
                 {
                     "type": "input_text",
-                    "text": (
-                        "Bạn là trợ lý AI cho dashboard chi phí ads. "
-                        "Trả lời ngắn gọn, thực tế, ưu tiên số liệu và hành động rõ ràng bằng tiếng Việt."
-                    ),
+                    "text": system_text,
                 }
             ],
         }
@@ -5059,7 +5143,8 @@ def ai_chat_message():
     if len(message) > 3000:
         return jsonify({"success": False, "error": "Nội dung quá dài (tối đa 3000 ký tự)."}), 400
 
-    ok, reply = ask_openai_chat(message, history)
+    data_context = build_ai_sheet_context()
+    ok, reply = ask_openai_chat(message, history, data_context=data_context)
     if not ok:
         return jsonify({"success": False, "error": reply}), 400
 
