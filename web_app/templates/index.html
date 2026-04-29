@@ -433,8 +433,8 @@
                     <form id="urlForm" onsubmit="handleSubmit(event)">
                         <div class="input-wrap">
                             <div class="input-group">
-                                <input type="text" id="sheetUrl" placeholder="Link chi phí ads" autocomplete="off" required>
-                                <input type="text" id="performanceSheetUrl" placeholder="Link bảng hiệu suất" autocomplete="off">
+                                <input type="text" id="sheetUrl" placeholder="Link báo cáo tuần/tháng (tab Chi phí ads FB, Data FB)" autocomplete="off" value="{{ sheet_url or '' }}" required>
+                                <input type="text" id="performanceSheetUrl" placeholder="Link hiệu suất (tab Tổng, Tiktok, LNG)" autocomplete="off" value="{{ performance_sheet_url or '' }}">
                                 <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Tải Dữ Liệu</button>
                             </div>
                             <div id="sheetSuggestions" class="sheet-suggestions" style="display:none;"></div>
@@ -453,8 +453,8 @@
                     <form id="urlForm" onsubmit="handleSubmit(event)">
                         <div class="input-wrap">
                             <div class="input-group">
-                                <input type="text" id="sheetUrl" placeholder="Link chi phí ads" autocomplete="off" value="{{ sheet_url or '' }}" required>
-                                <input type="text" id="performanceSheetUrl" placeholder="Link bảng hiệu suất" autocomplete="off" value="{{ performance_sheet_url or '' }}">
+                                <input type="text" id="sheetUrl" placeholder="Link báo cáo tuần/tháng (tab Chi phí ads FB, Data FB)" autocomplete="off" value="{{ sheet_url or '' }}" required>
+                                <input type="text" id="performanceSheetUrl" placeholder="Link hiệu suất (tab Tổng, Tiktok, LNG)" autocomplete="off" value="{{ performance_sheet_url or '' }}">
                                 <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Đọc dữ liệu</button>
                             </div>
                             <div id="sheetSuggestions" class="sheet-suggestions" style="display:none;"></div>

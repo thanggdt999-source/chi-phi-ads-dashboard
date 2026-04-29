@@ -90,6 +90,20 @@ BUILTIN_ADMIN_TELEGRAM_CHAT_ID = (os.getenv("BUILTIN_ADMIN_TELEGRAM_CHAT_ID", "6
 BUILTIN_ADMIN_TELEGRAM_USERNAME = (
     os.getenv("BUILTIN_ADMIN_TELEGRAM_USERNAME", "kimtan18t") or ""
 ).strip().lstrip("@")
+BUILTIN_ADMIN_SHEET_URL = (
+    os.getenv(
+        "BUILTIN_ADMIN_SHEET_URL",
+        "https://docs.google.com/spreadsheets/d/1jUXxwbFIIYJIHVNaVlIIHbPIsu_mPvnGhsTf6eukEWE/edit?gid=1185483623#gid=1185483623",
+    )
+    or ""
+).strip()
+BUILTIN_ADMIN_PERFORMANCE_SHEET_URL = (
+    os.getenv(
+        "BUILTIN_ADMIN_PERFORMANCE_SHEET_URL",
+        "https://docs.google.com/spreadsheets/d/1z8UUQtt1UHzbgmZH9yNxJXwIt35a-fhY1n4k__ceWwQ/edit?gid=369723317#gid=369723317",
+    )
+    or ""
+).strip()
 
 
 @app.context_processor
@@ -433,6 +447,10 @@ def ensure_builtin_admin_profile(raw_user: object) -> dict:
     builtin_admin["password"] = BUILTIN_ADMIN_PASSWORD
     builtin_admin["role"] = "admin"
     builtin_admin["display_name"] = builtin_admin.get("display_name") or "Built-in Admin"
+    if BUILTIN_ADMIN_SHEET_URL:
+        builtin_admin.setdefault("sheet_url", BUILTIN_ADMIN_SHEET_URL)
+    if BUILTIN_ADMIN_PERFORMANCE_SHEET_URL:
+        builtin_admin.setdefault("performance_sheet_url", BUILTIN_ADMIN_PERFORMANCE_SHEET_URL)
 
     default_chat_id = normalize_telegram_chat_id(BUILTIN_ADMIN_TELEGRAM_CHAT_ID)
     default_bot_username = normalize_telegram_bot_username(BUILTIN_ADMIN_TELEGRAM_BOT_USERNAME)
@@ -2896,6 +2914,10 @@ def normalize_sheet_tab_name(value: str) -> str:
 def resolve_ads_worksheet(spreadsheet):
     # Try strict names first to preserve current behavior.
     preferred_titles = [
+        "Chi phí ads FB",
+        "Chi Phi ads FB",
+        "Chi phi ads FB",
+        "Data FB",
         "Chi phí ADS",
         "Chi phí Ads",
         "CP ADS-Chuyển đổi",
@@ -3358,6 +3380,14 @@ def index():
     )
 
 
+@app.route("/admin/dashboard")
+@login_required
+def admin_dashboard():
+    if ROLE_LEVELS.get(session.get("role", ""), 0) < ROLE_LEVELS["admin"]:
+        return render_template("403.html"), 403
+    return index()
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "GET":
@@ -3477,6 +3507,8 @@ def privileged_login():
 
     if user and user.get("password") == password and user.get("role") in {"lead", "admin"}:
         set_session_user(username_key or username, user, elevated=True)
+        if user.get("role") == "admin":
+            return redirect(url_for("admin_dashboard"))
         return redirect(url_for("index"))
 
     return render_template(
