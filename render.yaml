@@ -22,3 +22,28 @@ services:
         sync: false
       - key: INTERNAL_CRON_SECRET
         generateValue: true
+      - key: TELEGRAM_REPORT_INTERVAL_MINUTES
+        value: "5"
+      - key: TELEGRAM_REPORT_ALWAYS_ON
+        value: "true"
+      - key: TELEGRAM_REPORT_CATCHUP_MAX_SLOTS
+        value: "24"
+      - key: TELEGRAM_SELF_SCHEDULER_ENABLED
+        value: "true"
+      - key: TELEGRAM_SELF_SCHEDULER_TICK_SECONDS
+        value: "25"
+
+  - type: cron
+    name: chi-phi-ads-telegram-cron
+    runtime: python
+    schedule: "*/5 * * * *"
+    buildCommand: pip install --disable-pip-version-check --quiet requests
+    startCommand: >-
+      python -c "import os, requests; r=requests.post(os.environ['TELEGRAM_REPORT_ENDPOINT'],
+      headers={'Authorization': f\"Bearer {os.environ['INTERNAL_CRON_SECRET']}\", 'Content-Type': 'application/json'},
+      json={'force': False}, timeout=60); print(r.status_code, r.text); r.raise_for_status()"
+    envVars:
+      - key: INTERNAL_CRON_SECRET
+        sync: false
+      - key: TELEGRAM_REPORT_ENDPOINT
+        value: https://ads.hexistoree.click/internal/telegram/reports/run

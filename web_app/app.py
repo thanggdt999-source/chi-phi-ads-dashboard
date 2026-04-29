@@ -3,6 +3,8 @@ import html
 import secrets
 import sys
 import tempfile
+import threading
+import time
 import unicodedata
 
 from flask import Flask, render_template, render_template_string, request, jsonify, session, redirect, url_for
@@ -64,6 +66,14 @@ TELEGRAM_REPORT_ALWAYS_ON = (os.getenv("TELEGRAM_REPORT_ALWAYS_ON", "1") or "1")
     "yes",
     "on",
 }
+TELEGRAM_REPORT_CATCHUP_MAX_SLOTS = max(1, min(288, int(os.getenv("TELEGRAM_REPORT_CATCHUP_MAX_SLOTS", "12"))))
+TELEGRAM_SELF_SCHEDULER_ENABLED = (os.getenv("TELEGRAM_SELF_SCHEDULER_ENABLED", "1") or "1").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+TELEGRAM_SELF_SCHEDULER_TICK_SECONDS = max(10, min(300, int(os.getenv("TELEGRAM_SELF_SCHEDULER_TICK_SECONDS", "25"))))
 TELEGRAM_REPORT_MAX_PRODUCTS = max(1, int(os.getenv("TELEGRAM_REPORT_MAX_PRODUCTS", "8")))
 SESSION_TIMEOUT_SECONDS = int(os.getenv("SESSION_TIMEOUT_SECONDS", "600"))  # 10 minutes
 AI_CHAT_ENABLED = (os.getenv("AI_CHAT_ENABLED", "1") or "1").strip().lower() in {"1", "true", "yes", "on"}
@@ -796,6 +806,45 @@ def get_notification_slot(now: datetime) -> str:
     return now.replace(minute=slot_minute, second=0, microsecond=0).strftime("%Y-%m-%d %H:%M")
 
 
+def parse_notification_slot(slot: str) -> Optional[datetime]:
+    raw = (slot or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d %H:%M")
+    except ValueError:
+        return None
+
+
+def build_pending_slots(now: datetime, last_slot: str, *, force: bool = False) -> list[str]:
+    current_slot = get_notification_slot(now)
+    if force:
+        return [current_slot]
+
+    last_dt = parse_notification_slot(last_slot)
+    current_dt = parse_notification_slot(current_slot)
+    if not current_dt:
+        return [current_slot]
+
+    if not last_dt:
+        return [current_slot]
+
+    delta_minutes = int((current_dt - last_dt).total_seconds() // 60)
+    if delta_minutes < TELEGRAM_REPORT_INTERVAL_MINUTES:
+        return []
+
+    step = timedelta(minutes=TELEGRAM_REPORT_INTERVAL_MINUTES)
+    cursor = last_dt + step
+    pending = []
+    while cursor <= current_dt:
+        pending.append(cursor.strftime("%Y-%m-%d %H:%M"))
+        cursor += step
+
+    if len(pending) > TELEGRAM_REPORT_CATCHUP_MAX_SLOTS:
+        pending = pending[-TELEGRAM_REPORT_CATCHUP_MAX_SLOTS:]
+    return pending
+
+
 def load_telegram_report_state() -> dict:
     TELEGRAM_REPORT_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     if not TELEGRAM_REPORT_STATE_PATH.exists():
@@ -1354,61 +1403,107 @@ def run_telegram_report_job(*, force: bool = False, dry_run: bool = False, usern
 
     state = load_telegram_report_state()
     last_slot = state.get("last_slot", "")
-    if not force and last_slot == slot:
+    pending_slots = build_pending_slots(now, last_slot, force=force)
+    if not pending_slots:
         return {"success": True, "slot": slot, "skipped": True, "reason": "already_sent", "results": []}
 
     users = load_users_config()
     selected = set(usernames or [])
     results = []
     sent_count = 0
+    sent_slots = []
+    for pending_slot in pending_slots:
+        slot_time = parse_notification_slot(pending_slot) or now
+        slot_sent_count = 0
 
-    for username, user in users.items():
-        if not is_telegram_report_role(user):
-            continue
-        if selected and username not in selected:
-            continue
-
-        chat_id = (user.get("telegram_chat_id") or "").strip()
-        if not chat_id:
-            results.append({"username": username, "status": "skipped", "reason": "missing_chat"})
-            continue
-
-        role = str(user.get("role", "") or "").strip()
-        if role == "employee":
-            sheet_url = (user.get("sheet_url") or "").strip()
-            if not sheet_url:
-                results.append({"username": username, "status": "skipped", "reason": "missing_sheet"})
+        for username, user in users.items():
+            if not is_telegram_report_role(user):
                 continue
-            ok, message, info = build_employee_report_message(username, user, now)
-        else:
-            ok, message, info = build_management_report_message(username, user, now, users)
-        if not ok:
-            results.append({"username": username, "status": "failed", "reason": info})
-            continue
+            if selected and username not in selected:
+                continue
 
+            chat_id = (user.get("telegram_chat_id") or "").strip()
+            if not chat_id:
+                results.append({"slot": pending_slot, "username": username, "status": "skipped", "reason": "missing_chat"})
+                continue
 
-        if dry_run:
-            print(f"\n===== {username} =====\n{message}\n")
-            results.append({"username": username, "status": "dry_run"})
-            sent_count += 1
-            continue
+            role = str(user.get("role", "") or "").strip()
+            if role == "employee":
+                sheet_url = (user.get("sheet_url") or "").strip()
+                if not sheet_url:
+                    results.append({"slot": pending_slot, "username": username, "status": "skipped", "reason": "missing_sheet"})
+                    continue
+                ok, message, info = build_employee_report_message(username, user, slot_time)
+            else:
+                ok, message, info = build_management_report_message(username, user, slot_time, users)
+            if not ok:
+                results.append({"slot": pending_slot, "username": username, "status": "failed", "reason": info})
+                continue
 
-        personal_bot_token = normalize_telegram_bot_token(str(user.get("telegram_bot_token", "")))
-        send_ok, send_info = send_telegram_message(chat_id, message, bot_token=personal_bot_token)
-        results.append({
-            "username": username,
-            "status": "sent" if send_ok else "failed",
-            "reason": send_info,
-        })
-        if send_ok:
-            sent_count += 1
+            if dry_run:
+                print(f"\n===== {pending_slot} | {username} =====\n{message}\n")
+                results.append({"slot": pending_slot, "username": username, "status": "dry_run"})
+                sent_count += 1
+                slot_sent_count += 1
+                continue
 
-    if sent_count > 0 and not dry_run:
-        state["last_slot"] = slot
+            personal_bot_token = normalize_telegram_bot_token(str(user.get("telegram_bot_token", "")))
+            send_ok, send_info = send_telegram_message(chat_id, message, bot_token=personal_bot_token)
+            results.append({
+                "slot": pending_slot,
+                "username": username,
+                "status": "sent" if send_ok else "failed",
+                "reason": send_info,
+            })
+            if send_ok:
+                sent_count += 1
+                slot_sent_count += 1
+
+        if slot_sent_count > 0:
+            sent_slots.append(pending_slot)
+
+    if sent_slots and not dry_run:
+        state["last_slot"] = sent_slots[-1]
         state["last_run_at"] = now.strftime("%Y-%m-%d %H:%M:%S")
+        state["pending_slots_processed"] = len(sent_slots)
         save_telegram_report_state(state)
 
-    return {"success": True, "slot": slot, "skipped": False, "results": results, "sent_count": sent_count}
+    return {
+        "success": True,
+        "slot": slot,
+        "pending_slots": pending_slots,
+        "processed_slots": sent_slots,
+        "skipped": False,
+        "results": results,
+        "sent_count": sent_count,
+    }
+
+
+_TELEGRAM_SCHEDULER_STARTED = False
+
+
+def _telegram_scheduler_loop() -> None:
+    while True:
+        try:
+            run_telegram_report_job(force=False, dry_run=False)
+        except Exception as exc:
+            print(f"[telegram-scheduler] error: {exc}")
+        time.sleep(TELEGRAM_SELF_SCHEDULER_TICK_SECONDS)
+
+
+def start_telegram_internal_scheduler() -> None:
+    global _TELEGRAM_SCHEDULER_STARTED
+    if _TELEGRAM_SCHEDULER_STARTED or not TELEGRAM_SELF_SCHEDULER_ENABLED:
+        return
+
+    cli_commands = {"send-telegram-reports", "trigger-telegram-reports"}
+    is_cli_mode = len(sys.argv) > 1 and str(sys.argv[1] or "").strip() in cli_commands
+    if is_cli_mode:
+        return
+
+    worker = threading.Thread(target=_telegram_scheduler_loop, name="telegram-internal-scheduler", daemon=True)
+    worker.start()
+    _TELEGRAM_SCHEDULER_STARTED = True
 
 
 def trigger_telegram_report_job_command(force: bool = False) -> int:
@@ -5762,6 +5857,9 @@ def forgot_password_verify():
     _clear_forgot_pw_otp_session()
 
     return render_template("forgot_password.html", step="done", error="", success="Đặt lại mật khẩu thành công!")
+
+
+start_telegram_internal_scheduler()
 
 
 if __name__ == "__main__":

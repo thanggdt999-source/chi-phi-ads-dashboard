@@ -9,7 +9,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
     z-index: 10050;
     color: #ffffff;
     background: linear-gradient(135deg, #0284c7, #1d4ed8);
@@ -18,6 +20,11 @@
 
 .ai-chat-fab:hover {
     filter: brightness(1.06);
+}
+
+.ai-chat-fab.dragging {
+    cursor: grabbing;
+    filter: brightness(1.04);
 }
 
 .ai-chat-panel {
