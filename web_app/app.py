@@ -35,6 +35,7 @@ SHEET_URLS_PATH = Path(os.getenv("SHEET_URLS_PATH", str(Path(__file__).parent.pa
 AUTO_STATE_PATH = Path(os.getenv("AUTO_STATE_PATH", str(Path(__file__).parent.parent / "storage" / "config" / "auto_fill_state.json")))
 USERS_FILE_PATH = Path(os.getenv("USERS_FILE_PATH", str(Path(__file__).parent.parent / "storage" / "config" / "users.json")))
 USERS_FILE_BACKUP_PATH = Path(os.getenv("USERS_FILE_BACKUP_PATH", str(Path(__file__).parent.parent / "storage" / "config" / "users.backup.json")))
+LEGACY_USERS_FILE_PATH = Path(os.getenv("LEGACY_USERS_FILE_PATH", str(Path(__file__).parent.parent / "storage" / "users.json")))
 USERS_DATABASE_URL = (os.getenv("USERS_DATABASE_URL") or os.getenv("DATABASE_URL") or "").strip()
 MONTHLY_SHEETS_ROOT = Path(os.getenv("MONTHLY_SHEETS_ROOT", str(Path(__file__).parent.parent / "storage" / "monthly_sheets")))
 STATIC_ASSET_VERSION = os.getenv("STATIC_ASSET_VERSION", str(int(datetime.now().timestamp())))
@@ -317,6 +318,18 @@ def _load_users_from_file_layers(users_from_env: dict) -> dict:
             merged.update(users_from_file)
             return merged
         return users_from_file
+
+    # Migration fallback: older releases stored users in storage/users.json.
+    users_from_legacy = load_json_dict_file(LEGACY_USERS_FILE_PATH)
+    if users_from_legacy:
+        merged = dict(users_from_env)
+        merged.update(users_from_legacy)
+        try:
+            atomic_write_json_file(USERS_FILE_PATH, merged)
+            atomic_write_json_file(USERS_FILE_BACKUP_PATH, merged)
+        except Exception:
+            pass
+        return merged
 
     # Recover from backup if main file is corrupted/empty.
     users_from_backup = load_json_dict_file(USERS_FILE_BACKUP_PATH)
@@ -3981,6 +3994,11 @@ def save_users_config(config: dict) -> None:
     # Keep local files as a portable backup for non-DB environments.
     atomic_write_json_file(USERS_FILE_PATH, merged)
     atomic_write_json_file(USERS_FILE_BACKUP_PATH, merged)
+    # Keep legacy file in sync for backward compatibility with older deployments.
+    try:
+        atomic_write_json_file(LEGACY_USERS_FILE_PATH, merged)
+    except Exception:
+        pass
 
 
 def admin_page_required(view_func):
