@@ -307,20 +307,30 @@ def _save_users_to_db(users: dict) -> bool:
 def _load_users_from_file_layers(users_from_env: dict) -> dict:
     """Legacy loader stack (env/file/backup/auto-generated)."""
     users_from_file = load_json_dict_file(USERS_FILE_PATH)
+    users_from_legacy = load_json_dict_file(LEGACY_USERS_FILE_PATH)
     if users_from_file:
+        merged = dict(users_from_env)
+        merged.update(users_from_file)
+        if users_from_legacy:
+            merged.update(users_from_legacy)
+            try:
+                atomic_write_json_file(USERS_FILE_PATH, merged)
+                atomic_write_json_file(USERS_FILE_BACKUP_PATH, merged)
+            except Exception:
+                pass
+        elif users_from_file != merged:
+            try:
+                atomic_write_json_file(USERS_FILE_BACKUP_PATH, merged)
+            except Exception:
+                pass
         # Keep backup in sync so we can recover if the main file is damaged later.
         try:
-            atomic_write_json_file(USERS_FILE_BACKUP_PATH, users_from_file)
+            atomic_write_json_file(USERS_FILE_BACKUP_PATH, merged)
         except Exception:
             pass
-        if users_from_env:
-            merged = dict(users_from_env)
-            merged.update(users_from_file)
-            return merged
-        return users_from_file
+        return merged
 
     # Migration fallback: older releases stored users in storage/users.json.
-    users_from_legacy = load_json_dict_file(LEGACY_USERS_FILE_PATH)
     if users_from_legacy:
         merged = dict(users_from_env)
         merged.update(users_from_legacy)
