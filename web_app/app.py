@@ -1103,6 +1103,7 @@ def ask_groq_chat(user_message: str, history: Optional[list] = None, data_contex
         headers={
             "Authorization": f"Bearer {GROQ_API_KEY}",
             "Content-Type": "application/json",
+            "User-Agent": "python-requests/2.31.0",
         },
         method="POST",
     )
