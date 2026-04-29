@@ -4042,7 +4042,22 @@ def fetch_data():
 def fetch_all_data():
     """Fetch & aggregate data from all sheets accessible to the current user."""
     username = session.get("username", "")
+    role = session.get("role", "employee")
     sheets = get_accessible_sheets_for_user(username)
+
+    # Fallback for accounts that can view aggregate reports but have no assigned employee sheet map yet.
+    if not sheets and role in {"lead", "admin"}:
+        fallback_url = (session.get("sheet_url") or "").strip()
+        if fallback_url:
+            sheets = [
+                {
+                    "name": session.get("display_name", username) or username,
+                    "url": fallback_url,
+                    "team": session.get("team", ""),
+                    "username": username,
+                }
+            ]
+
     if not sheets:
         return jsonify({"success": False, "error": "Không tìm thấy sheet nào cho tài khoản này."}), 404
 
