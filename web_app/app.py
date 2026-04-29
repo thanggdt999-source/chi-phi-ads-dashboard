@@ -1123,6 +1123,9 @@ def ask_groq_chat(user_message: str, history: Optional[list] = None, data_contex
             message = str(error_obj.get("message") or "").strip()
             return False, message or f"Groq HTTP {exc.code}"
         except Exception:
+            body_preview = body.strip().replace("\n", " ")[:240]
+            if body_preview:
+                return False, f"Groq HTTP {exc.code}: {body_preview}"
             return False, f"Groq HTTP {exc.code}"
     except Exception:
         return False, "Không thể kết nối AI lúc này."
