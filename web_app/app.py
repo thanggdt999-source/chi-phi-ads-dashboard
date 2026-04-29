@@ -1614,7 +1614,13 @@ def login_required(view_func):
 
         username = session.get("username", "")
         role = session.get("role", "employee")
-        if role == "employee" and request.endpoint != "employee_telegram_connect" and user_requires_telegram_setup(username):
+        account_role = session.get("account_role", role)
+        if (
+            role == "employee"
+            and account_role == "employee"
+            and request.endpoint != "employee_telegram_connect"
+            and user_requires_telegram_setup(username)
+        ):
             return redirect(url_for("employee_telegram_connect", next=request.path))
         return view_func(*args, **kwargs)
     return wrapper
@@ -1629,7 +1635,8 @@ def api_login_required(view_func):
 
         username = session.get("username", "")
         role = session.get("role", "employee")
-        if role == "employee" and user_requires_telegram_setup(username):
+        account_role = session.get("account_role", role)
+        if role == "employee" and account_role == "employee" and user_requires_telegram_setup(username):
             return jsonify({
                 "success": False,
                 "error": "Vui lòng kết nối Telegram và gửi test thành công trước khi sử dụng hệ thống.",
