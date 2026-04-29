@@ -619,6 +619,8 @@ def user_requires_telegram_setup(username: str, user: Optional[dict] = None) -> 
     if not is_telegram_report_role(target_user):
         return False
 
+    role = str(target_user.get("role", "") or "").strip()
+
     chat_id = normalize_telegram_chat_id(str(target_user.get("telegram_chat_id", "")))
     if not chat_id:
         return True
@@ -630,6 +632,9 @@ def user_requires_telegram_setup(username: str, user: Optional[dict] = None) -> 
 
     # Backward compatibility: old users may not have verified flags but already have a working chat_id.
     if "telegram_verified" not in target_user and "telegram_test_status" not in target_user:
+        return False
+
+    if role in {"lead", "admin"}:
         return False
 
     if target_user.get("telegram_test_status") == "sent":
@@ -3698,6 +3703,11 @@ def employee_telegram_connect():
         return redirect(url_for("index"))
 
     next_target = get_safe_next_url(request.args.get("next", ""))
+    role = str(user.get("role", "") or "").strip()
+    is_privileged = role in {"lead", "admin"}
+    back_url = next_target if is_privileged else url_for("logout")
+    back_text = "Về dashboard" if is_privileged else "Đăng xuất"
+    title_text = "Kết nối Telegram để nhận báo cáo" if is_privileged else "Kết nối Telegram trước khi vào hệ thống"
     form_values = {
         "telegram_chat_id": user.get("telegram_chat_id", ""),
         "telegram_username": user.get("telegram_username", ""),
@@ -3714,10 +3724,10 @@ def employee_telegram_connect():
             username=username,
             display_name=user.get("display_name", username),
             form_values=form_values,
-            back_url=url_for("logout"),
-            back_text="Đăng xuất",
+            back_url=back_url,
+            back_text=back_text,
             submit_label="Lưu và gửi test",
-            title_text="Kết nối Telegram trước khi vào hệ thống",
+            title_text=title_text,
             bind_code=bind_code,
             form_action=url_for("employee_telegram_connect", next=next_target),
         )
@@ -3740,10 +3750,10 @@ def employee_telegram_connect():
             username=username,
             display_name=user.get("display_name", username),
             form_values=form_values,
-            back_url=url_for("logout"),
-            back_text="Đăng xuất",
+            back_url=back_url,
+            back_text=back_text,
             submit_label="Lưu và gửi test",
-            title_text="Kết nối Telegram trước khi vào hệ thống",
+            title_text=title_text,
             bind_code=ensure_telegram_bind_code(username),
             form_action=url_for("employee_telegram_connect", next=next_target),
         )
@@ -3755,10 +3765,10 @@ def employee_telegram_connect():
             username=username,
             display_name=user.get("display_name", username),
             form_values=form_values,
-            back_url=url_for("logout"),
-            back_text="Đăng xuất",
+            back_url=back_url,
+            back_text=back_text,
             submit_label="Lưu và gửi test",
-            title_text="Kết nối Telegram trước khi vào hệ thống",
+            title_text=title_text,
             bind_code=ensure_telegram_bind_code(username),
             form_action=url_for("employee_telegram_connect", next=next_target),
         )
@@ -3773,10 +3783,10 @@ def employee_telegram_connect():
             username=username,
             display_name=user.get("display_name", username),
             form_values=form_values,
-            back_url=url_for("logout"),
-            back_text="Đăng xuất",
+            back_url=back_url,
+            back_text=back_text,
             submit_label="Lưu và gửi test",
-            title_text="Kết nối Telegram trước khi vào hệ thống",
+            title_text=title_text,
             bind_code=ensure_telegram_bind_code(username),
             form_action=url_for("employee_telegram_connect", next=next_target),
         )
@@ -3797,6 +3807,9 @@ def employee_telegram_connect():
     )
 
     if telegram_test != "sent":
+        if is_privileged:
+            return redirect(next_target)
+
         failed_msg = (
             "Bot Token của bạn chưa hợp lệ. Hãy kiểm tra lại Bot Token rồi thử lại."
             if telegram_test == "not_configured"
@@ -3807,10 +3820,10 @@ def employee_telegram_connect():
             username=username,
             display_name=user.get("display_name", username),
             form_values=form_values,
-            back_url=url_for("logout"),
-            back_text="Đăng xuất",
+            back_url=back_url,
+            back_text=back_text,
             submit_label="Thử gửi test lại",
-            title_text="Kết nối Telegram trước khi vào hệ thống",
+            title_text=title_text,
             bind_code=ensure_telegram_bind_code(username),
             form_action=url_for("employee_telegram_connect", next=next_target),
         )
