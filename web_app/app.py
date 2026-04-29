@@ -4148,7 +4148,22 @@ def performance_summary():
     except gspread.exceptions.WorksheetNotFound:
         return jsonify({"success": False, "error": "Không tìm thấy tab dữ liệu trong bảng hiệu suất."}), 400
     except Exception as e:
-        return jsonify({"success": False, "error": f"Không đọc được bảng hiệu suất: {str(e)}"}), 500
+        raw_error = str(e)
+        lower_error = raw_error.lower()
+        service_email = get_service_account_client_email()
+        access_links = build_sheet_access_links(sheet_id)
+        if "permission" in lower_error or "forbidden" in lower_error or "403" in lower_error:
+            return jsonify({
+                "success": False,
+                "error": "Bảng hiệu suất chưa chia sẻ cho service account (Editor/Viewer).",
+                "service_account_email": service_email,
+                "sheet_id": sheet_id,
+                "clean_url": access_links.get("clean_url", ""),
+                "share_url": access_links.get("share_url", ""),
+                "request_access_url": access_links.get("request_access_url", ""),
+                "can_auto_open_sheet": True,
+            }), 403
+        return jsonify({"success": False, "error": f"Không đọc được bảng hiệu suất: {raw_error}"}), 500
 
 
 @app.route("/api/auto-fill-status", methods=["GET"])

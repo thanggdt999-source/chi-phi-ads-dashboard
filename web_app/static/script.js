@@ -338,7 +338,11 @@ async function loadPerformanceSummary(performanceSheetUrl) {
         if (!data.success) {
             currentPerformanceMetrics = null;
             renderStats(filteredRows);
-            if (data.error) showToast(`⚠️ ${data.error}`);
+            const detail = buildSheetAccessHint(data);
+            maybeAutoOpenSheetForAccess(data);
+            if (data.error) {
+                showError(`⚠️ ${data.error}${detail ? `\n${detail}` : ""}`);
+            }
             return;
         }
 
