@@ -1033,11 +1033,9 @@ def build_ai_sheet_context() -> str:
 
 
 def ask_groq_chat(user_message: str, history: Optional[list] = None, data_context: str = "") -> tuple[bool, str]:
-    """Call Groq API (free tier) for chat completions."""
+    """Call Pollinations AI (free, no key required) for chat completions."""
     if not AI_CHAT_ENABLED:
         return False, "Tính năng AI đang tắt trên hệ thống."
-    if not GROQ_API_KEY:
-        return False, "AI chưa được cấu hình API key trên server."
 
     safe_message = (user_message or "").strip()
     if not safe_message:
@@ -1090,20 +1088,19 @@ def ask_groq_chat(user_message: str, history: Optional[list] = None, data_contex
 
     payload = json.dumps(
         {
-            "model": AI_CHAT_MODEL,
+            "model": "openai",
             "messages": messages,
             "max_tokens": AI_CHAT_MAX_TOKENS,
             "temperature": 0.7,
+            "private": True,
         }
     ).encode("utf-8")
 
     req = urllib_request.Request(
-        url="https://api.groq.com/openai/v1/chat/completions",
+        url="https://text.pollinations.ai/",
         data=payload,
         headers={
-            "Authorization": f"Bearer {GROQ_API_KEY}",
             "Content-Type": "application/json",
-            "User-Agent": "python-requests/2.31.0",
         },
         method="POST",
     )
@@ -1111,23 +1108,23 @@ def ask_groq_chat(user_message: str, history: Optional[list] = None, data_contex
     try:
         with urllib_request.urlopen(req, timeout=45) as resp:
             body = resp.read().decode("utf-8", errors="ignore")
-            parsed = json.loads(body) if body else {}
-            text = _extract_groq_text(parsed)
-            if text:
-                return True, text
+            # Pollinations POST returns plain text by default; try JSON first
+            try:
+                parsed = json.loads(body) if body else {}
+                text = _extract_groq_text(parsed)
+                if text:
+                    return True, text
+            except Exception:
+                pass
+            if body.strip():
+                return True, body.strip()
             return False, "AI chưa trả về nội dung phù hợp."
     except urllib_error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="ignore")
-        try:
-            parsed = json.loads(body) if body else {}
-            error_obj = parsed.get("error") or {}
-            message = str(error_obj.get("message") or "").strip()
-            return False, message or f"Groq HTTP {exc.code}"
-        except Exception:
-            body_preview = body.strip().replace("\n", " ")[:240]
-            if body_preview:
-                return False, f"Groq HTTP {exc.code}: {body_preview}"
-            return False, f"Groq HTTP {exc.code}"
+        body_preview = body.strip().replace("\n", " ")[:240]
+        if body_preview:
+            return False, f"AI lỗi {exc.code}: {body_preview}"
+        return False, f"AI lỗi {exc.code}"
     except Exception:
         return False, "Không thể kết nối AI lúc này."
 
