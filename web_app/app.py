@@ -16,7 +16,7 @@ import os
 import json
 from pathlib import Path
 from functools import wraps
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 from urllib import error as urllib_error
 from urllib import parse as urllib_parse
@@ -772,11 +772,16 @@ def get_safe_next_url(raw_next: str) -> str:
     return url_for("index")
 
 
-def get_notification_now() -> datetime:
+def now_in_report_tz() -> datetime:
     try:
         return datetime.now(ZoneInfo(TELEGRAM_REPORT_TIMEZONE))
     except Exception:
-        return datetime.now()
+        # Fallback for environments missing IANA tzdata (common on Windows).
+        return datetime.now(timezone(timedelta(hours=7)))
+
+
+def get_notification_now() -> datetime:
+    return now_in_report_tz()
 
 
 def is_notification_window(now: datetime) -> bool:
@@ -3132,11 +3137,7 @@ def _get_cell(row: list, idx: int) -> float:
 def fetch_performance_summary_column_based(rows: list) -> dict | None:
     """Parse sheet with column headers (e.g. Báo cáo hiệu suất tab).
     Returns metric dict or None if sheet doesn't match this format."""
-    try:
-        today_str = datetime.now(ZoneInfo(TELEGRAM_REPORT_TIMEZONE)).strftime("%d/%m/%Y")
-    except Exception:
-        from datetime import date as _date
-        today_str = _date.today().strftime("%d/%m/%Y")  # fallback
+    today_str = now_in_report_tz().strftime("%d/%m/%Y")
 
     # Find header row: prefer rows that expose core performance columns.
     header_row_idx = None
@@ -3268,12 +3269,13 @@ def fetch_performance_weekly_trend(rows: list) -> list:
             series.sort(key=lambda item: item.get("date_key", ""))
             by_key = {item["date_key"]: item for item in series}
             window = []
+            base_now = now_in_report_tz()
             for offset in range(6, -1, -1):
-                day = (datetime.now() - timedelta(days=offset)).strftime("%Y-%m-%d")
+                day = (base_now - timedelta(days=offset)).strftime("%Y-%m-%d")
                 if day in by_key:
                     window.append(by_key[day])
                 else:
-                    label = (datetime.now() - timedelta(days=offset)).strftime("%d/%m/%Y")
+                    label = (base_now - timedelta(days=offset)).strftime("%d/%m/%Y")
                     window.append({"date": label, "date_key": day, "data": 0, "revenue": 0, "ads_percent": 0.0})
             return window
         return []
@@ -3301,12 +3303,13 @@ def fetch_performance_weekly_trend(rows: list) -> list:
     series.sort(key=lambda item: item.get("date_key", ""))
     by_key = {item["date_key"]: item for item in series}
     window = []
+    base_now = now_in_report_tz()
     for offset in range(6, -1, -1):
-        day = (datetime.now() - timedelta(days=offset)).strftime("%Y-%m-%d")
+        day = (base_now - timedelta(days=offset)).strftime("%Y-%m-%d")
         if day in by_key:
             window.append(by_key[day])
         else:
-            label = (datetime.now() - timedelta(days=offset)).strftime("%d/%m/%Y")
+            label = (base_now - timedelta(days=offset)).strftime("%d/%m/%Y")
             window.append({"date": label, "date_key": day, "data": 0, "revenue": 0, "ads_percent": 0.0})
     return window
 
@@ -3315,12 +3318,7 @@ def _extract_fixed_summary_values(rows: list, col_idx: int) -> tuple[float, floa
     if not rows:
         return 0.0, 0.0
 
-    try:
-        today = datetime.now(ZoneInfo(TELEGRAM_REPORT_TIMEZONE)).date()
-    except Exception:
-        today = datetime.now(ZoneInfo(TELEGRAM_REPORT_TIMEZONE)).date()
-    except Exception:
-        today = date.today()
+    today = now_in_report_tz().date()
     month_val = None
     day_val = None
 
