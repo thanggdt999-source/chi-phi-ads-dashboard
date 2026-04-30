@@ -9,13 +9,14 @@ import unicodedata
 
 from flask import Flask, render_template, render_template_string, request, jsonify, session, redirect, url_for
 from google.oauth2.service_account import Credentials
+from google.auth.transport.requests import Request as GoogleAuthRequest
 import gspread
 import re
 import os
+import json
 from pathlib import Path
 from functools import wraps
 from datetime import date, datetime, timedelta
-import json
 from typing import Optional
 from urllib import error as urllib_error
 from urllib import parse as urllib_parse
@@ -1506,27 +1507,27 @@ def sync_builtin_admin_performance_sheet_date(target_date: Optional[date] = None
 
     try:
         sheet_id = extract_sheet_id(perf_url)
-        client = get_gspread_client()
-        spreadsheet = client.open_by_key(sheet_id)
-        tong_ws = resolve_optional_worksheet(spreadsheet, ["TỔNG", "Tong", "Tổng"])
-        if tong_ws is None:
-            return False, "Không tìm thấy tab Tổng"
-
-        try:
-            spreadsheet.batch_update({
-                "requests": [{"clearBasicFilter": {"sheetId": tong_ws.id}}]
-            })
-        except Exception:
-            pass
-
         effective_date = target_date or get_notification_now().date()
         today_str = effective_date.strftime("%d/%m/%Y")
-        tong_ws.update(
-            values=[[today_str, today_str]],
-            range_name="AC1:AD1",
-            value_input_option="USER_ENTERED",
-        )
-        return True, today_str
+        candidate_ranges = [
+            "'TỔNG'!AC1:AD1",
+            "'Tổng'!AC1:AD1",
+            "Tong!AC1:AD1",
+        ]
+        last_error = "Không tìm thấy tab Tổng"
+        for range_name in candidate_ranges:
+            try:
+                update_google_sheet_values_direct(sheet_id, range_name, [[today_str, today_str]])
+                return True, today_str
+            except urllib_error.HTTPError as exc:
+                body = exc.read().decode("utf-8", errors="ignore")
+                body_lower = body.lower()
+                if exc.code == 400 and ("unable to parse range" in body_lower or "range" in body_lower):
+                    last_error = body.strip() or f"Google Sheets HTTP {exc.code}"
+                    continue
+                return False, body.strip() or f"Google Sheets HTTP {exc.code}"
+
+        return False, last_error
     except Exception as exc:
         return False, str(exc)
 
@@ -2202,18 +2203,17 @@ def save_auto_fill_enabled(enabled: bool) -> None:
     with AUTO_STATE_PATH.open("w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
-def get_gspread_client():
+
+def build_google_credentials() -> Credentials:
     scopes = [
         "https://spreadsheets.google.com/feeds",
         "https://www.googleapis.com/auth/drive",
     ]
 
-    # Uu tien credentials tu bien moi truong de deploy cloud (Render, Railway, ...)
     service_account_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
     if service_account_json:
         service_account_info = json.loads(service_account_json)
-        creds = Credentials.from_service_account_info(service_account_info, scopes=scopes)
-        return gspread.authorize(creds)
+        return Credentials.from_service_account_info(service_account_info, scopes=scopes)
 
     if not SERVICE_ACCOUNT_PATH.exists():
         raise FileNotFoundError(
@@ -2221,8 +2221,34 @@ def get_gspread_client():
             f"{SERVICE_ACCOUNT_PATH}"
         )
 
-    creds = Credentials.from_service_account_file(str(SERVICE_ACCOUNT_PATH), scopes=scopes)
-    return gspread.authorize(creds)
+    return Credentials.from_service_account_file(str(SERVICE_ACCOUNT_PATH), scopes=scopes)
+
+
+def get_gspread_client():
+    return gspread.authorize(build_google_credentials())
+
+
+def update_google_sheet_values_direct(sheet_id: str, range_name: str, values: list[list[str]]) -> dict:
+    creds = build_google_credentials()
+    if not creds.valid or creds.expired or not creds.token:
+        creds.refresh(GoogleAuthRequest())
+
+    encoded_range = urllib_parse.quote(range_name, safe="")
+    req = urllib_request.Request(
+        url=(
+            f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}/values/{encoded_range}"
+            "?valueInputOption=USER_ENTERED"
+        ),
+        data=json.dumps({"range": range_name, "majorDimension": "ROWS", "values": values}).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {creds.token}",
+            "Content-Type": "application/json",
+        },
+        method="PUT",
+    )
+    with urllib_request.urlopen(req, timeout=30) as resp:
+        body = resp.read().decode("utf-8", errors="ignore")
+    return json.loads(body) if body else {}
 
 def extract_sheet_id(url):
     """Extract sheet ID from common Google Sheets URL formats or raw ID."""
