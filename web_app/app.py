@@ -3094,8 +3094,11 @@ def _get_cell(row: list, idx: int) -> float:
 def fetch_performance_summary_column_based(rows: list) -> dict | None:
     """Parse sheet with column headers (e.g. Báo cáo hiệu suất tab).
     Returns metric dict or None if sheet doesn't match this format."""
-    from datetime import date
-    today_str = date.today().strftime("%d/%m/%Y")  # e.g. 28/04/2026
+    try:
+        today_str = datetime.now(ZoneInfo(TELEGRAM_REPORT_TIMEZONE)).strftime("%d/%m/%Y")
+    except Exception:
+        from datetime import date as _date
+        today_str = _date.today().strftime("%d/%m/%Y")  # fallback
 
     # Find header row: prefer rows that expose core performance columns.
     header_row_idx = None
@@ -3274,7 +3277,12 @@ def _extract_fixed_summary_values(rows: list, col_idx: int) -> tuple[float, floa
     if not rows:
         return 0.0, 0.0
 
-    today = date.today()
+    try:
+        today = datetime.now(ZoneInfo(TELEGRAM_REPORT_TIMEZONE)).date()
+    except Exception:
+        today = datetime.now(ZoneInfo(TELEGRAM_REPORT_TIMEZONE)).date()
+    except Exception:
+        today = date.today()
     month_val = None
     day_val = None
 
