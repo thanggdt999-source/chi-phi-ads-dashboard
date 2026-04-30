@@ -1057,66 +1057,49 @@ def ask_groq_chat(user_message: str, history: Optional[list] = None, data_contex
             "Neu ngu canh khong co du lieu can thiet, phai noi ro khong du du lieu."
         )
 
-    messages = [
-        {
-            "role": "system",
-            "content": system_text,
-        }
+    prompt_lines = [
+        "Ban la tro ly AI cho dashboard chi phi ads.",
+        "Tra loi ngan gon, thuc te, uu tien so lieu va hanh dong ro rang bang tieng Viet.",
+        "",
+        "Ngu canh he thong:",
+        system_text,
+        "",
     ]
 
-    for item in history_items:
-        if not isinstance(item, dict):
-            continue
-        role = str(item.get("role") or "").strip().lower()
-        if role not in {"user", "assistant"}:
-            continue
-        content_text = str(item.get("content") or "").strip()
-        if not content_text:
-            continue
-        messages.append(
-            {
-                "role": role,
-                "content": content_text[:2000],
-            }
-        )
+    if history_items:
+        prompt_lines.append("Lich su hoi dap gan day:")
+        for item in history_items:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role") or "").strip().lower()
+            if role not in {"user", "assistant"}:
+                continue
+            content_text = str(item.get("content") or "").strip()
+            if not content_text:
+                continue
+            speaker = "Nguoi dung" if role == "user" else "Tro ly"
+            prompt_lines.append(f"{speaker}: {content_text[:500]}")
+        prompt_lines.append("")
 
-    messages.append(
-        {
-            "role": "user",
-            "content": safe_message[:3000],
-        }
-    )
+    prompt_lines.append("Cau hoi hien tai:")
+    prompt_lines.append(safe_message[:3000])
+    prompt_lines.append("")
+    prompt_lines.append("Hay tra loi bang tieng Viet.")
 
-    payload = json.dumps(
-        {
-            "model": "openai",
-            "messages": messages,
-            "max_tokens": AI_CHAT_MAX_TOKENS,
-            "temperature": 0.7,
-            "private": True,
-        }
-    ).encode("utf-8")
-
+    prompt_text = "\n".join(prompt_lines).strip()
+    encoded_prompt = urllib_parse.quote(prompt_text, safe="")
     req = urllib_request.Request(
-        url="https://text.pollinations.ai/",
-        data=payload,
+        url=f"https://text.pollinations.ai/{encoded_prompt}",
         headers={
-            "Content-Type": "application/json",
+            "User-Agent": "python-urllib/3",
+            "Accept": "text/plain",
         },
-        method="POST",
+        method="GET",
     )
 
     try:
         with urllib_request.urlopen(req, timeout=45) as resp:
             body = resp.read().decode("utf-8", errors="ignore")
-            # Pollinations POST returns plain text by default; try JSON first
-            try:
-                parsed = json.loads(body) if body else {}
-                text = _extract_groq_text(parsed)
-                if text:
-                    return True, text
-            except Exception:
-                pass
             if body.strip():
                 return True, body.strip()
             return False, "AI chưa trả về nội dung phù hợp."
