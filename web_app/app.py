@@ -78,8 +78,6 @@ TELEGRAM_SELF_SCHEDULER_TICK_SECONDS = max(10, min(300, int(os.getenv("TELEGRAM_
 TELEGRAM_REPORT_MAX_PRODUCTS = max(1, int(os.getenv("TELEGRAM_REPORT_MAX_PRODUCTS", "8")))
 SESSION_TIMEOUT_SECONDS = int(os.getenv("SESSION_TIMEOUT_SECONDS", "600"))  # 10 minutes
 AI_CHAT_ENABLED = (os.getenv("AI_CHAT_ENABLED", "1") or "1").strip().lower() in {"1", "true", "yes", "on"}
-GROQ_API_KEY = (os.getenv("GROQ_API_KEY") or "").strip()
-AI_CHAT_MODEL = (os.getenv("AI_CHAT_MODEL") or "llama-3.1-8b-instant").strip() or "llama-3.1-8b-instant"
 AI_CHAT_MAX_TOKENS = max(128, min(1200, int(os.getenv("AI_CHAT_MAX_TOKENS", "500"))))
 META_GRAPH_VERSION = os.getenv("META_GRAPH_VERSION", "v20.0").strip() or "v20.0"
 META_ACCESS_TOKEN_PATH = Path(
@@ -914,24 +912,6 @@ def send_telegram_message(chat_id: str, text: str, bot_token: str = "") -> tuple
             return False, f"Telegram HTTP {exc.code}"
     except Exception:
         return False, "Không thể kết nối Telegram lúc này."
-
-
-def _extract_groq_text(payload: dict) -> str:
-    """Extract text from Groq chat completions API response."""
-    choices = payload.get("choices")
-    if not isinstance(choices, list) or len(choices) == 0:
-        return ""
-
-    choice = choices[0]
-    if not isinstance(choice, dict):
-        return ""
-
-    message = choice.get("message")
-    if not isinstance(message, dict):
-        return ""
-
-    content = str(message.get("content") or "").strip()
-    return content
 
 
 def build_ai_sheet_context() -> str:

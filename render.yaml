@@ -40,26 +40,7 @@ services:
         value: "true"
       - key: TELEGRAM_SELF_SCHEDULER_TICK_SECONDS
         value: "25"
-      - key: GROQ_API_KEY
-        sync: false
       - key: AI_CHAT_ENABLED
         value: "true"
-      - key: AI_CHAT_MODEL
-        value: "llama-3.1-8b-instant"
       - key: AI_CHAT_MAX_TOKENS
         value: "500"
-
-  - type: cron
-    name: chi-phi-ads-telegram-cron
-    runtime: python
-    schedule: "0 * * * *"
-    buildCommand: pip install --disable-pip-version-check --quiet requests
-    startCommand: >-
-      python -c "import os, requests; r=requests.post(os.environ['TELEGRAM_REPORT_ENDPOINT'],
-      headers={'Authorization': f\"Bearer {os.environ['INTERNAL_CRON_SECRET']}\", 'Content-Type': 'application/json'},
-      json={'force': False}, timeout=60); print(r.status_code, r.text); r.raise_for_status()"
-    envVars:
-      - key: INTERNAL_CRON_SECRET
-        sync: false
-      - key: TELEGRAM_REPORT_ENDPOINT
-        value: https://ads.hexistoree.click/internal/telegram/reports/run
