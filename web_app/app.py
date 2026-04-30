@@ -1499,6 +1499,38 @@ def build_management_report_message(username: str, user: dict, now: datetime, us
     return True, message, "OK"
 
 
+def sync_builtin_admin_performance_sheet_date(target_date: Optional[date] = None) -> tuple[bool, str]:
+    perf_url = BUILTIN_ADMIN_PERFORMANCE_SHEET_URL
+    if not perf_url:
+        return False, "Chưa cấu hình BUILTIN_ADMIN_PERFORMANCE_SHEET_URL"
+
+    try:
+        sheet_id = extract_sheet_id(perf_url)
+        client = get_gspread_client()
+        spreadsheet = client.open_by_key(sheet_id)
+        tong_ws = resolve_optional_worksheet(spreadsheet, ["TỔNG", "Tong", "Tổng"])
+        if tong_ws is None:
+            return False, "Không tìm thấy tab Tổng"
+
+        try:
+            spreadsheet.batch_update({
+                "requests": [{"clearBasicFilter": {"sheetId": tong_ws.id}}]
+            })
+        except Exception:
+            pass
+
+        effective_date = target_date or get_notification_now().date()
+        today_str = effective_date.strftime("%d/%m/%Y")
+        tong_ws.update(
+            values=[[today_str, today_str]],
+            range_name="AC1:AD1",
+            value_input_option="USER_ENTERED",
+        )
+        return True, today_str
+    except Exception as exc:
+        return False, str(exc)
+
+
 def run_telegram_report_job(*, force: bool = False, dry_run: bool = False, usernames: Optional[list] = None) -> dict:
     now = get_notification_now()
     slot = get_notification_slot(now)
@@ -1513,6 +1545,22 @@ def run_telegram_report_job(*, force: bool = False, dry_run: bool = False, usern
 
     users = load_users_config()
     selected = set(usernames or [])
+    should_sync_builtin_sheet = any(
+        is_telegram_report_role(user)
+        and str(user.get("role", "") or "").strip() in {"admin", "lead"}
+        and (not selected or username in selected)
+        for username, user in users.items()
+    )
+    sheet_sync = {"attempted": False, "success": False, "date_set": "", "error": ""}
+    if should_sync_builtin_sheet:
+        sheet_sync["attempted"] = True
+        sync_ok, sync_info = sync_builtin_admin_performance_sheet_date(now.date())
+        if sync_ok:
+            sheet_sync["success"] = True
+            sheet_sync["date_set"] = sync_info
+        else:
+            sheet_sync["error"] = sync_info
+
     results = []
     sent_count = 0
     sent_slots = []
@@ -1575,6 +1623,7 @@ def run_telegram_report_job(*, force: bool = False, dry_run: bool = False, usern
     return {
         "success": True,
         "slot": slot,
+        "sheet_sync": sheet_sync,
         "pending_slots": pending_slots,
         "processed_slots": sent_slots,
         "skipped": False,
@@ -5199,39 +5248,11 @@ def run_internal_daily_sheet_reset():
     if not expected or auth_header != expected:
         return jsonify({"success": False, "error": "Unauthorized"}), 401
 
-    perf_url = os.environ.get("BUILTIN_ADMIN_PERFORMANCE_SHEET_URL", "")
-    if not perf_url:
-        return jsonify({"success": False, "error": "Chưa cấu hình BUILTIN_ADMIN_PERFORMANCE_SHEET_URL"}), 400
+    sync_ok, sync_info = sync_builtin_admin_performance_sheet_date()
+    if not sync_ok:
+        return jsonify({"success": False, "error": sync_info}), 400
 
-    try:
-        sheet_id = extract_sheet_id(perf_url)
-        client = get_gspread_client()
-        spreadsheet = client.open_by_key(sheet_id)
-        tong_ws = resolve_optional_worksheet(spreadsheet, ["TỔNG", "Tong", "Tổng"])
-        if tong_ws is None:
-            return jsonify({"success": False, "error": "Không tìm thấy tab Tổng"}), 400
-
-        # Bước 1: xóa bộ lọc đang active (nếu có)
-        try:
-            spreadsheet.batch_update({
-                "requests": [{"clearBasicFilter": {"sheetId": tong_ws.id}}]
-            })
-        except Exception:
-            pass  # Không có filter thì bỏ qua
-
-        # Bước 2: ghi ngày hôm nay vào AC1:AD1 với USER_ENTERED
-        # để Google Sheets xử lý như người dùng nhập → khớp data validation dropdown
-        today_str = datetime.now(tz=ZoneInfo(TELEGRAM_REPORT_TIMEZONE)).strftime("%d/%m/%Y")
-        tong_ws.update(
-            values=[[today_str, today_str]],
-            range_name="AC1:AD1",
-            value_input_option="USER_ENTERED",
-        )
-
-        return jsonify({"success": True, "date_set": today_str})
-
-    except Exception as exc:
-        return jsonify({"success": False, "error": str(exc)}), 500
+    return jsonify({"success": True, "date_set": sync_info})
 
 
 
