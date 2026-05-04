@@ -1019,43 +1019,68 @@ def build_ai_sheet_context() -> str:
 
 
 def should_use_ads_data_context(user_message: str, history: Optional[list] = None) -> bool:
-    text_parts = [str(user_message or "")]
-    if isinstance(history, list):
-        for item in history[-6:]:
-            if not isinstance(item, dict):
-                continue
-            if str(item.get("role") or "").strip().lower() != "user":
-                continue
-            text_parts.append(str(item.get("content") or ""))
+    def normalize_text(value: str) -> str:
+        lowered = (value or "").lower()
+        normalized = unicodedata.normalize("NFD", lowered)
+        no_accents = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
+        return re.sub(r"\s+", " ", no_accents).strip()
 
-    text = " ".join(text_parts).lower()
-    keywords = [
+    message_text = normalize_text(str(user_message or ""))
+    if not message_text:
+        return False
+
+    work_keywords = [
         "ads",
         "chi phi",
-        "chi phí",
         "doanh thu",
-        "doanh số",
+        "doanh so",
         "kpi",
         "cpd",
         "cpr",
+        "cpa",
         "roi",
         "roas",
         "campaign",
         "quang cao",
-        "quảng cáo",
-        "data",
         "sheet",
-        "bang",
-        "bảng",
         "ngan sach",
-        "ngân sách",
         "hieu suat",
-        "hiệu suất",
         "meta",
-        "facebook",
-        "tiktok",
+        "facebook ads",
+        "tiktok ads",
+        "chi so",
+        "bao cao",
     ]
-    return any(keyword in text for keyword in keywords)
+
+    if any(keyword in message_text for keyword in work_keywords):
+        return True
+
+    if not isinstance(history, list):
+        return False
+
+    follow_up_hints = [
+        "chi tiet hon",
+        "giai thich them",
+        "phan tich them",
+        "goi y them",
+        "toi uu",
+        "vay con",
+        "con cai",
+        "the con",
+    ]
+    is_follow_up = any(hint in message_text for hint in follow_up_hints)
+    if not is_follow_up:
+        return False
+
+    for item in reversed(history[-4:]):
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("role") or "").strip().lower() != "user":
+            continue
+        previous_text = normalize_text(str(item.get("content") or ""))
+        if any(keyword in previous_text for keyword in work_keywords):
+            return True
+    return False
 
 
 def ask_groq_chat(user_message: str, history: Optional[list] = None, data_context: str = "") -> tuple[bool, str]:
@@ -1089,15 +1114,26 @@ def ask_groq_chat(user_message: str, history: Optional[list] = None, data_contex
             "Chi dua vi du lien quan ads khi nguoi dung thuc su yeu cau."
         )
 
-    prompt_lines = [
-        "Ban la tro ly AI cho web app.",
-        "Neu cau hoi la hoi thoai thong thuong, hay tra loi tu nhien nhu AI chatbot thong thuong.",
-        "Neu cau hoi lien quan ads/so lieu, hay tra loi co cau truc ngan gon va uu tien hanh dong.",
-        "",
-        "Ngu canh he thong:",
-        system_text,
-        "",
-    ]
+    if has_data_context:
+        prompt_lines = [
+            "Ban la tro ly AI cho web app.",
+            "Nguoi dung dang hoi ve cong viec ads/so lieu.",
+            "Tra loi co cau truc ngan gon, uu tien hanh dong va so lieu tu ngu canh.",
+            "",
+            "Ngu canh he thong:",
+            system_text,
+            "",
+        ]
+    else:
+        prompt_lines = [
+            "Ban la AI assistant hoi thoai tu nhien bang tieng Viet.",
+            "Tra loi than thien, de hieu nhu chatbot thong thuong.",
+            "Chi dua noi dung cong viec/ads khi nguoi dung hoi ro rang ve cong viec.",
+            "",
+            "Huong dan he thong:",
+            system_text,
+            "",
+        ]
 
     if history_items:
         prompt_lines.append("Lich su hoi dap gan day:")
