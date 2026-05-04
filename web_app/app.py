@@ -1109,16 +1109,40 @@ def _strip_ads_noise_for_general_chat(reply: str) -> str:
         "neu can phan tich chi phi quang cao",
         "nếu cần tối ưu ads",
         "neu can toi uu ads",
+        "uu tien tang ngan sach",
+        "giam ngan sach",
+        "tang ngan sach",
+        "thu thap du lieu cpc",
+        "thu thap du lieu cpm",
+        "du lieu cpc",
+        "du lieu cpm",
+        "dat muc tieu ctr",
+        "chay a/b test",
+        "chay ab test",
+        "ngân sách quảng cáo",
+        "tu khoa quang cao",
+        "nhom quang cao",
+        "nhóm quảng cáo",
+        "mo hinh du bao",
+        "mo hinh ai",
+        "prophet",
+        "xgboost",
+        "dieu chinh chi so dat muc tieu",
     ]
 
     cleaned_lines = []
     for line in text.splitlines():
-        normalized = unicodedata.normalize("NFD", line.lower())
-        normalized = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
-        normalized = re.sub(r"\s+", " ", normalized).strip()
-        if any(marker in normalized for marker in blocked_markers):
-            continue
-        cleaned_lines.append(line)
+        # Split each line into sentences to avoid removing valid content on the same line
+        parts = re.split(r"(?<=[.!?])\s+", line)
+        kept_parts = []
+        for part in parts:
+            normalized = unicodedata.normalize("NFD", part.lower())
+            normalized = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if not any(marker in normalized for marker in blocked_markers):
+                kept_parts.append(part)
+        if kept_parts:
+            cleaned_lines.append(" ".join(kept_parts))
 
     cleaned_text = "\n".join(cleaned_lines).strip()
     if cleaned_text:
