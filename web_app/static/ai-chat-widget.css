@@ -14,12 +14,13 @@
     user-select: none;
     z-index: 10050;
     color: #ffffff;
-    background: linear-gradient(135deg, #0284c7, #1d4ed8);
-    box-shadow: 0 14px 34px rgba(2, 132, 199, 0.45);
+    background: linear-gradient(135deg, #6d28d9 0%, #a855f7 48%, #facc15 100%);
+    box-shadow: 0 14px 34px rgba(109, 40, 217, 0.36);
 }
 
 .ai-chat-fab:hover {
     filter: brightness(1.06);
+    box-shadow: 0 16px 36px rgba(109, 40, 217, 0.42);
 }
 
 .ai-chat-fab.dragging {
@@ -137,7 +138,7 @@
     font-weight: 700;
     cursor: pointer;
     color: #ffffff;
-    background: linear-gradient(135deg, #0284c7, #1d4ed8);
+    background: linear-gradient(135deg, #6d28d9 0%, #a855f7 48%, #facc15 100%);
 }
 
 @media (max-width: 640px) {
