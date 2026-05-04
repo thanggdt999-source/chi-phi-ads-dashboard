@@ -43,7 +43,7 @@
     panel.className = "ai-chat-panel";
     panel.innerHTML = ""
         + '<div class="ai-chat-header">'
-        + '  <div class="ai-chat-title"><i class="fas fa-robot"></i> Chat với AI trợ lý</div>'
+        + '  <div class="ai-chat-title"><i class="fa-solid fa-wand-magic-sparkles"></i> Chat với AI trợ lý</div>'
         + '  <button type="button" class="ai-chat-close" aria-label="Đóng">×</button>'
         + '</div>'
         + '<div class="ai-chat-body" id="aiChatBody"></div>'
@@ -57,7 +57,7 @@
     fab.type = "button";
     fab.className = "ai-chat-fab";
     fab.setAttribute("aria-label", "Mở chat AI");
-    fab.innerHTML = '<i class="fas fa-comment-dots"></i>';
+    fab.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i>';
 
     document.body.appendChild(panel);
     document.body.appendChild(fab);
