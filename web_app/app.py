@@ -1018,6 +1018,46 @@ def build_ai_sheet_context() -> str:
     return "\n".join(lines)
 
 
+def should_use_ads_data_context(user_message: str, history: Optional[list] = None) -> bool:
+    text_parts = [str(user_message or "")]
+    if isinstance(history, list):
+        for item in history[-6:]:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("role") or "").strip().lower() != "user":
+                continue
+            text_parts.append(str(item.get("content") or ""))
+
+    text = " ".join(text_parts).lower()
+    keywords = [
+        "ads",
+        "chi phi",
+        "chi phí",
+        "doanh thu",
+        "doanh số",
+        "kpi",
+        "cpd",
+        "cpr",
+        "roi",
+        "roas",
+        "campaign",
+        "quang cao",
+        "quảng cáo",
+        "data",
+        "sheet",
+        "bang",
+        "bảng",
+        "ngan sach",
+        "ngân sách",
+        "hieu suat",
+        "hiệu suất",
+        "meta",
+        "facebook",
+        "tiktok",
+    ]
+    return any(keyword in text for keyword in keywords)
+
+
 def ask_groq_chat(user_message: str, history: Optional[list] = None, data_context: str = "") -> tuple[bool, str]:
     """Call Pollinations AI (free, no key required) for chat completions."""
     if not AI_CHAT_ENABLED:
@@ -1030,21 +1070,29 @@ def ask_groq_chat(user_message: str, history: Optional[list] = None, data_contex
     history_items = history if isinstance(history, list) else []
     history_items = history_items[-8:]
 
-    system_text = (
-        "Ban la tro ly AI cho dashboard chi phi ads. "
-        "Tra loi ngan gon, thuc te, uu tien so lieu va hanh dong ro rang bang tieng Viet."
-    )
-    if data_context.strip():
+    has_data_context = bool(data_context.strip())
+    if has_data_context:
+        system_text = (
+            "Ban la tro ly AI cho dashboard chi phi ads. "
+            "Tra loi ngan gon, thuc te, uu tien so lieu va hanh dong ro rang bang tieng Viet."
+        )
         system_text += (
             "\n\nDu lieu noi bo tu cac bang ma nguoi dung duoc phep xem (cap nhat tai thoi diem goi):\n"
             f"{data_context.strip()}\n\n"
             "Chi su dung cac so lieu trong ngu canh tren khi tra loi ve du lieu. "
             "Neu ngu canh khong co du lieu can thiet, phai noi ro khong du du lieu."
         )
+    else:
+        system_text = (
+            "Ban la mot AI assistant hoi thoai tu nhien bang tieng Viet. "
+            "Tra loi than thien, ro rang, de hieu nhu mot chatbot AI thong thuong. "
+            "Chi dua vi du lien quan ads khi nguoi dung thuc su yeu cau."
+        )
 
     prompt_lines = [
-        "Ban la tro ly AI cho dashboard chi phi ads.",
-        "Tra loi ngan gon, thuc te, uu tien so lieu va hanh dong ro rang bang tieng Viet.",
+        "Ban la tro ly AI cho web app.",
+        "Neu cau hoi la hoi thoai thong thuong, hay tra loi tu nhien nhu AI chatbot thong thuong.",
+        "Neu cau hoi lien quan ads/so lieu, hay tra loi co cau truc ngan gon va uu tien hanh dong.",
         "",
         "Ngu canh he thong:",
         system_text,
@@ -1082,20 +1130,28 @@ def ask_groq_chat(user_message: str, history: Optional[list] = None, data_contex
         method="GET",
     )
 
-    try:
-        with urllib_request.urlopen(req, timeout=45) as resp:
-            body = resp.read().decode("utf-8", errors="ignore")
-            if body.strip():
-                return True, body.strip()
-            return False, "AI chưa trả về nội dung phù hợp."
-    except urllib_error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="ignore")
-        body_preview = body.strip().replace("\n", " ")[:240]
-        if body_preview:
-            return False, f"AI lỗi {exc.code}: {body_preview}"
-        return False, f"AI lỗi {exc.code}"
-    except Exception:
-        return False, "Không thể kết nối AI lúc này."
+    last_error = ""
+    for attempt in range(3):
+        try:
+            with urllib_request.urlopen(req, timeout=30) as resp:
+                body = resp.read().decode("utf-8", errors="ignore")
+                if body.strip():
+                    return True, body.strip()
+                return False, "AI chưa trả về nội dung phù hợp."
+        except urllib_error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="ignore")
+            body_preview = body.strip().replace("\n", " ")[:240]
+            if body_preview:
+                return False, f"AI lỗi {exc.code}: {body_preview}"
+            return False, f"AI lỗi {exc.code}"
+        except Exception as exc:
+            last_error = str(exc).strip() or exc.__class__.__name__
+            if attempt == 2:
+                break
+
+    if last_error:
+        return False, f"Không thể kết nối AI lúc này ({last_error[:140]})."
+    return False, "Không thể kết nối AI lúc này."
 
 
 def ask_openai_chat(user_message: str, history: Optional[list] = None, data_context: str = "") -> tuple[bool, str]:
@@ -5207,7 +5263,9 @@ def ai_chat_message():
     if len(message) > 3000:
         return jsonify({"success": False, "error": "Nội dung quá dài (tối đa 3000 ký tự)."}), 400
 
-    data_context = build_ai_sheet_context()
+    data_context = ""
+    if should_use_ads_data_context(message, history):
+        data_context = build_ai_sheet_context()
     ok, reply = ask_openai_chat(message, history, data_context=data_context)
     if not ok:
         return jsonify({"success": False, "error": reply}), 400
