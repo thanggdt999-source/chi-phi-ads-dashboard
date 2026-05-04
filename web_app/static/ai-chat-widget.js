@@ -194,7 +194,26 @@
                     history: history.slice(-10),
                 }),
             });
-            var data = await res.json();
+            var rawBody = await res.text();
+            var contentType = (res.headers.get("content-type") || "").toLowerCase();
+            var data = null;
+
+            if (contentType.indexOf("application/json") >= 0) {
+                try {
+                    data = rawBody ? JSON.parse(rawBody) : {};
+                } catch (_) {
+                    data = null;
+                }
+            }
+
+            if (!data) {
+                var preview = (rawBody || "").trim().replace(/\s+/g, " ").slice(0, 160);
+                if (preview.toLowerCase().indexOf("<!doctype") === 0 || preview.toLowerCase().indexOf("<html") === 0) {
+                    throw new Error("Server chat trả về trang lỗi HTML thay vì JSON. Cần kiểm tra backend/log deploy.");
+                }
+                throw new Error(preview || "Chat AI trả về dữ liệu không hợp lệ.");
+            }
+
             if (!res.ok || !data.success) {
                 throw new Error((data && data.error) || "AI đang bận, thử lại sau.");
             }

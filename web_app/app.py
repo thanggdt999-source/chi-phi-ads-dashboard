@@ -5254,23 +5254,31 @@ def list_sheets():
 
 @app.route("/api/ai/chat", methods=["POST"])
 def ai_chat_message():
-    data = request.get_json(silent=True) or {}
-    message = str(data.get("message") or "").strip()
-    history = data.get("history") if isinstance(data.get("history"), list) else []
+    try:
+        data = request.get_json(silent=True) or {}
+        message = str(data.get("message") or "").strip()
+        history = data.get("history") if isinstance(data.get("history"), list) else []
 
-    if not message:
-        return jsonify({"success": False, "error": "Vui lòng nhập nội dung cần hỏi AI."}), 400
-    if len(message) > 3000:
-        return jsonify({"success": False, "error": "Nội dung quá dài (tối đa 3000 ký tự)."}), 400
+        if not message:
+            return jsonify({"success": False, "error": "Vui lòng nhập nội dung cần hỏi AI."}), 400
+        if len(message) > 3000:
+            return jsonify({"success": False, "error": "Nội dung quá dài (tối đa 3000 ký tự)."}), 400
 
-    data_context = ""
-    if should_use_ads_data_context(message, history):
-        data_context = build_ai_sheet_context()
-    ok, reply = ask_openai_chat(message, history, data_context=data_context)
-    if not ok:
-        return jsonify({"success": False, "error": reply}), 400
+        data_context = ""
+        if should_use_ads_data_context(message, history):
+            data_context = build_ai_sheet_context()
+        ok, reply = ask_openai_chat(message, history, data_context=data_context)
+        if not ok:
+            return jsonify({"success": False, "error": reply}), 400
 
-    return jsonify({"success": True, "reply": reply})
+        return jsonify({"success": True, "reply": reply})
+    except Exception as exc:
+        app.logger.exception("AI chat request failed")
+        detail = str(exc).strip() or exc.__class__.__name__
+        return jsonify({
+            "success": False,
+            "error": f"Hệ thống chat AI đang lỗi nội bộ: {detail[:180]}",
+        }), 500
 
 
 @app.route("/internal/telegram/reports/run", methods=["POST"])
