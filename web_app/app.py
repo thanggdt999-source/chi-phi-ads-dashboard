@@ -79,6 +79,11 @@ TELEGRAM_REPORT_MAX_PRODUCTS = max(1, int(os.getenv("TELEGRAM_REPORT_MAX_PRODUCT
 SESSION_TIMEOUT_SECONDS = int(os.getenv("SESSION_TIMEOUT_SECONDS", "600"))  # 10 minutes
 AI_CHAT_ENABLED = (os.getenv("AI_CHAT_ENABLED", "1") or "1").strip().lower() in {"1", "true", "yes", "on"}
 AI_CHAT_MAX_TOKENS = max(128, min(1200, int(os.getenv("AI_CHAT_MAX_TOKENS", "500"))))
+AI_CHAT_POLLINATIONS_MODELS = [
+    m.strip()
+    for m in (os.getenv("AI_CHAT_POLLINATIONS_MODELS", "openai,mistral,llama,claude") or "").split(",")
+    if m.strip()
+]
 META_GRAPH_VERSION = os.getenv("META_GRAPH_VERSION", "v20.0").strip() or "v20.0"
 META_ACCESS_TOKEN_PATH = Path(
     os.getenv(
@@ -1083,6 +1088,63 @@ def should_use_ads_data_context(user_message: str, history: Optional[list] = Non
     return False
 
 
+def _looks_like_html_payload(text: str) -> bool:
+    preview = (text or "").lstrip().lower()
+    return preview.startswith("<!doctype") or preview.startswith("<html")
+
+
+def _strip_ads_noise_for_general_chat(reply: str) -> str:
+    text = (reply or "").strip()
+    if not text:
+        return text
+
+    blocked_markers = [
+        "chi phi quang cao",
+        "chi phí quảng cáo",
+        "roas",
+        "kpi",
+        "campaign",
+        "toi uu ads",
+        "nếu cần phân tích chi phí quảng cáo",
+        "neu can phan tich chi phi quang cao",
+        "nếu cần tối ưu ads",
+        "neu can toi uu ads",
+    ]
+
+    cleaned_lines = []
+    for line in text.splitlines():
+        normalized = unicodedata.normalize("NFD", line.lower())
+        normalized = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+        if any(marker in normalized for marker in blocked_markers):
+            continue
+        cleaned_lines.append(line)
+
+    cleaned_text = "\n".join(cleaned_lines).strip()
+    if cleaned_text:
+        return cleaned_text
+    return "Xin loi dai ca, em bi loi ngat mach khi tra loi. Dai ca thu gui lai mot cau nua nhe."
+
+
+def _call_pollinations_text(prompt_text: str, model_name: str, timeout: int = 30) -> tuple[bool, str, int]:
+    encoded_prompt = urllib_parse.quote(prompt_text, safe="")
+    base_url = f"https://text.pollinations.ai/{encoded_prompt}"
+    params = {"model": model_name}
+    request_url = f"{base_url}?{urllib_parse.urlencode(params)}"
+    req = urllib_request.Request(
+        url=request_url,
+        headers={
+            "User-Agent": "python-urllib/3",
+            "Accept": "text/plain",
+        },
+        method="GET",
+    )
+
+    with urllib_request.urlopen(req, timeout=timeout) as resp:
+        body = resp.read().decode("utf-8", errors="ignore")
+        return True, body, resp.getcode()
+
+
 def ask_groq_chat(user_message: str, history: Optional[list] = None, data_context: str = "") -> tuple[bool, str]:
     """Call Pollinations AI (free, no key required) for chat completions."""
     if not AI_CHAT_ENABLED:
@@ -1111,7 +1173,7 @@ def ask_groq_chat(user_message: str, history: Optional[list] = None, data_contex
         system_text = (
             "Ban la mot AI assistant hoi thoai tu nhien bang tieng Viet. "
             "Tra loi than thien, ro rang, de hieu nhu mot chatbot AI thong thuong. "
-            "Chi dua vi du lien quan ads khi nguoi dung thuc su yeu cau."
+            "Tuyet doi khong chen goi y ve ads, KPI, ngan sach, campaign neu nguoi dung khong hoi ve cong viec."
         )
 
     if has_data_context:
@@ -1128,7 +1190,8 @@ def ask_groq_chat(user_message: str, history: Optional[list] = None, data_contex
         prompt_lines = [
             "Ban la AI assistant hoi thoai tu nhien bang tieng Viet.",
             "Tra loi than thien, de hieu nhu chatbot thong thuong.",
-            "Chi dua noi dung cong viec/ads khi nguoi dung hoi ro rang ve cong viec.",
+            "Khong duoc chen noi dung cong viec/ads neu cau hoi khong lien quan cong viec.",
+            "Neu cau hoi doi thuong thi chi tra loi doi thuong.",
             "",
             "Huong dan he thong:",
             system_text,
@@ -1156,37 +1219,41 @@ def ask_groq_chat(user_message: str, history: Optional[list] = None, data_contex
     prompt_lines.append("Hay tra loi bang tieng Viet.")
 
     prompt_text = "\n".join(prompt_lines).strip()
-    encoded_prompt = urllib_parse.quote(prompt_text, safe="")
-    req = urllib_request.Request(
-        url=f"https://text.pollinations.ai/{encoded_prompt}",
-        headers={
-            "User-Agent": "python-urllib/3",
-            "Accept": "text/plain",
-        },
-        method="GET",
-    )
 
+    model_candidates = AI_CHAT_POLLINATIONS_MODELS or ["openai", "mistral", "llama"]
     last_error = ""
-    for attempt in range(3):
-        try:
-            with urllib_request.urlopen(req, timeout=30) as resp:
-                body = resp.read().decode("utf-8", errors="ignore")
-                if body.strip():
-                    return True, body.strip()
-                return False, "AI chưa trả về nội dung phù hợp."
-        except urllib_error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="ignore")
-            body_preview = body.strip().replace("\n", " ")[:240]
-            if body_preview:
-                return False, f"AI lỗi {exc.code}: {body_preview}"
-            return False, f"AI lỗi {exc.code}"
-        except Exception as exc:
-            last_error = str(exc).strip() or exc.__class__.__name__
-            if attempt == 2:
-                break
+    for model_name in model_candidates:
+        for attempt in range(2):
+            try:
+                ok, body, status = _call_pollinations_text(prompt_text, model_name=model_name, timeout=30)
+                if not ok:
+                    continue
+                reply = (body or "").strip()
+                if not reply:
+                    last_error = f"empty response from model={model_name}"
+                    continue
+                if _looks_like_html_payload(reply):
+                    last_error = f"html payload from model={model_name}"
+                    continue
+                if not has_data_context:
+                    reply = _strip_ads_noise_for_general_chat(reply)
+                return True, reply
+            except urllib_error.HTTPError as exc:
+                body = exc.read().decode("utf-8", errors="ignore")
+                body_preview = body.strip().replace("\n", " ")[:240]
+                if exc.code in {429, 502, 503, 504, 520, 522, 524}:
+                    last_error = f"HTTP {exc.code} model={model_name}"
+                    continue
+                if body_preview:
+                    return False, f"AI lỗi {exc.code}: {body_preview}"
+                return False, f"AI lỗi {exc.code}"
+            except Exception as exc:
+                last_error = f"{exc.__class__.__name__}: {str(exc).strip()[:140]}"
+                if attempt == 1:
+                    break
 
     if last_error:
-        return False, f"Không thể kết nối AI lúc này ({last_error[:140]})."
+        return False, f"Không thể kết nối AI lúc này ({last_error[:180]})."
     return False, "Không thể kết nối AI lúc này."
 
 
