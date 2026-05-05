@@ -2096,3 +2096,406 @@ function diffAndHighlight(newRows) {
     };
 })();
 
+// ══════════════════════════════════════════════════════════════════
+// BATCH 2: H2 Heatmap, H3/H4 Charts, F2 Product filter,
+//          F3 Group-by, G5/G6 Mobile, J2/J3 Export, M3 AI anomaly
+// ══════════════════════════════════════════════════════════════════
+
+// Chart instance registry
+const _chartInst = {};
+
+// ─── H3: Stacked bar — Chi phí theo sản phẩm ─────────────────────
+function renderStackedBar(rows) {
+    const canvas = document.getElementById('stackedBarChart');
+    if (!canvas) return;
+    if (_chartInst.stacked) { try { _chartInst.stacked.destroy(); } catch(_){} }
+
+    // Aggregate: group by product, sum VND spend
+    const byProd = {};
+    rows.forEach(r => {
+        const p = (r['Tên sản phẩm - VN'] || 'Khác').trim().slice(0,20);
+        const spend = parseSpendJS(r['Số tiền chi tiêu - VND'] || '');
+        byProd[p] = (byProd[p] || 0) + spend;
+    });
+    const sorted = Object.entries(byProd).sort((a,b)=>b[1]-a[1]).slice(0,12);
+    const PALETTE = ['#6366f1','#34d399','#f59e0b','#f472b6','#38bdf8','#a78bfa','#fb923c','#4ade80','#e879f9','#fbbf24','#60a5fa','#f87171'];
+    _chartInst.stacked = new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels: sorted.map(([p])=>p),
+            datasets: [{ data: sorted.map(([,v])=>v), backgroundColor: sorted.map((_,i)=>PALETTE[i%PALETTE.length]), borderRadius: 5, borderSkipped: false }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ' ' + (ctx.raw/1e6).toFixed(2) + 'M VND' } } },
+            scales: {
+                x: { ticks: { color: '#64748b', font: { size: 10 }, maxRotation: 30 }, grid: { color: 'rgba(51,65,85,0.4)' } },
+                y: { ticks: { color: '#64748b', callback: v => (v/1e6).toFixed(0)+'M' }, grid: { color: 'rgba(51,65,85,0.4)' } }
+            }
+        }
+    });
+}
+
+// ─── H4: Monthly comparison line chart ───────────────────────────
+function renderMonthlyComparison(rows) {
+    const canvas = document.getElementById('monthlyCompChart');
+    if (!canvas) return;
+    if (_chartInst.monthly) { try { _chartInst.monthly.destroy(); } catch(_){} }
+
+    // Aggregate daily spend for current and previous month
+    const now = new Date();
+    const curM = now.getMonth() + 1, curY = now.getFullYear();
+    const prevD = new Date(curY, now.getMonth() - 1, 1);
+    const prevM = prevD.getMonth() + 1, prevY = prevD.getFullYear();
+
+    const curData = {}, prevData = {};
+    rows.forEach(r => {
+        const raw = (r['Ngày'] || '').trim(); // DD/MM/YYYY
+        if (!raw) return;
+        const parts = raw.split('/');
+        if (parts.length < 3) return;
+        const [d, m, y] = parts.map(Number);
+        const spend = parseSpendJS(r['Số tiền chi tiêu - VND'] || '');
+        if (m === curM && y === curY) curData[d] = (curData[d]||0) + spend;
+        else if (m === prevM && y === prevY) prevData[d] = (prevData[d]||0) + spend;
+    });
+
+    const days = Array.from({ length: 31 }, (_,i)=>i+1);
+    const curArr = days.map(d=>curData[d]||null);
+    const prevArr = days.map(d=>prevData[d]||null);
+
+    _chartInst.monthly = new Chart(canvas, {
+        type: 'line',
+        data: {
+            labels: days,
+            datasets: [
+                { label: 'Tháng này', data: curArr, borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.1)', tension: 0.3, pointRadius: 3, fill: true, spanGaps: true },
+                { label: 'Tháng trước', data: prevArr, borderColor: '#94a3b8', backgroundColor: 'rgba(148,163,184,0.05)', tension: 0.3, pointRadius: 2, borderDash: [4,3], fill: false, spanGaps: true }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: '#94a3b8', font: { size: 11 } } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + (ctx.raw/1e6||0).toFixed(2) + 'M VND' } } },
+            scales: {
+                x: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: 'rgba(51,65,85,0.4)' } },
+                y: { ticks: { color: '#64748b', callback: v => (v/1e6).toFixed(0)+'M' }, grid: { color: 'rgba(51,65,85,0.4)' } }
+            }
+        }
+    });
+}
+
+// ─── H2: Heatmap (DOM-based) ──────────────────────────────────────
+function renderHeatmap(rows) {
+    const container = document.getElementById('heatmapContainer');
+    if (!container) return;
+
+    // Build product × date spend matrix
+    const dateSet = new Set(), prodSet = new Set();
+    const matrix = {};
+    rows.forEach(r => {
+        const raw = (r['Ngày'] || '').trim(); // DD/MM/YYYY
+        const prod = (r['Tên sản phẩm - VN'] || 'Khác').trim().slice(0,18);
+        const spend = parseSpendJS(r['Số tiền chi tiêu - VND'] || '');
+        if (!raw || !prod) return;
+        // Shorten date to DD/MM
+        const parts = raw.split('/');
+        const dateKey = parts.length >= 2 ? parts[0]+'/'+parts[1] : raw;
+        dateSet.add(dateKey);
+        prodSet.add(prod);
+        if (!matrix[prod]) matrix[prod] = {};
+        matrix[prod][dateKey] = (matrix[prod][dateKey] || 0) + spend;
+    });
+
+    const dates = [...dateSet].sort((a,b) => {
+        const [ad,am] = a.split('/').map(Number), [bd,bm] = b.split('/').map(Number);
+        return (am*100+ad) - (bm*100+bd);
+    }).slice(-14); // last 14 days
+    const prods = [...prodSet].slice(0, 15);
+    if (!dates.length || !prods.length) { container.innerHTML = '<div style="color:#475569;padding:12px;">Không đủ dữ liệu để vẽ heatmap</div>'; return; }
+
+    // Max for color scaling
+    let maxSpend = 0;
+    prods.forEach(p => dates.forEach(d => { if (matrix[p]?.[d] > maxSpend) maxSpend = matrix[p][d]; }));
+
+    function toColor(val) {
+        if (!val || maxSpend === 0) return 'rgba(30,41,59,0.8)';
+        const t = Math.min(val / maxSpend, 1);
+        // interpolate from #1e3a5f to #6366f1
+        const r = Math.round(30 + t*(99-30)), g = Math.round(58 + t*(102-58)), b = Math.round(95 + t*(241-95));
+        return `rgb(${r},${g},${b})`;
+    }
+
+    let html = '<table class="heatmap-table"><thead><tr><th></th>';
+    dates.forEach(d => { html += `<th>${d}</th>`; });
+    html += '</tr></thead><tbody>';
+    prods.forEach(p => {
+        html += `<tr><td class="heatmap-row-label" title="${p}">${p}</td>`;
+        dates.forEach(d => {
+            const v = matrix[p]?.[d] || 0;
+            const tip = v ? (v/1e6).toFixed(2)+'M' : '0';
+            html += `<td style="background:${toColor(v)}" title="${p} - ${d}: ${tip}VND">${v>=1e6?(v/1e6).toFixed(1):''}</td>`;
+        });
+        html += '</tr>';
+    });
+    html += '</tbody></table>';
+    html += '<div class="heatmap-legend"><span>Thấp</span><div class="heatmap-legend-bar"></div><span>Cao</span></div>';
+    container.innerHTML = html;
+}
+
+// ─── F2: Product multi-select chip filter ─────────────────────────
+let _activeProducts = new Set();
+function buildProductFilter(rows) {
+    const bar = document.getElementById('productFilterBar');
+    const chipsEl = document.getElementById('productChips');
+    if (!bar || !chipsEl) return;
+    const prods = [...new Set(rows.map(r => (r['Tên sản phẩm - VN'] || '').trim()).filter(Boolean))].sort();
+    if (!prods.length) { bar.style.display = 'none'; return; }
+    bar.style.display = 'flex';
+    chipsEl.innerHTML = prods.map(p => `<button class="product-chip${_activeProducts.has(p)?' active':''}" onclick="toggleProductFilter('${p.replace(/'/g,'&#39;')}')">${p.slice(0,22)}</button>`).join('');
+}
+function toggleProductFilter(prod) {
+    if (_activeProducts.has(prod)) _activeProducts.delete(prod);
+    else _activeProducts.add(prod);
+    buildProductFilter(filteredRows);
+    const allBtn = document.getElementById('productAllBtn');
+    if (allBtn) allBtn.classList.toggle('active', _activeProducts.size === 0);
+    applyAllFilters();
+}
+function clearProductFilter() {
+    _activeProducts.clear();
+    buildProductFilter(filteredRows);
+    const allBtn = document.getElementById('productAllBtn');
+    if (allBtn) allBtn.classList.add('active');
+    applyAllFilters();
+}
+function applyAllFilters() {
+    let rows = [...(currentData.rows || [])];
+    // date filter
+    const df = document.getElementById('dateFrom')?.value, dt = document.getElementById('dateTo')?.value;
+    if (df || dt) {
+        rows = rows.filter(r => {
+            const raw = (r['Ngày']||'').trim(); if(!raw) return true;
+            const parts = raw.split('/'); if(parts.length < 3) return true;
+            const d = new Date(+parts[2], +parts[1]-1, +parts[0]);
+            if (df && d < new Date(df)) return false;
+            if (dt && d > new Date(dt)) return false;
+            return true;
+        });
+    }
+    // product filter
+    if (_activeProducts.size > 0) rows = rows.filter(r => _activeProducts.has((r['Tên sản phẩm - VN']||'').trim()));
+    filteredRows = rows;
+    currentPage = 1;
+    try { renderTable(filteredRows); } catch(_){}
+    const fi = document.getElementById('filterInfo');
+    if (fi) { fi.style.display = 'block'; fi.textContent = `Đang lọc: ${filteredRows.length} / ${currentData.rows.length} dòng`; }
+}
+
+// ─── F3: Group-by table ───────────────────────────────────────────
+let _groupByMode = '';
+function applyGroupBy(mode) {
+    _groupByMode = mode;
+    try { renderTable(filteredRows); } catch(_){}
+}
+function renderGroupedTable(rows, mode) {
+    const headers = currentData.headers || [];
+    const COMPUTED_COL = 'Chi phí/KQ (USD)';
+    const headerHTML = headers.map(h => `<th>${h}</th>`).join('') + `<th>${COMPUTED_COL}</th>`;
+    document.getElementById('tableHeader').innerHTML = headerHTML;
+
+    const keyFn = mode === 'product' ? r => (r['Tên sản phẩm - VN']||'Khác').trim()
+        : mode === 'date' ? r => (r['Ngày']||'?').trim()
+        : r => (r['Tên tài khoản']||'Khác').trim();
+
+    const groups = {};
+    rows.forEach(r => {
+        const k = keyFn(r);
+        if (!groups[k]) groups[k] = [];
+        groups[k].push(r);
+    });
+
+    let html = '';
+    Object.entries(groups).sort(([a],[b])=>a.localeCompare(b)).forEach(([key, grpRows]) => {
+        html += `<tr class="group-header-row"><td colspan="${headers.length+1}" style="cursor:pointer" onclick="this.parentElement.nextElementSibling && (this.parentElement.nextElementSibling.style.display = this.parentElement.nextElementSibling.style.display==='none'?'':'none')"><i class="fas fa-folder-open" style="margin-right:6px"></i>${key} <span style="color:#64748b;font-weight:400;font-size:0.78rem;">(${grpRows.length} dòng)</span></td></tr>`;
+        grpRows.forEach(row => {
+            const cells = headers.map(h => `<td>${row[h]||'-'}</td>`).join('');
+            const usdVal = parseSpendJS(row['Số tiền chi tiêu - USD']||'');
+            const dataVal = parseInt(row['Số Data']||'0',10)||0;
+            const cpr = (usdVal>0&&dataVal>0)?(usdVal/dataVal).toFixed(3):'-';
+            html += `<tr>${cells}<td>${cpr}</td></tr>`;
+        });
+        // Subtotal row
+        const totalVND = grpRows.reduce((s,r)=>s+parseSpendJS(r['Số tiền chi tiêu - VND']||''),0);
+        const totalData = grpRows.reduce((s,r)=>s+(parseInt(r['Số Data']||'0',10)||0),0);
+        const totalUSD = grpRows.reduce((s,r)=>s+parseSpendJS(r['Số tiền chi tiêu - USD']||''),0);
+        const avgCPR = (totalUSD>0&&totalData>0)?(totalUSD/totalData).toFixed(3):'-';
+        const subtotalCells = headers.map(h => {
+            if (h==='Tên sản phẩm - VN'||h==='Tên tài khoản'||h==='Ngày') return `<td><i>Tổng ${key}</i></td>`;
+            if (h==='Số tiền chi tiêu - VND') return `<td>${(totalVND/1e6).toFixed(2)}M</td>`;
+            if (h==='Số Data') return `<td>${totalData}</td>`;
+            return `<td>-</td>`;
+        }).join('');
+        html += `<tr class="group-subtotal-row">${subtotalCells}<td>${avgCPR}</td></tr>`;
+    });
+    document.getElementById('tableBody').innerHTML = html;
+    const countInfo = document.getElementById('tableCountInfo');
+    if (countInfo) countInfo.textContent = `${rows.length} dòng · ${Object.keys(groups).length} nhóm`;
+    const pBar = document.querySelector('.pagination-bar');
+    if (pBar) pBar.style.display = 'none';
+}
+
+// ─── G5/G6: Mobile nav toggle ─────────────────────────────────────
+function toggleMobileNav() {
+    const qa = document.querySelector('.quick-actions');
+    if (!qa) return;
+    qa.classList.toggle('mobile-open');
+    const btn = document.getElementById('hamburgerBtn');
+    if (btn) btn.innerHTML = qa.classList.contains('mobile-open') ? '<i class="fas fa-times"></i>' : '<i class="fas fa-bars"></i>';
+}
+// Show hamburger on mobile
+(function() {
+    function syncHamburger() {
+        const btn = document.getElementById('hamburgerBtn');
+        if (!btn) return;
+        btn.style.display = window.innerWidth <= 768 ? 'inline-flex' : 'none';
+    }
+    window.addEventListener('resize', syncHamburger);
+    document.addEventListener('DOMContentLoaded', syncHamburger);
+    syncHamburger();
+})();
+// G6: add data-label attributes for card view
+(function patchRenderTableForCardView() {
+    const orig = window.renderTable;
+    if (typeof orig !== 'function') return;
+    window.renderTable = function(rows) {
+        orig.call(this, rows);
+        // Add data-label to each td for CSS ::before card view
+        const headers = currentData.headers || [];
+        const COMPUTED_COL = 'Chi phí/KQ (USD)';
+        const allHeaders = [...headers, COMPUTED_COL];
+        document.querySelectorAll('#dataTable tbody tr').forEach(tr => {
+            tr.querySelectorAll('td').forEach((td, i) => {
+                td.setAttribute('data-label', allHeaders[i] || '');
+            });
+        });
+    };
+})();
+
+// ─── J2: Export chart PNG ─────────────────────────────────────────
+function exportChartPNG(canvasId) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) { showToast('Không tìm thấy chart', 'error'); return; }
+    const link = document.createElement('a');
+    link.href = canvas.toDataURL('image/png');
+    link.download = `chart_${canvasId}_${new Date().toISOString().slice(0,10)}.png`;
+    link.click();
+}
+
+// ─── J3: Export PDF report ────────────────────────────────────────
+async function exportReportPDF() {
+    if (typeof window.jspdf === 'undefined') { showToast('Đang tải thư viện PDF...', 'error'); return; }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const now = new Date().toLocaleDateString('vi-VN');
+
+    // Title
+    doc.setFontSize(16); doc.setTextColor(40, 40, 120);
+    doc.text('Báo Cáo Chi Phí Ads — GDT Group', 14, 14);
+    doc.setFontSize(9); doc.setTextColor(100,100,100);
+    doc.text(`Xuất ngày: ${now}`, 14, 20);
+
+    // Summary stats
+    const statLabels = ['Doanh số', 'Tổng KQ', 'Chi phí/KQ', '% Ads'];
+    const statIds = ['totalSpend', 'totalResults', 'costPerResult', 'adsPercent'];
+    doc.setFontSize(11); doc.setTextColor(40,40,40);
+    let sx = 14;
+    statIds.forEach((id, i) => {
+        const el = document.getElementById(id);
+        const val = el ? el.textContent.trim() : '-';
+        doc.text(`${statLabels[i]}: ${val}`, sx, 28);
+        sx += 60;
+    });
+
+    // Table data
+    const headers = currentData.headers || [];
+    const COMPUTED_COL = 'Chi phí/KQ (USD)';
+    const allH = [...headers, COMPUTED_COL];
+    const tableRows = (filteredRows || []).slice(0, 500).map(row => {
+        const usdVal = parseSpendJS(row['Số tiền chi tiêu - USD']||'');
+        const dataVal = parseInt(row['Số Data']||'0',10)||0;
+        const cpr = (usdVal>0&&dataVal>0)?(usdVal/dataVal).toFixed(3):'-';
+        return [...headers.map(h => String(row[h]||'-')), cpr];
+    });
+
+    doc.autoTable({
+        head: [allH], body: tableRows, startY: 34, theme: 'grid',
+        styles: { fontSize: 7, cellPadding: 1.5, overflow: 'linebreak' },
+        headStyles: { fillColor: [99,102,241], textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+        alternateRowStyles: { fillColor: [245, 245, 255] },
+        margin: { left: 14, right: 14 }
+    });
+
+    // Append chart image if available
+    const barCanvas = document.getElementById('stackedBarChart');
+    if (barCanvas) {
+        try {
+            const img = barCanvas.toDataURL('image/png');
+            const pageH = doc.internal.pageSize.getHeight();
+            doc.addPage();
+            doc.addImage(img, 'PNG', 14, 14, 250, 100);
+        } catch(_) {}
+    }
+
+    doc.save(`ads_report_${new Date().toISOString().slice(0,10)}.pdf`);
+    showToast('Đã xuất PDF!', 'success');
+}
+
+// ─── M3: AI auto-suggest when anomaly detected ────────────────────
+(function patchAnomalyForAI() {
+    const origDetect = window.detectAnomalies;
+    if (typeof origDetect !== 'function') return;
+    window.detectAnomalies = function(rows) {
+        origDetect.call(this, rows);
+        // Find anomaly rows from DOM
+        const anomalyRows = document.querySelectorAll('tr.anomaly-row');
+        if (!anomalyRows.length) return;
+        const names = [];
+        anomalyRows.forEach(tr => {
+            const cells = tr.querySelectorAll('td');
+            if (cells.length > 2) names.push(cells[2]?.textContent?.trim() || '');
+        });
+        const unique = [...new Set(names.filter(Boolean))].slice(0,3);
+        if (!unique.length) return;
+        // Show AI suggestion toast
+        const msg = `⚠️ Phát hiện ${anomalyRows.length} dòng chi tiêu bất thường! Tài khoản: ${unique.join(', ')}. Hỏi AI để tối ưu?`;
+        showToast(msg, 'error');
+        // Auto-fill AI input after 1.5s
+        setTimeout(() => {
+            const aiInput = document.getElementById('aiChatInput');
+            if (!aiInput) return;
+            aiInput.value = `Phân tích chi tiêu bất thường của ${unique[0] || 'tài khoản này'} và đề xuất giải pháp tối ưu`;
+            aiInput.focus();
+        }, 1800);
+    };
+})();
+
+// ─── Patch renderInsights to also call new chart renderers ────────
+(function() {
+    const origInsights = window.renderInsights;
+    window.renderInsights = function(rows) {
+        if (typeof origInsights === 'function') origInsights.call(this, rows);
+        try { renderStackedBar(rows); } catch(_){}
+        try { renderMonthlyComparison(rows); } catch(_){}
+        try { renderHeatmap(rows); } catch(_){}
+        try { buildProductFilter(rows); } catch(_){}
+    };
+
+    // Patch renderTable to support group-by
+    const origRT = window.renderTable;
+    window.renderTable = function(rows) {
+        if (_groupByMode && rows && rows.length) {
+            try { renderGroupedTable(rows, _groupByMode); return; } catch(_){}
+        }
+        if (typeof origRT === 'function') origRT.call(this, rows);
+    };
+})();

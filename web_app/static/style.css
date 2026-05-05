@@ -1451,3 +1451,234 @@ html.dark-mode .action-link.dark-toggle { background: rgba(99,102,241,0.3); colo
         justify-content: flex-start;
     }
 }
+/* ─────────────────────────────────────────────────────────────
+   NEW BATCH: H2 Heatmap, H3/H4 Charts, F2 Product filter,
+   F3 Group-by, G5/G6 Mobile responsive, J2/J3 Export
+   ───────────────────────────────────────────────────────── */
+
+/* Chart card containers */
+.charts-grid-2col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+.chart-card { padding: 16px; }
+.chart-card-full { padding: 16px; }
+.chart-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    gap: 8px;
+}
+.chart-card-header h3 {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #e2e8f0;
+    margin: 0;
+}
+.chart-canvas-wrap {
+    position: relative;
+    height: 220px;
+}
+.chart-canvas-wrap canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+.btn-chip {
+    background: rgba(99,102,241,0.18);
+    color: #818cf8;
+    border: 1px solid rgba(99,102,241,0.35);
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 0.76rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.btn-chip:hover { background: rgba(99,102,241,0.32); }
+.btn-chip.active {
+    background: rgba(99,102,241,0.4);
+    color: #a5b4fc;
+}
+
+/* H2: Heatmap */
+.heatmap-container {
+    overflow-x: auto;
+    padding-bottom: 6px;
+}
+.heatmap-table {
+    border-collapse: separate;
+    border-spacing: 3px;
+    font-size: 0.68rem;
+    min-width: 400px;
+}
+.heatmap-table th {
+    color: #64748b;
+    font-weight: 600;
+    padding: 3px 6px;
+    text-align: center;
+    white-space: nowrap;
+}
+.heatmap-table td {
+    width: 32px;
+    height: 28px;
+    border-radius: 4px;
+    text-align: center;
+    font-size: 0.62rem;
+    color: rgba(255,255,255,0.85);
+    cursor: default;
+    position: relative;
+    transition: transform 0.15s;
+}
+.heatmap-table td:hover { transform: scale(1.15); z-index: 2; }
+.heatmap-row-label {
+    color: #94a3b8;
+    padding-right: 8px;
+    text-align: right;
+    white-space: nowrap;
+    font-size: 0.72rem;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.heatmap-legend {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    font-size: 0.72rem;
+    color: #64748b;
+}
+.heatmap-legend-bar {
+    width: 120px;
+    height: 10px;
+    border-radius: 4px;
+    background: linear-gradient(to right, #1e293b, #6366f1);
+}
+
+/* F2: Product multi-select filter */
+.product-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 8px 0 6px;
+    border-bottom: 1px solid rgba(51,65,85,0.5);
+    margin-bottom: 8px;
+}
+.product-chips {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.product-chip {
+    background: rgba(51,65,85,0.7);
+    color: #94a3b8;
+    border: 1px solid #334155;
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 0.74rem;
+    cursor: pointer;
+    transition: all 0.18s;
+    white-space: nowrap;
+}
+.product-chip:hover { background: rgba(99,102,241,0.25); color: #a5b4fc; }
+.product-chip.active {
+    background: rgba(99,102,241,0.35);
+    color: #818cf8;
+    border-color: #6366f1;
+}
+
+/* F3: Group-by select */
+.groupby-select {
+    background: #1e293b;
+    color: #94a3b8;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 5px 10px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    outline: none;
+}
+.groupby-select:hover { border-color: #6366f1; color: #e2e8f0; }
+
+/* Grouped table subtotal row */
+tr.group-header-row td {
+    background: rgba(99,102,241,0.12);
+    color: #a5b4fc;
+    font-weight: 700;
+    font-size: 0.82rem;
+    padding: 6px 10px;
+}
+tr.group-subtotal-row td {
+    background: rgba(16,185,129,0.08);
+    color: #34d399;
+    font-weight: 700;
+    font-size: 0.8rem;
+    border-top: 1px solid rgba(52,211,153,0.25);
+}
+
+/* G5: Hamburger button (hidden on desktop) */
+.hamburger-btn {
+    display: none;
+    background: rgba(255,255,255,0.12);
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 1rem;
+    margin-bottom: 6px;
+}
+
+/* G6: Mobile responsive */
+@media (max-width: 768px) {
+    .hamburger-btn { display: inline-flex; align-items: center; }
+    .quick-actions {
+        display: none;
+        flex-direction: column;
+        gap: 6px;
+        padding: 10px 0;
+        animation: slideDown 0.2s ease;
+    }
+    .quick-actions.mobile-open { display: flex; }
+    @keyframes slideDown {
+        from { opacity: 0; transform: translateY(-8px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .charts-grid-2col { grid-template-columns: 1fr; }
+    .stats-grid { grid-template-columns: 1fr 1fr; }
+    .access-toolbar { flex-wrap: wrap; }
+    .date-filter-bar { flex-wrap: wrap; gap: 6px; }
+    .table-action-btns { flex-wrap: wrap; gap: 6px; }
+    .date-preset-chips { flex-wrap: wrap; }
+    .heatmap-table th, .heatmap-table td { width: 26px; font-size: 0.58rem; }
+}
+
+/* G6: Card view for table rows on very small screens */
+@media (max-width: 540px) {
+    .data-table thead { display: none; }
+    .data-table tbody tr {
+        display: flex;
+        flex-direction: column;
+        background: #1e293b;
+        border-radius: 10px;
+        margin-bottom: 10px;
+        padding: 10px 12px;
+        border: 1px solid #334155;
+    }
+    .data-table tbody td {
+        display: flex;
+        justify-content: space-between;
+        padding: 4px 0;
+        border: none;
+        font-size: 0.8rem;
+    }
+    .data-table tbody td::before {
+        content: attr(data-label);
+        color: #64748b;
+        font-weight: 600;
+        flex: 0 0 50%;
+        font-size: 0.75rem;
+    }
+}

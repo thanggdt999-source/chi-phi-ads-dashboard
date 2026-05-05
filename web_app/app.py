@@ -2505,6 +2505,17 @@ def set_session_user(
     session["performance_sheet_url"] = pinned_performance_sheet_url
     session["is_elevated"] = elevated
     session["last_activity"] = datetime.now().timestamp()
+    # N5: Track last_login, login_count, last_ip
+    try:
+        from flask import request as _req
+        users_cfg = load_users_config()
+        if username in users_cfg:
+            users_cfg[username]["last_login"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            users_cfg[username]["login_count"] = int(users_cfg[username].get("login_count", 0)) + 1
+            users_cfg[username]["last_ip"] = _req.remote_addr or ""
+            save_users_config(users_cfg)
+    except Exception:
+        pass
     if actual_role == "employee" and not elevated:
         session["base_employee"] = {
             "username": username,
@@ -6007,6 +6018,65 @@ def api_admin_audit_log():
             if len(entries) >= 200:
                 break
         return jsonify({"success": True, "entries": entries, "total": len(lines)})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ─── N5: User activity log ────────────────────────────────────────
+@app.route("/api/admin/user-activity", methods=["GET"])
+@api_role_required("admin")
+def api_admin_user_activity():
+    """Return last_login, login_count, last_ip for all users."""
+    try:
+        users = load_users_config()
+        result = []
+        for uname, udata in users.items():
+            result.append({
+                "username": uname,
+                "display_name": udata.get("display_name", uname),
+                "role": udata.get("role", "employee"),
+                "team": udata.get("team", ""),
+                "last_login": udata.get("last_login", ""),
+                "login_count": udata.get("login_count", 0),
+                "last_ip": udata.get("last_ip", ""),
+            })
+        result.sort(key=lambda x: x.get("last_login") or "", reverse=True)
+        return jsonify({"success": True, "users": result})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ─── N4: Meta token status ─────────────────────────────────────────
+@app.route("/api/admin/token-status", methods=["GET"])
+@api_role_required("admin")
+def api_admin_token_status():
+    """Return basic info about the stored Meta access token (without exposing it)."""
+    try:
+        vault = load_meta_token_vault()
+        token = load_meta_access_token()
+        has_token = bool(token and len(token) > 20)
+        vault_keys = list(vault.get("tokens", vault).keys()) if isinstance(vault, dict) else []
+        # Try to estimate expiry via Facebook debug endpoint
+        expires_in_days = None
+        if has_token:
+            try:
+                import urllib.request
+                debug_url = f"https://graph.facebook.com/debug_token?input_token={token}&access_token={token}"
+                with urllib.request.urlopen(debug_url, timeout=5) as resp:
+                    info = json.loads(resp.read())
+                    exp = info.get("data", {}).get("expires_at", 0)
+                    if exp:
+                        import time
+                        expires_in_days = max(0, round((int(exp) - time.time()) / 86400))
+            except Exception:
+                pass
+        return jsonify({
+            "success": True,
+            "has_token": has_token,
+            "token_preview": (token[:8] + "…" + token[-4:]) if has_token else "",
+            "vault_keys": vault_keys,
+            "expires_in_days": expires_in_days,
+        })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 

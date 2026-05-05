@@ -14,6 +14,9 @@
 
         /* ── Layout ── */
         .page-wrapper { max-width: 1100px; margin: 0 auto; padding: 24px 16px 40px; flex: 1; }
+        @media (max-width: 640px) {
+            div[style*="grid-template-columns:1fr 1fr"] { grid-template-columns: 1fr !important; }
+        }
 
         .app-footer {
             margin: 0 auto;
@@ -214,6 +217,36 @@
             </table>
         </div>
         <div id="auditTotalInfo" style="font-size:0.76rem;color:#64748b;margin-top:6px;"></div>
+    </div>
+
+    <!-- N4: Meta Token Status + N5: User Activity -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;">
+        <!-- N4: Token expiry -->
+        <div class="card">
+            <h2 style="font-size:1.05rem;font-weight:700;color:#f1f5f9;margin:0 0 14px;"><i class="fas fa-key"></i> Trạng thái Meta Token</h2>
+            <div id="tokenStatusWrap">
+                <div style="color:#475569;font-size:0.82rem;">Đang kiểm tra...</div>
+            </div>
+            <button class="btn btn-primary" style="margin-top:10px;padding:6px 12px;font-size:0.8rem;" onclick="loadTokenStatus()"><i class="fas fa-rotate-right"></i> Kiểm tra</button>
+        </div>
+        <!-- N5: User activity -->
+        <div class="card">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+                <h2 style="font-size:1.05rem;font-weight:700;color:#f1f5f9;margin:0;"><i class="fas fa-user-clock"></i> Hoạt động người dùng</h2>
+                <button class="btn btn-primary" style="padding:6px 12px;font-size:0.8rem;" onclick="loadUserActivity()"><i class="fas fa-rotate-right"></i> Làm mới</button>
+            </div>
+            <div style="overflow-x:auto;max-height:260px;overflow-y:auto;">
+                <table style="width:100%;border-collapse:collapse;font-size:0.79rem;">
+                    <thead><tr style="background:#1e293b;">
+                        <th style="padding:6px 8px;color:#94a3b8;text-align:left;border-bottom:1px solid #334155;">User</th>
+                        <th style="padding:6px 8px;color:#94a3b8;text-align:left;border-bottom:1px solid #334155;">Đăng nhập cuối</th>
+                        <th style="padding:6px 8px;color:#94a3b8;text-align:center;border-bottom:1px solid #334155;">Lần</th>
+                        <th style="padding:6px 8px;color:#94a3b8;text-align:left;border-bottom:1px solid #334155;">IP</th>
+                    </tr></thead>
+                    <tbody id="activityBody"><tr><td colspan="4" style="padding:10px;text-align:center;color:#475569;">Đang tải...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
     </div>
 
 </div>
@@ -564,6 +597,48 @@
             renderAuditTable(filtered);
         });
     });
+
+    // ── N4: Meta token status ──────────────────────────────────────
+    async function loadTokenStatus() {
+        const wrap = document.getElementById('tokenStatusWrap');
+        if (wrap) wrap.innerHTML = '<div style="color:#475569;font-size:0.82rem;">Đang kiểm tra...</div>';
+        try {
+            const res = await fetch('/api/admin/token-status');
+            const d = await res.json();
+            if (!d.success) { wrap.innerHTML = '<div style="color:#ef4444;">Lỗi kiểm tra token</div>'; return; }
+            const daysBadge = d.expires_in_days !== null && d.expires_in_days !== undefined
+                ? `<span style="background:${d.expires_in_days>30?'rgba(52,211,153,0.15)':d.expires_in_days>7?'rgba(251,191,36,0.15)':'rgba(239,68,68,0.15)'};color:${d.expires_in_days>30?'#34d399':d.expires_in_days>7?'#fbbf24':'#f87171'};border-radius:6px;padding:2px 8px;font-size:0.76rem;">${d.expires_in_days} ngày còn lại</span>`
+                : '<span style="color:#64748b;font-size:0.76rem;">Không lấy được thời hạn</span>';
+            wrap.innerHTML = `
+                <div style="margin-bottom:8px;">
+                    <span style="color:#94a3b8;font-size:0.78rem;">Trạng thái:</span>
+                    <span style="color:${d.has_token?'#34d399':'#ef4444'};font-weight:700;margin-left:6px;">${d.has_token?'✓ Có token':'✗ Không có token'}</span>
+                </div>
+                ${d.has_token ? `<div style="margin-bottom:6px;color:#64748b;font-size:0.76rem;">Preview: <code style="color:#a5b4fc;">${d.token_preview}</code></div>` : ''}
+                <div style="margin-bottom:6px;">${daysBadge}</div>
+                ${d.vault_keys.length ? `<div style="color:#64748b;font-size:0.74rem;">Vault keys: ${d.vault_keys.join(', ')}</div>` : ''}
+            `;
+        } catch(e) { if(wrap) wrap.innerHTML = '<div style="color:#ef4444;">Lỗi kết nối</div>'; }
+    }
+
+    // ── N5: User activity ──────────────────────────────────────────
+    async function loadUserActivity() {
+        const tbody = document.getElementById('activityBody');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="4" style="padding:10px;text-align:center;color:#475569;">Đang tải...</td></tr>';
+        try {
+            const res = await fetch('/api/admin/user-activity');
+            const d = await res.json();
+            if (!d.success) { tbody.innerHTML = '<tr><td colspan="4" style="color:#ef4444;padding:8px;">Lỗi</td></tr>'; return; }
+            if (!d.users.length) { tbody.innerHTML = '<tr><td colspan="4" style="padding:8px;text-align:center;color:#475569;">Chưa có dữ liệu</td></tr>'; return; }
+            tbody.innerHTML = d.users.map(u => `<tr>
+                <td style="padding:6px 8px;color:#e2e8f0;">${u.display_name||u.username} <span style="color:#475569;font-size:0.72rem;">(${u.role})</span></td>
+                <td style="padding:6px 8px;color:#94a3b8;font-size:0.76rem;white-space:nowrap;">${u.last_login||'—'}</td>
+                <td style="padding:6px 8px;text-align:center;color:#818cf8;font-weight:700;">${u.login_count||0}</td>
+                <td style="padding:6px 8px;color:#64748b;font-size:0.74rem;">${u.last_ip||'—'}</td>
+            </tr>`).join('');
+        } catch(e) { if(tbody) tbody.innerHTML = '<tr><td colspan="4" style="color:#ef4444;padding:8px;">Lỗi kết nối</td></tr>'; }
+    }
+    document.addEventListener('DOMContentLoaded', () => { loadTokenStatus(); loadUserActivity(); });
 
     // ── Init ──────────────────────────────────────────────────────────
     renderTable();

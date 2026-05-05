@@ -653,6 +653,10 @@
 
 
                 </div>
+                <!-- G5: Hamburger for mobile nav -->
+                <button class="hamburger-btn" id="hamburgerBtn" onclick="toggleMobileNav()" aria-label="Menu" style="display:none;">
+                    <i class="fas fa-bars"></i>
+                </button>
                 <p class="company-name">GDT Group</p>
                 <h1><i class="fas fa-chart-line"></i> Chi Phí Ads Dashboard</h1>
             </div>
@@ -852,6 +856,33 @@
                         <div id="lngInsightList" class="insight-list"></div>
                     </div>
                 </div>
+
+                <!-- H3 + H4: Stacked bar + Monthly comparison -->
+                <div class="charts-grid-2col" style="margin-top:16px;">
+                    <div class="card chart-card">
+                        <div class="chart-card-header">
+                            <h3><i class="fas fa-chart-bar"></i> Chi Phí theo Sản Phẩm</h3>
+                            <button class="btn-chip" onclick="exportChartPNG('stackedBarChart')" title="Tải ảnh"><i class="fas fa-image"></i></button>
+                        </div>
+                        <div class="chart-canvas-wrap"><canvas id="stackedBarChart"></canvas></div>
+                    </div>
+                    <div class="card chart-card">
+                        <div class="chart-card-header">
+                            <h3><i class="fas fa-chart-line"></i> Tháng Này vs Tháng Trước</h3>
+                            <button class="btn-chip" onclick="exportChartPNG('monthlyCompChart')" title="Tải ảnh"><i class="fas fa-image"></i></button>
+                        </div>
+                        <div class="chart-canvas-wrap"><canvas id="monthlyCompChart"></canvas></div>
+                    </div>
+                </div>
+
+                <!-- H2: Heatmap chi phí -->
+                <div class="card chart-card-full" style="margin-top:16px;">
+                    <div class="chart-card-header">
+                        <h3><i class="fas fa-th"></i> Heatmap Chi Phí (Ngày × Sản Phẩm)</h3>
+                        <div style="font-size:0.75rem;color:#64748b;">Màu đậm = chi phí cao</div>
+                    </div>
+                    <div id="heatmapContainer" class="heatmap-container"></div>
+                </div>
             </section>
 
             <!-- ── Date Filter + Data Table ── -->
@@ -877,15 +908,29 @@
                             </div>
                         </div>
                     </div>
+                    <!-- F2: Product multi-select filter -->
+                    <div id="productFilterBar" class="product-filter-bar" style="display:none;">
+                        <span class="filter-label"><i class="fas fa-box"></i> Sản phẩm:</span>
+                        <div id="productChips" class="product-chips"></div>
+                        <button class="btn-chip active" id="productAllBtn" onclick="clearProductFilter()">Tất cả</button>
+                    </div>
                     <!-- Saved filter presets -->
                     <div id="savedFiltersBar" class="saved-filters-bar" style="display:none;"></div>
                     <div class="table-action-bar">
                         <div id="filterInfo" class="filter-info" style="display:none; margin:0;"></div>
                         <div class="table-action-btns">
                             <button class="btn-icon-tool" onclick="exportTableCSV()" title="Xuất CSV"><i class="fas fa-file-csv"></i> CSV</button>
+                            <button class="btn-icon-tool" onclick="exportReportPDF()" title="Xuất PDF"><i class="fas fa-file-pdf"></i> PDF</button>
                             <button class="btn-icon-tool" id="saveFilterBtn" onclick="saveCurrentFilter()" title="Lưu bộ lọc"><i class="fas fa-bookmark"></i> Lưu lọc</button>
                             <button class="btn-icon-tool" id="colVisBtn" onclick="toggleColVisPanel()" title="Hiện/ẩn cột"><i class="fas fa-columns"></i> Cột</button>
                             <button class="btn-icon-tool" id="budgetAlertBtn" onclick="toggleBudgetPanel()" title="Cảnh báo ngân sách"><i class="fas fa-bell"></i> Alert</button>
+                            <!-- F3: Group-by -->
+                            <select id="groupBySelect" class="groupby-select" onchange="applyGroupBy(this.value)" title="Gộp dữ liệu">
+                                <option value="">Không gộp</option>
+                                <option value="product">Gộp theo sản phẩm</option>
+                                <option value="date">Gộp theo ngày</option>
+                                <option value="account">Gộp theo tài khoản</option>
+                            </select>
                         </div>
                     </div>
                     <!-- Column visibility panel -->
@@ -991,6 +1036,8 @@
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
     {% if inline_script_js %}
     <script id="inline-dashboard-script">{{ inline_script_js | safe }}</script>
     {% endif %}
