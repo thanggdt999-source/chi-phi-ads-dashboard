@@ -55,6 +55,14 @@ TELEGRAM_REPORT_STATE_PATH = Path(
         str(Path(__file__).parent.parent / "storage" / "config" / "telegram_report_state.json"),
     )
 )
+SHEET_HEALTH_STATE_PATH = Path(
+    os.getenv(
+        "SHEET_HEALTH_STATE_PATH",
+        str(Path(__file__).parent.parent / "storage" / "config" / "sheet_health_state.json"),
+    )
+)
+SHEET_HEALTH_CHECK_INTERVAL_SECONDS = max(300, int(os.getenv("SHEET_HEALTH_CHECK_INTERVAL_SECONDS", "1200")))  # default 20 min
+_SHEET_HEALTH_SCHEDULER_STARTED = False
 TELEGRAM_REPORT_TIMEZONE = os.getenv("TELEGRAM_REPORT_TIMEZONE", "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
 TELEGRAM_REPORT_START_HOUR = 7
 TELEGRAM_REPORT_START_MINUTE = 0
@@ -870,6 +878,24 @@ def load_telegram_report_state() -> dict:
 def save_telegram_report_state(state: dict) -> None:
     TELEGRAM_REPORT_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     with TELEGRAM_REPORT_STATE_PATH.open("w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+def load_sheet_health_state() -> dict:
+    SHEET_HEALTH_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if not SHEET_HEALTH_STATE_PATH.exists():
+        return {}
+    try:
+        with SHEET_HEALTH_STATE_PATH.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_sheet_health_state(state: dict) -> None:
+    SHEET_HEALTH_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with SHEET_HEALTH_STATE_PATH.open("w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
@@ -1840,6 +1866,106 @@ def start_telegram_internal_scheduler() -> None:
     worker = threading.Thread(target=_telegram_scheduler_loop, name="telegram-internal-scheduler", daemon=True)
     worker.start()
     _TELEGRAM_SCHEDULER_STARTED = True
+
+
+def check_all_users_sheet_health() -> None:
+    """Check Google Sheet access for all users and send Telegram alerts if access is lost."""
+    now = get_notification_now()
+    today_str = now.strftime("%Y-%m-%d")
+    users = load_users_config()
+    state = load_sheet_health_state()
+    changed = False
+
+    for username, user in users.items():
+        if not isinstance(user, dict):
+            continue
+        chat_id = (user.get("telegram_chat_id") or "").strip()
+        if not chat_id:
+            continue
+        if not bool(user.get("telegram_report_enabled", True)):
+            continue
+
+        sheets_to_check = []
+        ads_url = get_effective_user_sheet_url(username, user, reference_time=now)
+        if ads_url:
+            sheets_to_check.append(("ads", ads_url))
+        perf_url = get_pinned_performance_sheet_url(username, user)
+        if perf_url:
+            sheets_to_check.append(("performance", perf_url))
+
+        if not sheets_to_check:
+            continue
+
+        user_state = state.setdefault(username, {})
+
+        for sheet_type, sheet_url in sheets_to_check:
+            key = f"{sheet_type}_health"
+            prev = user_state.get(key, {})
+            last_notified_date = str(prev.get("last_notified_date", "") or "")
+
+            try:
+                access = inspect_sheet_access(sheet_url)
+            except Exception as exc:
+                access = {"success": False, "error": str(exc)}
+
+            ok = bool(access.get("success"))
+            sheet_name = str(access.get("sheet_name") or sheet_url[:60] or "")
+            error_msg = str(access.get("error") or "")
+            checked_at = now.isoformat()
+
+            user_state[key] = {
+                "ok": ok,
+                "sheet_name": sheet_name,
+                "sheet_url": sheet_url,
+                "error": error_msg,
+                "checked_at": checked_at,
+                "last_notified_date": last_notified_date,
+            }
+            changed = True
+
+            # Notify once per day when access is broken
+            if not ok and last_notified_date != today_str:
+                label = "Chi phí Ads" if sheet_type == "ads" else "Hiệu suất"
+                msg_lines = [
+                    "⚠️ <b>Mất kết nối Google Sheet</b>",
+                    "",
+                    f"📋 <b>Sheet:</b> {label} — {sheet_name}",
+                    f"❌ <b>Lỗi:</b> {error_msg}",
+                    "",
+                    "Vui lòng kiểm tra lại quyền truy cập của sheet và cập nhật link nếu cần.",
+                    f'<a href="{sheet_url}">Mở sheet</a>',
+                ]
+                personal_token = normalize_telegram_bot_token(str(user.get("telegram_bot_token", "")))
+                ok_send, _ = send_telegram_message(chat_id, "\n".join(msg_lines), bot_token=personal_token)
+                if ok_send:
+                    user_state[key]["last_notified_date"] = today_str
+
+    if changed:
+        save_sheet_health_state(state)
+
+
+def _sheet_health_scheduler_loop() -> None:
+    while True:
+        try:
+            check_all_users_sheet_health()
+        except Exception as exc:
+            print(f"[sheet-health] error: {exc}")
+        time.sleep(SHEET_HEALTH_CHECK_INTERVAL_SECONDS)
+
+
+def start_sheet_health_scheduler() -> None:
+    global _SHEET_HEALTH_SCHEDULER_STARTED
+    if _SHEET_HEALTH_SCHEDULER_STARTED:
+        return
+
+    cli_commands = {"send-telegram-reports", "trigger-telegram-reports"}
+    is_cli_mode = len(sys.argv) > 1 and str(sys.argv[1] or "").strip() in cli_commands
+    if is_cli_mode:
+        return
+
+    worker = threading.Thread(target=_sheet_health_scheduler_loop, name="sheet-health-scheduler", daemon=True)
+    worker.start()
+    _SHEET_HEALTH_SCHEDULER_STARTED = True
 
 
 def trigger_telegram_report_job_command(force: bool = False) -> int:
@@ -5977,6 +6103,37 @@ def sheet_memory_status():
     })
 
 
+@app.route("/api/sheet-connection-status", methods=["GET"])
+@api_login_required
+def sheet_connection_status():
+    username = str(session.get("username", "") or "").strip()
+    if not username:
+        return jsonify({"success": False, "error": "Không xác định được tài khoản."}), 401
+
+    state = load_sheet_health_state()
+    user_state = state.get(username, {})
+    ads_h = user_state.get("ads_health", {})
+    perf_h = user_state.get("performance_health", {})
+
+    return jsonify({
+        "success": True,
+        "ads": {
+            "ok": ads_h.get("ok"),
+            "sheet_name": ads_h.get("sheet_name", ""),
+            "sheet_url": ads_h.get("sheet_url", ""),
+            "error": ads_h.get("error", ""),
+            "checked_at": ads_h.get("checked_at", ""),
+        },
+        "performance": {
+            "ok": perf_h.get("ok"),
+            "sheet_name": perf_h.get("sheet_name", ""),
+            "sheet_url": perf_h.get("sheet_url", ""),
+            "error": perf_h.get("error", ""),
+            "checked_at": perf_h.get("checked_at", ""),
+        },
+    })
+
+
 @app.route("/monthly-folder/<month_key>", methods=["GET"])
 @login_required
 def view_month_folder(month_key):
@@ -6330,6 +6487,7 @@ def forgot_password_verify():
 
 
 start_telegram_internal_scheduler()
+start_sheet_health_scheduler()
 
 
 if __name__ == "__main__":

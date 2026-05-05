@@ -35,6 +35,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     populateMonthSelect();
     await loadAutoFillStatus();
     initURLInputListeners();
+    loadSheetConnectionStatus();
 
     if (ROLE === "employee") {
         const defaultSheet = SHEET_URL || (SHEETS[0] && SHEETS[0].url) || "";
@@ -79,6 +80,56 @@ async function loadSheetMemoryStatus() {
         const perfInput = document.getElementById("performanceSheetUrl");
         if (perfInput && !perfInput.value && data.pinned_performance_sheet_url) {
             perfInput.value = data.pinned_performance_sheet_url;
+        }
+    } catch (_) {}
+}
+
+async function loadSheetConnectionStatus() {
+    if (ROLE !== "employee") return;
+    const panel = document.getElementById("sheetHealthPanel");
+    const adsEl = document.getElementById("sheetHealthAds");
+    const perfEl = document.getElementById("sheetHealthPerf");
+    if (!panel || !adsEl || !perfEl) return;
+
+    try {
+        const res = await fetch("/api/sheet-connection-status");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data || !data.success) return;
+
+        panel.style.display = "";
+
+        function renderBadge(el, info, label) {
+            const ok = info && info.ok === true;
+            const unknown = !info || info.ok == null;
+            const name = (info && info.sheet_name) || label;
+            const err = (info && info.error) || "";
+            const checked = (info && info.checked_at)
+                ? new Date(info.checked_at).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit" })
+                : "";
+
+            if (unknown) {
+                el.className = "sheet-health-badge unknown";
+                el.innerHTML = `<i class="fas fa-question-circle"></i> ${label}: chưa kiểm tra`;
+            } else if (ok) {
+                el.className = "sheet-health-badge ok";
+                el.title = checked ? `Kiểm tra lúc ${checked}` : "";
+                el.innerHTML = `<i class="fas fa-check-circle"></i> ${name || label}: OK`;
+            } else {
+                el.className = "sheet-health-badge error";
+                el.title = err || "Lỗi không xác định";
+                el.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${label}: Mất kết nối`;
+            }
+        }
+
+        renderBadge(adsEl, data.ads, "Sheet chi phí");
+        renderBadge(perfEl, data.performance, "Sheet hiệu suất");
+
+        // Hide performance badge if no performance sheet configured
+        if (!data.performance || data.performance.ok == null) {
+            perfEl.style.display = "none";
+        } else {
+            perfEl.style.display = "";
         }
     } catch (_) {}
 }
