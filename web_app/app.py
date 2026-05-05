@@ -1953,6 +1953,15 @@ def _sheet_health_scheduler_loop() -> None:
         time.sleep(SHEET_HEALTH_CHECK_INTERVAL_SECONDS)
 
 
+def _sheet_health_initial_run() -> None:
+    """Run one health check shortly after startup so panel has data before first tick."""
+    time.sleep(60)
+    try:
+        check_all_users_sheet_health()
+    except Exception as exc:
+        print(f"[sheet-health] initial-run error: {exc}")
+
+
 def start_sheet_health_scheduler() -> None:
     global _SHEET_HEALTH_SCHEDULER_STARTED
     if _SHEET_HEALTH_SCHEDULER_STARTED:
@@ -1963,6 +1972,9 @@ def start_sheet_health_scheduler() -> None:
     if is_cli_mode:
         return
 
+    # One-shot early check so panel isn't empty right after deploy
+    threading.Thread(target=_sheet_health_initial_run, name="sheet-health-initial", daemon=True).start()
+    # Periodic loop
     worker = threading.Thread(target=_sheet_health_scheduler_loop, name="sheet-health-scheduler", daemon=True)
     worker.start()
     _SHEET_HEALTH_SCHEDULER_STARTED = True
@@ -6110,10 +6122,50 @@ def sheet_connection_status():
     if not username:
         return jsonify({"success": False, "error": "Không xác định được tài khoản."}), 401
 
+    users = load_users_config()
+    user = users.get(username, {})
+    now = get_notification_now()
+
     state = load_sheet_health_state()
     user_state = state.get(username, {})
     ads_h = user_state.get("ads_health", {})
     perf_h = user_state.get("performance_health", {})
+
+    # Live-check when no cached result exists (e.g. after fresh deploy)
+    if not ads_h:
+        ads_url = get_effective_user_sheet_url(username, user, reference_time=now)
+        if ads_url:
+            try:
+                access = inspect_sheet_access(ads_url)
+                ads_h = {
+                    "ok": bool(access.get("success")),
+                    "sheet_name": str(access.get("sheet_name") or ""),
+                    "sheet_url": ads_url,
+                    "error": str(access.get("error") or ""),
+                    "checked_at": now.isoformat(),
+                }
+                # persist so background loop doesn't redo it immediately
+                state.setdefault(username, {})["ads_health"] = {**ads_h, "last_notified_date": ""}
+                save_sheet_health_state(state)
+            except Exception:
+                pass
+
+    if not perf_h:
+        perf_url = get_pinned_performance_sheet_url(username, user)
+        if perf_url:
+            try:
+                access = inspect_sheet_access(perf_url)
+                perf_h = {
+                    "ok": bool(access.get("success")),
+                    "sheet_name": str(access.get("sheet_name") or ""),
+                    "sheet_url": perf_url,
+                    "error": str(access.get("error") or ""),
+                    "checked_at": now.isoformat(),
+                }
+                state.setdefault(username, {})["performance_health"] = {**perf_h, "last_notified_date": ""}
+                save_sheet_health_state(state)
+            except Exception:
+                pass
 
     return jsonify({
         "success": True,

@@ -84,12 +84,21 @@ async function loadSheetMemoryStatus() {
     } catch (_) {}
 }
 
-async function loadSheetConnectionStatus() {
+async function loadSheetConnectionStatus(showSpinner = false) {
     if (ROLE !== "employee") return;
     const panel = document.getElementById("sheetHealthPanel");
     const adsEl = document.getElementById("sheetHealthAds");
     const perfEl = document.getElementById("sheetHealthPerf");
+    const recheckBtn = document.getElementById("btnRecheckSheet");
     if (!panel || !adsEl || !perfEl) return;
+
+    if (showSpinner) {
+        adsEl.className = "sheet-health-badge";
+        adsEl.innerHTML = `<i class="fas fa-circle-notch fa-spin"></i> Đang kiểm tra...`;
+        perfEl.className = "sheet-health-badge";
+        perfEl.innerHTML = `<i class="fas fa-circle-notch fa-spin"></i> Đang kiểm tra...`;
+        if (recheckBtn) { recheckBtn.disabled = true; recheckBtn.style.opacity = "0.4"; }
+    }
 
     try {
         const res = await fetch("/api/sheet-connection-status");
@@ -99,26 +108,31 @@ async function loadSheetConnectionStatus() {
 
         panel.style.display = "";
 
+        const STALE_MS = 30 * 60 * 1000; // 30 minutes
+
         function renderBadge(el, info, label) {
             const ok = info && info.ok === true;
             const unknown = !info || info.ok == null;
             const name = (info && info.sheet_name) || label;
             const err = (info && info.error) || "";
-            const checked = (info && info.checked_at)
-                ? new Date(info.checked_at).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit" })
+            const checkedAt = info && info.checked_at ? new Date(info.checked_at) : null;
+            const checkedStr = checkedAt
+                ? checkedAt.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit" })
                 : "";
+            const isStale = checkedAt && (Date.now() - checkedAt.getTime() > STALE_MS);
+            const staleTag = isStale ? ` <span style="opacity:0.6;font-size:0.72rem">(cũ)</span>` : "";
 
             if (unknown) {
                 el.className = "sheet-health-badge unknown";
                 el.innerHTML = `<i class="fas fa-question-circle"></i> ${label}: chưa kiểm tra`;
             } else if (ok) {
-                el.className = "sheet-health-badge ok";
-                el.title = checked ? `Kiểm tra lúc ${checked}` : "";
-                el.innerHTML = `<i class="fas fa-check-circle"></i> ${name || label}: OK`;
+                el.className = isStale ? "sheet-health-badge ok stale" : "sheet-health-badge ok";
+                el.title = checkedStr ? `Kiểm tra lúc ${checkedStr}` : "";
+                el.innerHTML = `<i class="fas fa-check-circle"></i> ${name || label}: OK${staleTag}`;
             } else {
                 el.className = "sheet-health-badge error";
                 el.title = err || "Lỗi không xác định";
-                el.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${label}: Mất kết nối`;
+                el.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${label}: Mất kết nối${staleTag}`;
             }
         }
 
@@ -132,6 +146,13 @@ async function loadSheetConnectionStatus() {
             perfEl.style.display = "";
         }
     } catch (_) {}
+    finally {
+        if (recheckBtn) { recheckBtn.disabled = false; recheckBtn.style.opacity = ""; }
+    }
+}
+
+async function recheckSheetHealth() {
+    await loadSheetConnectionStatus(true);
 }
 
 // ─── Member dropdown ───────────────────────────────────
