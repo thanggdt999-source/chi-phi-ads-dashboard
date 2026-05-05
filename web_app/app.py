@@ -104,6 +104,11 @@ TELEGRAM_REPORT_MAX_PRODUCTS = max(1, int(os.getenv("TELEGRAM_REPORT_MAX_PRODUCT
 SESSION_TIMEOUT_SECONDS = int(os.getenv("SESSION_TIMEOUT_SECONDS", "600"))  # 10 minutes
 AI_CHAT_ENABLED = (os.getenv("AI_CHAT_ENABLED", "1") or "1").strip().lower() in {"1", "true", "yes", "on"}
 AI_CHAT_MAX_TOKENS = max(128, min(1200, int(os.getenv("AI_CHAT_MAX_TOKENS", "500"))))
+OPENAI_API_KEY = (os.getenv("OPENAI_API_KEY") or "").strip()
+OPENAI_MODEL = (os.getenv("OPENAI_MODEL", "gpt-4.1-mini") or "gpt-4.1-mini").strip()
+OPENAI_FALLBACK_MODEL = (os.getenv("OPENAI_FALLBACK_MODEL", "gpt-4.1") or "gpt-4.1").strip()
+OPENAI_TIMEOUT_SECONDS = max(5, min(60, int(os.getenv("OPENAI_TIMEOUT_SECONDS", "12"))))
+OPENAI_MAX_TOKENS = max(64, min(4000, int(os.getenv("OPENAI_MAX_TOKENS", str(AI_CHAT_MAX_TOKENS)))))
 AI_CHAT_POLLINATIONS_MODELS = [
     m.strip()
     for m in (os.getenv("AI_CHAT_POLLINATIONS_MODELS", "openai,mistral,llama,claude") or "").split(",")
@@ -1261,15 +1266,8 @@ def _call_pollinations_text(prompt_text: str, model_name: str, timeout: int = 30
         return True, body, resp.getcode()
 
 
-def ask_groq_chat(user_message: str, history: Optional[list] = None, data_context: str = "") -> tuple[bool, str]:
-    """Call Pollinations AI (free, no key required) for chat completions."""
-    if not AI_CHAT_ENABLED:
-        return False, "Tính năng AI đang tắt trên hệ thống."
-
+def _build_ai_prompt(user_message: str, history: Optional[list] = None, data_context: str = "") -> tuple[str, bool]:
     safe_message = (user_message or "").strip()
-    if not safe_message:
-        return False, "Tin nhắn đang trống."
-
     history_items = history if isinstance(history, list) else []
     history_items = history_items[-8:]
 
@@ -1335,6 +1333,52 @@ def ask_groq_chat(user_message: str, history: Optional[list] = None, data_contex
     prompt_lines.append("Hay tra loi bang tieng Viet.")
 
     prompt_text = "\n".join(prompt_lines).strip()
+    return prompt_text, has_data_context
+
+
+def _call_openai_chat(prompt_text: str, model_name: str, timeout: int = 12) -> tuple[bool, str, int]:
+    payload = {
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": "Ban la AI assistant tra loi bang tieng Viet, ngan gon va dung trong tam."},
+            {"role": "user", "content": prompt_text},
+        ],
+        "temperature": 0.3,
+        "max_tokens": OPENAI_MAX_TOKENS,
+    }
+    body_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib_request.Request(
+        url="https://api.openai.com/v1/chat/completions",
+        data=body_bytes,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "User-Agent": "chi-phi-ads-dashboard/1.0",
+        },
+        method="POST",
+    )
+
+    with urllib_request.urlopen(req, timeout=timeout) as resp:
+        raw = resp.read().decode("utf-8", errors="ignore")
+        data = json.loads(raw) if raw else {}
+        choices = data.get("choices") if isinstance(data, dict) else None
+        if isinstance(choices, list) and choices:
+            msg = choices[0].get("message") if isinstance(choices[0], dict) else None
+            content = str((msg or {}).get("content") or "").strip()
+            return True, content, resp.getcode()
+        return False, "", resp.getcode()
+
+
+def ask_pollinations_chat(user_message: str, history: Optional[list] = None, data_context: str = "") -> tuple[bool, str]:
+    """Call Pollinations AI (free, no key required) for chat completions."""
+    if not AI_CHAT_ENABLED:
+        return False, "Tính năng AI đang tắt trên hệ thống."
+
+    safe_message = (user_message or "").strip()
+    if not safe_message:
+        return False, "Tin nhắn đang trống."
+
+    prompt_text, has_data_context = _build_ai_prompt(safe_message, history, data_context)
 
     model_candidates = AI_CHAT_POLLINATIONS_MODELS or ["openai", "mistral", "llama"]
     last_error = ""
@@ -1374,8 +1418,47 @@ def ask_groq_chat(user_message: str, history: Optional[list] = None, data_contex
 
 
 def ask_openai_chat(user_message: str, history: Optional[list] = None, data_context: str = "") -> tuple[bool, str]:
-    """Wrapper that delegates to Groq API."""
-    return ask_groq_chat(user_message, history, data_context)
+    """Use OpenAI as primary provider, then fall back to Pollinations."""
+    if not AI_CHAT_ENABLED:
+        return False, "Tính năng AI đang tắt trên hệ thống."
+
+    safe_message = (user_message or "").strip()
+    if not safe_message:
+        return False, "Tin nhắn đang trống."
+
+    prompt_text, has_data_context = _build_ai_prompt(safe_message, history, data_context)
+
+    if OPENAI_API_KEY:
+        openai_candidates = []
+        if OPENAI_MODEL:
+            openai_candidates.append(OPENAI_MODEL)
+        if OPENAI_FALLBACK_MODEL and OPENAI_FALLBACK_MODEL not in openai_candidates:
+            openai_candidates.append(OPENAI_FALLBACK_MODEL)
+
+        last_openai_error = ""
+        for model_name in openai_candidates:
+            try:
+                ok, reply, _status = _call_openai_chat(prompt_text, model_name=model_name, timeout=OPENAI_TIMEOUT_SECONDS)
+                if ok and reply:
+                    if not has_data_context:
+                        reply = _strip_ads_noise_for_general_chat(reply)
+                    return True, reply
+                last_openai_error = f"empty response from model={model_name}"
+            except urllib_error.HTTPError as exc:
+                body = exc.read().decode("utf-8", errors="ignore")
+                body_preview = body.strip().replace("\n", " ")[:240]
+                if exc.code in {429, 500, 502, 503, 504, 520, 522, 524}:
+                    last_openai_error = f"HTTP {exc.code} model={model_name}"
+                    continue
+                if body_preview:
+                    return False, f"OpenAI lỗi {exc.code}: {body_preview}"
+                return False, f"OpenAI lỗi {exc.code}"
+            except Exception as exc:
+                last_openai_error = f"{exc.__class__.__name__}: {str(exc).strip()[:140]}"
+
+        app.logger.warning("OpenAI failed, fallback to Pollinations: %s", last_openai_error)
+
+    return ask_pollinations_chat(safe_message, history, data_context)
 
 
 def get_current_telegram_setup_actor() -> tuple[str, Optional[dict]]:
