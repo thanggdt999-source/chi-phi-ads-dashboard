@@ -249,6 +249,21 @@
         </div>
     </div>
 
+    <!-- V3: System Health Dashboard -->
+    <div class="card" style="margin-top:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+            <h2 style="font-size:1.05rem;font-weight:700;color:#f1f5f9;margin:0;"><i class="fas fa-server"></i> System Health</h2>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="btn btn-primary" style="padding:6px 12px;font-size:0.8rem;" onclick="loadSystemHealth()"><i class="fas fa-rotate-right"></i> Làm mới</button>
+                <button class="btn" style="padding:6px 12px;font-size:0.8rem;background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);" onclick="sendTestAlert()"><i class="fas fa-bell"></i> Test Telegram Alert</button>
+            </div>
+        </div>
+        <div id="healthGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;">
+            <div style="color:#475569;font-size:0.82rem;">Đang tải...</div>
+        </div>
+        <div id="healthMeta" style="font-size:0.74rem;color:#475569;margin-top:10px;"></div>
+    </div>
+
 </div>
 
 <footer class="app-footer">
@@ -639,6 +654,48 @@
         } catch(e) { if(tbody) tbody.innerHTML = '<tr><td colspan="4" style="color:#ef4444;padding:8px;">Lỗi kết nối</td></tr>'; }
     }
     document.addEventListener('DOMContentLoaded', () => { loadTokenStatus(); loadUserActivity(); });
+
+    // ── V3: System Health ──────────────────────────────────────────
+    async function loadSystemHealth() {
+        const grid = document.getElementById('healthGrid');
+        const meta = document.getElementById('healthMeta');
+        if (grid) grid.innerHTML = '<div style="color:#475569;font-size:0.82rem;">Đang tải...</div>';
+        try {
+            const res = await fetch('/api/admin/system-health');
+            const d = await res.json();
+            if (!d.success) { grid.innerHTML = '<div style="color:#ef4444;">Lỗi</div>'; return; }
+            const metrics = [
+                { label: 'Uptime', value: d.uptime, icon: 'fa-clock', color: '#34d399' },
+                { label: 'Google Sheets', value: d.google_sheets === 'ok' ? '✓ OK' : '✗ Lỗi', icon: 'fa-table', color: d.google_sheets==='ok'?'#34d399':'#ef4444' },
+                { label: 'AI Chat', value: d.ai_enabled ? '✓ Bật' : '✗ Tắt', icon: 'fa-robot', color: d.ai_enabled?'#818cf8':'#64748b' },
+                { label: 'Tổng users', value: d.total_users, icon: 'fa-users', color: '#60a5fa' },
+                { label: 'Active 7d', value: d.active_users_7d, icon: 'fa-user-clock', color: '#a78bfa' },
+                { label: 'Audit logs', value: d.audit_log_entries, icon: 'fa-clipboard-list', color: '#f59e0b' },
+                { label: 'Telegram Cron', value: d.telegram_scheduler, icon: 'fa-paper-plane', color: d.telegram_scheduler==='running'?'#34d399':'#64748b' },
+                { label: 'Last TG Slot', value: d.last_telegram_slot || '—', icon: 'fa-calendar-check', color: '#94a3b8' },
+            ];
+            grid.innerHTML = metrics.map(m => `
+                <div style="background:#1e293b;border:1px solid #334155;border-radius:10px;padding:12px 14px;">
+                    <div style="font-size:0.7rem;color:#64748b;margin-bottom:4px;"><i class="fas ${m.icon}" style="margin-right:4px;"></i>${m.label}</div>
+                    <div style="font-size:0.95rem;font-weight:800;color:${m.color};">${m.value}</div>
+                </div>`).join('');
+            if (meta) meta.textContent = `Cập nhật lúc ${d.server_time}`;
+        } catch(e) { if(grid) grid.innerHTML = '<div style="color:#ef4444;">Lỗi kết nối</div>'; }
+    }
+
+    // ── R2: Test Telegram alert ─────────────────────────────────────
+    async function sendTestAlert() {
+        const msg = prompt('Nội dung cảnh báo gửi đến tất cả users có Telegram:', '⚠️ Cảnh báo từ hệ thống Chi Phí Ads Dashboard');
+        if (!msg) return;
+        try {
+            const res = await fetch('/api/admin/telegram-test-alert', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({message: msg}) });
+            const d = await res.json();
+            if (d.success) showToast(`Đã gửi: ${d.sent} người · Lỗi: ${d.failed}`, 'success');
+            else showToast(d.error||'Lỗi gửi alert','error');
+        } catch(e) { showToast('Lỗi kết nối','error'); }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => { loadSystemHealth(); });
 
     // ── Init ──────────────────────────────────────────────────────────
     renderTable();

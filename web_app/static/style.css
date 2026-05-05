@@ -1682,3 +1682,103 @@ tr.group-subtotal-row td {
         font-size: 0.75rem;
     }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   BATCH 3: Q1-Q3 KPI/Leaderboard/TopPerformer, W3 Forecast,
+   S1-S2 AI analysis bar, R1-R2 Telegram alerts, V3 Health
+   ───────────────────────────────────────────────────────── */
+
+/* KPI Banner Row */
+.kpi-banner-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+}
+.kpi-card {
+    flex: 1;
+    min-width: 160px;
+    padding: 14px 16px;
+}
+.kpi-card-label {
+    font-size: 0.74rem;
+    color: #64748b;
+    font-weight: 600;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.kpi-card-value {
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: #e2e8f0;
+    margin-bottom: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.kpi-card-sub {
+    font-size: 0.72rem;
+    color: #475569;
+}
+
+/* Q1: KPI progress bar */
+.kpi-progress-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 6px 0 3px;
+}
+.kpi-bar-track {
+    flex: 1;
+    height: 8px;
+    background: rgba(51,65,85,0.8);
+    border-radius: 4px;
+    overflow: hidden;
+}
+.kpi-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #6366f1, #34d399);
+    transition: width 0.6s ease;
+    width: 0%;
+}
+.kpi-pct {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #a5b4fc;
+    white-space: nowrap;
+}
+.kpi-target-card #kpiTargetEditor {
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+}
+.kpi-target-card #kpiTargetEditor.open {
+    display: flex;
+}
+
+/* S1-S2: AI analysis bar */
+.ai-analysis-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 10px 14px;
+    background: rgba(99,102,241,0.07);
+    border: 1px solid rgba(99,102,241,0.2);
+    border-radius: 10px;
+    margin-bottom: 14px;
+}
+
+/* Q2: Leaderboard rank medal */
+td.rank-medal { font-size: 1rem; text-align: center; }
+tr.rank-1 td { background: rgba(251,191,36,0.08) !important; }
+tr.rank-2 td { background: rgba(148,163,184,0.07) !important; }
+tr.rank-3 td { background: rgba(234,179,8,0.05) !important; }
+
+@media (max-width: 600px) {
+    .kpi-banner-row { flex-direction: column; }
+    .ai-analysis-bar { flex-direction: column; align-items: flex-start; }
+}

@@ -2499,3 +2499,271 @@ async function exportReportPDF() {
         if (typeof origRT === 'function') origRT.call(this, rows);
     };
 })();
+// ══════════════════════════════════════════════════════════════════
+// BATCH 3: Q1-Q3 KPI/TopPerformer/Leaderboard, W3 Forecast,
+//          S1-S2 AI analysis, Q2 leaderboard sort, U2 lazy charts
+// ══════════════════════════════════════════════════════════════════
+
+// ─── Q3: Top performer + worst performer ─────────────────────────
+function renderTopPerformer(rows) {
+    const banner = document.getElementById('kpiBannerRow');
+    if (!banner) return;
+    banner.style.display = 'flex';
+
+    if (!rows || !rows.length) return;
+    // Group by product: find today's data
+    const now = new Date();
+    const todayKey = `${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()}`;
+    const todayRows = rows.filter(r => (r['Ngày']||'').trim() === todayKey);
+    const workRows = todayRows.length > 5 ? todayRows : rows;
+
+    const byProd = {};
+    workRows.forEach(r => {
+        const p = (r['Tên sản phẩm - VN']||r['Tên tài khoản']||'Khác').trim();
+        const spend = parseSpendJS(r['Số tiền chi tiêu - USD']||'');
+        const data = parseInt(r['Số Data']||'0', 10)||0;
+        if (!byProd[p]) byProd[p] = { spend:0, data:0 };
+        byProd[p].spend += spend;
+        byProd[p].data += data;
+    });
+    const sorted = Object.entries(byProd).map(([p,v])=>({ name:p, ...v, cpr: v.spend>0&&v.data>0?(v.spend/v.data):Infinity }))
+        .filter(x=>x.data>0).sort((a,b)=>a.cpr-b.cpr);
+    if (!sorted.length) return;
+
+    const top = sorted[0], worst = sorted[sorted.length-1];
+    const nameEl = document.getElementById('topPerformerName'), metaEl = document.getElementById('topPerformerMeta');
+    const wNameEl = document.getElementById('worstPerformerName'), wMetaEl = document.getElementById('worstPerformerMeta');
+    if (nameEl) nameEl.textContent = top.name.slice(0,22);
+    if (metaEl) metaEl.textContent = `CPR: $${top.cpr.toFixed(3)} · ${top.data} data`;
+    if (wNameEl) wNameEl.textContent = worst.name.slice(0,22);
+    if (wMetaEl) wMetaEl.textContent = `CPR: $${worst.cpr === Infinity ? '—' : worst.cpr.toFixed(3)} · ${worst.data} data`;
+}
+
+// ─── W3: Forecast cuoi thang (linear regression) ─────────────────
+function renderForecast(rows) {
+    const el = document.getElementById('forecastSpend');
+    const metaEl = document.getElementById('forecastMeta');
+    if (!el) return;
+
+    const now = new Date();
+    const curM = now.getMonth()+1, curY = now.getFullYear();
+    const daysInMonth = new Date(curY, now.getMonth()+1, 0).getDate();
+    const daysPassed = now.getDate();
+
+    // Accumulate daily spend for current month
+    const daily = {};
+    rows.forEach(r => {
+        const raw = (r['Ngày']||'').trim();
+        if (!raw) return;
+        const parts = raw.split('/');
+        if (parts.length < 3) return;
+        const [d, m, y] = parts.map(Number);
+        if (m !== curM || y !== curY) return;
+        const spend = parseSpendJS(r['Số tiền chi tiêu - VND']||'');
+        daily[d] = (daily[d]||0) + spend;
+    });
+
+    const xs = Object.keys(daily).map(Number).sort((a,b)=>a-b);
+    if (xs.length < 2) { el.textContent = '—'; if(metaEl) metaEl.textContent = 'Cần ít nhất 2 ngày dữ liệu'; return; }
+
+    // Simple linear regression: y = a + b*x
+    const ys = xs.map(x => daily[x]);
+    const n = xs.length, sumX = xs.reduce((s,x)=>s+x,0), sumY = ys.reduce((s,y)=>s+y,0);
+    const sumXY = xs.reduce((s,x,i)=>s+x*ys[i],0), sumX2 = xs.reduce((s,x)=>s+x*x,0);
+    const b = (n*sumXY - sumX*sumY) / (n*sumX2 - sumX*sumX);
+    const a = (sumY - b*sumX) / n;
+
+    // Project remaining days and sum
+    const actualSoFar = Object.values(daily).reduce((s,v)=>s+v,0);
+    let projected = actualSoFar;
+    for (let d = daysPassed+1; d <= daysInMonth; d++) {
+        projected += Math.max(0, a + b*d);
+    }
+    el.textContent = (projected/1e6).toFixed(1) + 'M VND';
+    if (metaEl) metaEl.textContent = `Đã chi: ${(actualSoFar/1e6).toFixed(1)}M · còn ${daysInMonth-daysPassed} ngày`;
+}
+
+// ─── Q1: KPI target tracking ──────────────────────────────────────
+const KPI_KEY = 'ads_kpi_targets_v1';
+function loadKpiTargets() { try { return JSON.parse(localStorage.getItem(KPI_KEY)||'{}'); } catch(_){ return {}; } }
+function openKpiTargetEdit() {
+    const ed = document.getElementById('kpiTargetEditor');
+    if (!ed) return;
+    ed.classList.toggle('open');
+    const t = loadKpiTargets();
+    const di = document.getElementById('kpiDataTarget'), si = document.getElementById('kpiSpendTarget');
+    if (di) di.value = t.data_target || '';
+    if (si) si.value = t.spend_target_m || '';
+}
+function saveKpiTargets() {
+    const di = document.getElementById('kpiDataTarget'), si = document.getElementById('kpiSpendTarget');
+    const targets = { data_target: parseFloat(di?.value||'0')||0, spend_target_m: parseFloat(si?.value||'0')||0 };
+    try { localStorage.setItem(KPI_KEY, JSON.stringify(targets)); } catch(_){}
+    const ed = document.getElementById('kpiTargetEditor');
+    if (ed) ed.classList.remove('open');
+    renderKpiProgress(filteredRows);
+    showToast('Đã lưu KPI mục tiêu!', 'success');
+}
+function renderKpiProgress(rows) {
+    const targets = loadKpiTargets();
+    const fill = document.getElementById('kpiBarFill'), pct = document.getElementById('kpiPct'), meta = document.getElementById('kpiTargetMeta');
+    if (!fill) return;
+    const totalData = rows.reduce((s,r)=>s+(parseInt(r['Số Data']||'0',10)||0), 0);
+    const totalSpend = rows.reduce((s,r)=>s+parseSpendJS(r['Số tiền chi tiêu - VND']||''), 0)/1e6;
+    const dp = targets.data_target > 0 ? Math.min(100, (totalData/targets.data_target*100)) : 0;
+    const sp = targets.spend_target_m > 0 ? Math.min(100, (totalSpend/targets.spend_target_m*100)) : 0;
+    const p = targets.data_target > 0 ? dp : sp;
+    fill.style.width = p.toFixed(0) + '%';
+    fill.style.background = p >= 100 ? 'linear-gradient(90deg,#34d399,#10b981)' : p >= 70 ? 'linear-gradient(90deg,#6366f1,#34d399)' : 'linear-gradient(90deg,#f59e0b,#6366f1)';
+    if (pct) pct.textContent = p > 0 ? p.toFixed(0)+'%' : '(chưa set)';
+    if (meta) {
+        const parts = [];
+        if (targets.data_target > 0) parts.push(`Data: ${totalData}/${targets.data_target}`);
+        if (targets.spend_target_m > 0) parts.push(`Doanh số: ${totalSpend.toFixed(1)}M/${targets.spend_target_m}M`);
+        meta.textContent = parts.join(' · ') || 'Bấm ✏ để đặt mục tiêu';
+    }
+}
+
+// ─── Q2: Leaderboard sort ─────────────────────────────────────────
+let _lbSort = 'cpr';
+function setLeaderboardSort(mode) {
+    _lbSort = mode;
+    ['cpr','spend','data'].forEach(m => {
+        const btn = document.getElementById('lbSort'+m.charAt(0).toUpperCase()+m.slice(1));
+        if (btn) btn.classList.toggle('active', m === mode);
+    });
+    try { renderRankings(); } catch(_) {}
+}
+// Patch renderRankings to support sort mode
+(function() {
+    const orig = window.renderRankings;
+    if (typeof orig !== 'function') return;
+    window.renderRankings = function() {
+        orig.call(this);
+        const tbody = document.getElementById('rankingsBody');
+        if (!tbody || _lbSort === 'cpr') return; // cpr is default sort
+        const rows = [...tbody.querySelectorAll('tr')].filter(r=>!r.classList.contains('rank-1')&&!r.classList.contains('rank-2')&&!r.classList.contains('rank-3'));
+        // Re-sort by spend or data (col 3 = spend, col 4 = data)
+        const allRows = [...tbody.querySelectorAll('tr')];
+        const colIdx = _lbSort === 'spend' ? 3 : 4;
+        const sorted = allRows.sort((a,b)=>{
+            const av = parseFloat((a.cells[colIdx]?.textContent||'0').replace(/[^0-9.]/g,''))||0;
+            const bv = parseFloat((b.cells[colIdx]?.textContent||'0').replace(/[^0-9.]/g,''))||0;
+            return bv - av; // descending
+        });
+        sorted.forEach((tr,i)=>{
+            // update rank cell
+            if (tr.cells[0]) tr.cells[0].textContent = i+1;
+            tr.className = i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'';
+            tbody.appendChild(tr);
+        });
+    };
+})();
+
+// ─── S1: AI trend analysis ────────────────────────────────────────
+async function aiAnalyzeTrend() {
+    const spinner = document.getElementById('aiAnalysisSpinner');
+    if (spinner) spinner.style.display = 'inline';
+    const rows = filteredRows || currentData.rows || [];
+    const summary = buildDataSummary(rows);
+    const prompt = `Phân tích xu hướng 30 ngày gần nhất của tôi dựa trên dữ liệu sau và đưa ra nhận xét chuyên sâu về tăng giảm chi phí, hiệu quả quảng cáo:\n${summary}`;
+    await openAIWithPrompt(prompt);
+    if (spinner) spinner.style.display = 'none';
+}
+
+// ─── S2: AI budget optimization ───────────────────────────────────
+async function aiOptimizeBudget() {
+    const spinner = document.getElementById('aiAnalysisSpinner');
+    if (spinner) spinner.style.display = 'inline';
+    const rows = filteredRows || currentData.rows || [];
+    const summary = buildDataSummary(rows);
+    const prompt = `Dựa trên dữ liệu hiệu suất quảng cáo dưới đây, hãy đề xuất cụ thể: (1) sản phẩm/tài khoản nên tăng ngân sách, (2) sản phẩm cần cắt giảm, (3) 3 hành động tối ưu ưu tiên nhất:\n${summary}`;
+    await openAIWithPrompt(prompt);
+    if (spinner) spinner.style.display = 'none';
+}
+
+// ─── S3: AI compare months ────────────────────────────────────────
+async function aiCompareMonths() {
+    const spinner = document.getElementById('aiAnalysisSpinner');
+    if (spinner) spinner.style.display = 'inline';
+    const rows = currentData.rows || [];
+    const summary = buildDataSummary(rows);
+    const prompt = `So sánh hiệu quả tháng này với tháng trước từ dữ liệu dưới đây. Chỉ ra điểm cải thiện và điểm kém hơn, kèm khuyến nghị:\n${summary}`;
+    await openAIWithPrompt(prompt);
+    if (spinner) spinner.style.display = 'none';
+}
+
+function buildDataSummary(rows) {
+    if (!rows.length) return 'Chưa có dữ liệu.';
+    const byProd = {};
+    rows.forEach(r => {
+        const p = (r['Tên sản phẩm - VN']||'Khác').trim();
+        const spend = parseSpendJS(r['Số tiền chi tiêu - VND']||'');
+        const data = parseInt(r['Số Data']||'0',10)||0;
+        if (!byProd[p]) byProd[p] = {spend:0, data:0};
+        byProd[p].spend += spend;
+        byProd[p].data += data;
+    });
+    const lines = Object.entries(byProd).sort((a,b)=>b[1].spend-a[1].spend).slice(0,10)
+        .map(([p,v])=>`- ${p}: chi=${( v.spend/1e6).toFixed(2)}M VND, data=${v.data}, CPR=${v.data>0?(v.spend/v.data/1000).toFixed(1)+'k':'-'}`);
+    return lines.join('\n');
+}
+
+async function openAIWithPrompt(prompt) {
+    // Open AI chat and send the prompt
+    const btn = document.querySelector('.ai-chat-toggle');
+    if (btn) btn.click();
+    await new Promise(r=>setTimeout(r,400));
+    const inp = document.getElementById('aiChatInput');
+    if (inp) {
+        inp.value = prompt;
+        const sendBtn = document.querySelector('.ai-chat-send');
+        if (sendBtn) sendBtn.click();
+        else {
+            const evt = new KeyboardEvent('keydown',{key:'Enter',bubbles:true});
+            inp.dispatchEvent(evt);
+        }
+    }
+}
+
+// ─── U2: Lazy-load charts via IntersectionObserver ────────────────
+(function() {
+    const chartsSec = document.getElementById('chartsSection');
+    if (!chartsSec || typeof IntersectionObserver === 'undefined') return;
+    let chartsRendered = false;
+    const obs = new IntersectionObserver((entries) => {
+        if (!entries[0].isIntersecting || chartsRendered) return;
+        chartsRendered = true;
+        const rows = filteredRows || currentData.rows || [];
+        if (!rows.length) return;
+        try { renderStackedBar(rows); } catch(_){}
+        try { renderMonthlyComparison(rows); } catch(_){}
+        try { renderHeatmap(rows); } catch(_){}
+        obs.disconnect();
+    }, { threshold: 0.1 });
+    obs.observe(chartsSec);
+    // Reset flag when data reloads
+    const origRenderInsights = window.renderInsights;
+    window.renderInsights = function(rows) {
+        chartsRendered = false; // allow re-render on new data
+        if (typeof origRenderInsights === 'function') origRenderInsights.call(this, rows);
+    };
+})();
+
+// ─── Patch fetchAndRender / renderData to call new features ───────
+(function() {
+    const origRenderData = window.renderData;
+    window.renderData = function() {
+        if (typeof origRenderData === 'function') origRenderData.call(this);
+        const rows = filteredRows || currentData.rows || [];
+        try { renderTopPerformer(rows); } catch(_) {}
+        try { renderForecast(rows); } catch(_) {}
+        try { renderKpiProgress(rows); } catch(_) {}
+    };
+    // Also patch renderTable to update KPI after filter
+    const origRT2 = window.renderTable;
+    window.renderTable = function(rows) {
+        if (typeof origRT2 === 'function') origRT2.call(this, rows);
+        try { renderKpiProgress(rows || filteredRows || []); } catch(_) {}
+    };
+})();

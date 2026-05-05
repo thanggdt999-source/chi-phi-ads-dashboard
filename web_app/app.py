@@ -6081,6 +6081,96 @@ def api_admin_token_status():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+# ─── V3: System Health Dashboard API ─────────────────────────────
+@app.route("/api/admin/system-health", methods=["GET"])
+@api_role_required("admin")
+def api_admin_system_health():
+    """Return comprehensive system health info for the admin health dashboard."""
+    try:
+        uptime_seconds = int((datetime.now() - APP_START_TIME).total_seconds())
+        hours, rem = divmod(uptime_seconds, 3600)
+        mins = rem // 60
+        uptime_str = f"{hours}h {mins}m"
+
+        # Google Sheets connectivity
+        gsheets_ok = True
+        try:
+            get_gspread_client()
+        except Exception:
+            gsheets_ok = False
+
+        # Count active users (logged in last 7 days)
+        users = load_users_config()
+        from datetime import timedelta
+        now = datetime.now()
+        active_7d = sum(1 for u in users.values()
+                        if isinstance(u.get("last_login"), str)
+                        and len(u.get("last_login", "")) >= 10
+                        and (now - datetime.strptime(u["last_login"], "%Y-%m-%d %H:%M:%S")).days <= 7)
+        total_users = len(users)
+
+        # Audit log size
+        audit_lines = 0
+        try:
+            if AUDIT_LOG_PATH.exists():
+                audit_lines = len(AUDIT_LOG_PATH.read_text(encoding="utf-8").splitlines())
+        except Exception:
+            pass
+
+        # AI rate limit store size
+        with _ai_rate_limit_lock:
+            active_ai_sessions = len(_ai_rate_limit_store)
+
+        # Telegram scheduler status
+        telegram_scheduler_on = _TELEGRAM_SCHEDULER_STARTED
+
+        # Cron job last run
+        tg_state = load_telegram_report_state()
+        last_tg_slot = tg_state.get("last_slot", "—")
+
+        return jsonify({
+            "success": True,
+            "uptime": uptime_str,
+            "uptime_seconds": uptime_seconds,
+            "google_sheets": "ok" if gsheets_ok else "error",
+            "ai_enabled": AI_CHAT_ENABLED,
+            "total_users": total_users,
+            "active_users_7d": active_7d,
+            "audit_log_entries": audit_lines,
+            "active_ai_sessions": active_ai_sessions,
+            "telegram_scheduler": "running" if telegram_scheduler_on else "stopped",
+            "last_telegram_slot": last_tg_slot,
+            "server_time": now.strftime("%Y-%m-%d %H:%M:%S"),
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ─── R2: Manual trigger Telegram data-drop alert ─────────────────
+@app.route("/api/admin/telegram-test-alert", methods=["POST"])
+@api_role_required("admin")
+def api_admin_telegram_test_alert():
+    """Send a test alert to all users with Telegram connected."""
+    try:
+        data = request.get_json(silent=True) or {}
+        msg = str(data.get("message") or "⚠️ Test cảnh báo từ hệ thống Chi Phí Ads Dashboard").strip()
+        users = load_users_config()
+        sent, failed = 0, 0
+        for uname, udata in users.items():
+            chat_id = (udata.get("telegram_chat_id") or "").strip()
+            if not chat_id:
+                continue
+            ok, _ = send_telegram_message(chat_id, msg)
+            if ok:
+                sent += 1
+            else:
+                failed += 1
+        write_audit_log("telegram_test_alert", username=str(session.get("username","")), extra={"sent": sent, "failed": failed})
+        return jsonify({"success": True, "sent": sent, "failed": failed})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/admin/users", methods=["GET"])
 @api_role_required("admin")
 def api_admin_list_users():

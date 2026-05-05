@@ -758,6 +758,44 @@
             <!-- ── Error Message ── -->
             <div id="errorMessage" class="alert alert-error" style="display: none;"></div>
 
+            <!-- ── Q3: Top Performer + W3: Forecast banner (shown when data loaded) ── -->
+            <div id="kpiBannerRow" style="display:none;gap:12px;margin-bottom:4px;" class="kpi-banner-row">
+                <!-- Q3: Top performer -->
+                <div class="card kpi-card" id="topPerformerCard">
+                    <div class="kpi-card-label"><i class="fas fa-star" style="color:#f59e0b"></i> Tốt nhất hôm nay</div>
+                    <div class="kpi-card-value" id="topPerformerName">—</div>
+                    <div class="kpi-card-sub" id="topPerformerMeta"></div>
+                </div>
+                <div class="card kpi-card" id="worstPerformerCard">
+                    <div class="kpi-card-label"><i class="fas fa-arrow-trend-down" style="color:#ef4444"></i> Cần tối ưu</div>
+                    <div class="kpi-card-value" id="worstPerformerName">—</div>
+                    <div class="kpi-card-sub" id="worstPerformerMeta"></div>
+                </div>
+                <!-- W3: Forecast -->
+                <div class="card kpi-card" id="forecastCard">
+                    <div class="kpi-card-label"><i class="fas fa-chart-line" style="color:#34d399"></i> Dự báo cuối tháng</div>
+                    <div class="kpi-card-value" id="forecastSpend">—</div>
+                    <div class="kpi-card-sub" id="forecastMeta"></div>
+                </div>
+                <!-- Q1: KPI Progress -->
+                <div class="card kpi-card kpi-target-card" id="kpiTargetCard">
+                    <div class="kpi-card-label"><i class="fas fa-bullseye" style="color:#818cf8"></i> KPI tháng này
+                        <button onclick="openKpiTargetEdit()" style="background:none;border:none;cursor:pointer;color:#64748b;font-size:0.72rem;margin-left:4px;" title="Đặt mục tiêu"><i class="fas fa-pen"></i></button>
+                    </div>
+                    <div class="kpi-progress-wrap">
+                        <div class="kpi-bar-track"><div class="kpi-bar-fill" id="kpiBarFill"></div></div>
+                        <span class="kpi-pct" id="kpiPct">—</span>
+                    </div>
+                    <div class="kpi-card-sub" id="kpiTargetMeta"></div>
+                    <!-- inline target editor -->
+                    <div id="kpiTargetEditor" style="display:none;margin-top:8px;gap:6px;flex-direction:column;">
+                        <input type="number" id="kpiDataTarget" placeholder="Mục tiêu data (KQ)" style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:4px 8px;font-size:0.78rem;width:100%;">
+                        <input type="number" id="kpiSpendTarget" placeholder="Mục tiêu doanh số (M VND)" style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:4px 8px;font-size:0.78rem;width:100%;">
+                        <button onclick="saveKpiTargets()" style="background:#6366f1;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:0.78rem;cursor:pointer;">Lưu</button>
+                    </div>
+                </div>
+            </div>
+
             <!-- ── Stats Section ── -->
             <section id="statsSection" class="stats-section" style="display: none;">
                 <div class="stats-grid">
@@ -796,7 +834,15 @@
             {% if role in ['lead', 'admin'] %}
             <section id="rankingsSection" class="rankings-section" style="display: none;">
                 <div class="card">
-                    <h2><i class="fas fa-trophy"></i> Bảng Xếp Hạng</h2>
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+                        <h2 style="margin:0;"><i class="fas fa-trophy"></i> Bảng Xếp Hạng</h2>
+                        <!-- Q2: leaderboard sort tabs -->
+                        <div style="display:flex;gap:6px;">
+                            <button class="btn-chip active" id="lbSortCpr" onclick="setLeaderboardSort('cpr')">Chi phí/data ↑</button>
+                            <button class="btn-chip" id="lbSortSpend" onclick="setLeaderboardSort('spend')">Doanh số ↓</button>
+                            <button class="btn-chip" id="lbSortData" onclick="setLeaderboardSort('data')">Data ↓</button>
+                        </div>
+                    </div>
                     <div class="table-wrapper">
                         <table class="data-table rankings-table">
                             <thead>
@@ -842,6 +888,14 @@
 
             <!-- ── Insights Section ── -->
             <section id="chartsSection" class="charts-section" style="display: none;">
+                <!-- S1/S2: AI analysis action bar -->
+                <div class="ai-analysis-bar">
+                    <span style="font-size:0.8rem;color:#64748b;"><i class="fas fa-robot"></i> AI phân tích nhanh:</span>
+                    <button class="btn-chip" onclick="aiAnalyzeTrend()"><i class="fas fa-chart-line"></i> Xu hướng 30 ngày</button>
+                    <button class="btn-chip" onclick="aiOptimizeBudget()"><i class="fas fa-sliders"></i> Tối ưu budget</button>
+                    <button class="btn-chip" onclick="aiCompareMonths()"><i class="fas fa-calendar-alt"></i> So sánh tháng</button>
+                    <span id="aiAnalysisSpinner" style="display:none;font-size:0.76rem;color:#818cf8;"><i class="fas fa-spinner fa-spin"></i> Đang phân tích...</span>
+                </div>
                 <div class="charts-grid">
                     <div class="card">
                         <h3><i class="fas fa-user-check"></i> Tài Khoản Quảng Cáo</h3>
