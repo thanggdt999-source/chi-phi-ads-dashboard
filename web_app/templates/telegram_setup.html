@@ -545,6 +545,7 @@
 
                     <div class="actions">
                         <button type="submit" class="btn btn-primary" id="submit-btn"><i class="fas fa-paper-plane"></i> {{ submit_label or 'Hoàn tất và gửi tin test' }}</button>
+                        <a href="{{ skip_url or url_for('telegram_skip_setup') }}" class="btn btn-ghost" style="margin-top:8px;font-size:0.82rem;opacity:0.7;" onclick="return confirm('Bỏ qua kết nối Telegram? Bạn sẽ không nhận được báo cáo tự động.')"><i class="fas fa-forward"></i> Bỏ qua, vào dashboard luôn</a>
                     </div>
                 </form>
             </section>

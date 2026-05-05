@@ -717,14 +717,21 @@ def user_requires_telegram_setup(username: str, user: Optional[dict] = None) -> 
 
     role = str(target_user.get("role", "") or "").strip()
 
+    # If no bot is available at system or user level, skip requirement entirely —
+    # there's nothing to set up without a bot token.
+    system_bot_token = normalize_telegram_bot_token(TELEGRAM_BOT_TOKEN)
+    user_bot_token = normalize_telegram_bot_token(str(target_user.get("telegram_bot_token", "")))
+    if not system_bot_token and not user_bot_token:
+        return False
+
     chat_id = normalize_telegram_chat_id(str(target_user.get("telegram_chat_id", "")))
     if not chat_id:
         return True
 
     bot_username = normalize_telegram_bot_username(str(target_user.get("telegram_bot_username", ""))) or normalize_telegram_bot_username(TELEGRAM_BOT_USERNAME)
-    bot_token = normalize_telegram_bot_token(str(target_user.get("telegram_bot_token", ""))) or normalize_telegram_bot_token(TELEGRAM_BOT_TOKEN)
+    bot_token = user_bot_token or system_bot_token
     if not bot_username or not bot_token:
-        return True
+        return False  # bot partially configured — let them through rather than trapping
 
     # Backward compatibility: old users may not have verified flags but already have a working chat_id.
     if "telegram_verified" not in target_user and "telegram_test_status" not in target_user:
@@ -733,7 +740,7 @@ def user_requires_telegram_setup(username: str, user: Optional[dict] = None) -> 
     if role in {"lead", "admin"}:
         return False
 
-    if target_user.get("telegram_test_status") == "sent":
+    if target_user.get("telegram_test_status") in {"sent", "skipped"}:
         return False
     return not bool(target_user.get("telegram_verified", False))
 
@@ -1401,6 +1408,7 @@ def render_telegram_setup_page(
     back_text: str | None = None,
     submit_label: str | None = None,
     title_text: str | None = None,
+    skip_url: str | None = None,
 ):
     return render_template(
         "telegram_setup.html",
@@ -1414,6 +1422,7 @@ def render_telegram_setup_page(
         back_text=back_text,
         submit_label=submit_label,
         title_text=title_text,
+        skip_url=skip_url,
     )
 
 
@@ -5173,6 +5182,9 @@ def register_employee():
             form_values=form_values,
         )
 
+    # If no system bot is configured, skip Telegram setup entirely — mark as sent
+    # so they can log in immediately without going through the setup gate.
+    system_bot_ready = bool(normalize_telegram_bot_token(TELEGRAM_BOT_TOKEN))
     users[username] = {
         "password": password,
         "role": "employee",
@@ -5180,9 +5192,13 @@ def register_employee():
         "display_name": display_name,
         "telegram_report_enabled": True,
         "telegram_verified": False,
-        "telegram_test_status": "pending",
+        "telegram_test_status": "sent" if not system_bot_ready else "pending",
     }
     save_users_config(users)
+
+    if not system_bot_ready:
+        # No bot configured — skip straight to login
+        return redirect(url_for("login", registered="1", telegram_test="not_configured", username=username))
 
     session["pending_telegram_setup"] = username
     return redirect(url_for("register_telegram"))
@@ -5325,6 +5341,34 @@ def register_telegram():
     return redirect(url_for("login", registered="1", telegram_ready="1", telegram_test=telegram_test, username=pending_username))
 
 
+@app.route("/telegram/skip", methods=["GET"])
+def telegram_skip_setup():
+    """Allow users to skip Telegram setup and go straight to dashboard/login."""
+    # Case 1: during registration flow (session has pending_telegram_setup)
+    pending_username = str(session.get("pending_telegram_setup", "")).strip()
+    if pending_username:
+        users = load_users_config()
+        if pending_username in users:
+            users[pending_username]["telegram_test_status"] = "skipped"
+            users[pending_username]["telegram_verified"] = False
+            save_users_config(users)
+        session.pop("pending_telegram_setup", None)
+        return redirect(url_for("login", registered="1", username=pending_username))
+
+    # Case 2: already logged in, skip /telegram/connect gate
+    if is_logged_in():
+        username = session.get("username", "")
+        users = load_users_config()
+        if username in users:
+            users[username]["telegram_test_status"] = "skipped"
+            users[username]["telegram_verified"] = False
+            save_users_config(users)
+        next_url = get_safe_next_url(request.args.get("next", ""))
+        return redirect(next_url or url_for("index"))
+
+    return redirect(url_for("login"))
+
+
 @app.route("/telegram/connect", methods=["GET", "POST"])
 @login_required
 def employee_telegram_connect():
@@ -5362,6 +5406,7 @@ def employee_telegram_connect():
             title_text=title_text,
             bind_code=bind_code,
             form_action=url_for("employee_telegram_connect", next=next_target),
+            skip_url=url_for("telegram_skip_setup", next=next_target or url_for("index")),
         )
 
     telegram_chat_id = request.form.get("telegram_chat_id", "").strip()
