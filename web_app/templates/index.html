@@ -830,8 +830,39 @@
                 </div>
             </section>
 
-            <!-- ── Rankings Section (lead / admin only) ── -->
-            {% if role in ['lead', 'admin'] %}
+            <!-- ── Leader: Team Management Panel (lead only) ── -->
+            {% if role == 'lead' %}
+            <section id="teamManagementSection" style="display:none;">
+                <div class="card team-panel">
+                    <!-- back button when drilling into a member -->
+                    <div id="teamBackBar" style="display:none;margin-bottom:14px;">
+                        <button class="btn btn-outline" onclick="backToTeamView()">
+                            <i class="fas fa-arrow-left"></i> Quay về Team
+                        </button>
+                        <span id="teamBackLabel" style="margin-left:10px;font-weight:700;color:var(--accent);"></span>
+                    </div>
+                    <!-- health summary bar -->
+                    <div class="team-health-bar" id="teamHealthBar">
+                        <div class="team-health-stat"><span class="ths-label">Tổng chi phí tháng</span><span class="ths-val" id="thsTotalSpend">—</span></div>
+                        <div class="team-health-stat"><span class="ths-label">Tổng Data</span><span class="ths-val" id="thsTotalData">—</span></div>
+                        <div class="team-health-stat"><span class="ths-label">CPR trung bình</span><span class="ths-val" id="thsAvgCpr">—</span></div>
+                        <div class="team-health-stat"><span class="ths-label">Thành viên</span><span class="ths-val" id="thsCount">—</span></div>
+                    </div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin:18px 0 12px;flex-wrap:wrap;gap:8px;">
+                        <h2 style="margin:0;font-size:1rem;"><i class="fas fa-users"></i> Thành viên team</h2>
+                        <div style="display:flex;gap:6px;">
+                            <button class="btn-chip active" id="tmSortCpr" onclick="sortTeamPanel('cpr')">CPR ↑</button>
+                            <button class="btn-chip" id="tmSortSpend" onclick="sortTeamPanel('spend')">Chi phí ↓</button>
+                            <button class="btn-chip" id="tmSortData" onclick="sortTeamPanel('data')">Data ↓</button>
+                        </div>
+                    </div>
+                    <div class="team-member-grid" id="teamMemberGrid"></div>
+                </div>
+            </section>
+            {% endif %}
+
+            <!-- ── Rankings Section (admin only) ── -->
+            {% if role == 'admin' %}
             <section id="rankingsSection" class="rankings-section" style="display: none;">
                 <div class="card">
                     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
@@ -860,7 +891,10 @@
                     </div>
                 </div>
             </section>
+            {% endif %}
 
+            <!-- ── Product Realtime Section (lead + admin) ── -->
+            {% if role in ['lead', 'admin'] %}
             <section id="productSection" class="product-section" style="display: none;">
                 <div class="card">
                     <h2><i class="fas fa-boxes-stacked"></i> Báo Cáo Sản Phẩm Realtime</h2>

@@ -2770,3 +2770,138 @@ async function openAIWithPrompt(prompt) {
         try { renderKpiProgress(rows || filteredRows || []); } catch(_) {}
     };
 })();
+
+// ── Leader: Team Management Panel ────────────────────────────────────────────
+let _teamPanelSortMode = 'cpr';
+let _teamPanelSavedData = null;   // saved before member drill-down
+
+function _cprClass(cpr) {
+    if (cpr <= 0) return 'cpr-ok';
+    if (cpr < 150000) return 'cpr-good';
+    if (cpr < 300000) return 'cpr-ok';
+    return 'cpr-bad';
+}
+
+function renderTeamPanel(summaries) {
+    const sec = document.getElementById('teamManagementSection');
+    const grid = document.getElementById('teamMemberGrid');
+    if (!sec || !grid) return;
+
+    if (!summaries || !summaries.length) { sec.style.display = 'none'; return; }
+
+    // Health bar
+    const totalSpend = summaries.reduce((s,m) => s + (m.total_spend||0), 0);
+    const totalData  = summaries.reduce((s,m) => s + (m.total_data||0), 0);
+    const avgCpr     = totalData > 0 ? totalSpend / totalData : 0;
+    const el = id => document.getElementById(id);
+    if (el('thsTotalSpend')) el('thsTotalSpend').textContent = formatCurrency(totalSpend);
+    if (el('thsTotalData'))  el('thsTotalData').textContent  = totalData.toLocaleString('en-US');
+    if (el('thsAvgCpr'))     el('thsAvgCpr').textContent     = formatCurrency(avgCpr);
+    if (el('thsCount'))      el('thsCount').textContent      = summaries.length + ' người';
+
+    _renderTeamCards(summaries, _teamPanelSortMode);
+    sec.style.display = 'block';
+}
+
+function _renderTeamCards(summaries, mode) {
+    const grid = document.getElementById('teamMemberGrid');
+    if (!grid) return;
+    let sorted = [...summaries];
+    if (mode === 'cpr')   sorted.sort((a,b) => (a.cost_per_data||0) - (b.cost_per_data||0));
+    if (mode === 'spend') sorted.sort((a,b) => (b.total_spend||0)   - (a.total_spend||0));
+    if (mode === 'data')  sorted.sort((a,b) => (b.total_data||0)    - (a.total_data||0));
+
+    grid.innerHTML = sorted.map((m, i) => {
+        const rank = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i+1}`;
+        const cprCls = _cprClass(m.cost_per_data || 0);
+        const cprLabel = m.cost_per_data > 0
+            ? formatCurrency(m.cost_per_data)
+            : '—';
+        const sheetUrl = encodeURIComponent(m.sheet_url || '');
+        const memberName = (m.name || '').replace(/'/g, "\\'");
+        return `<div class="team-member-card">
+            <div class="tmc-header">
+                <div class="tmc-rank">${rank}</div>
+                <div class="tmc-name" title="${m.name||''}">${m.name||'—'}</div>
+            </div>
+            <div class="tmc-stats">
+                <div class="tmc-stat-row">
+                    <span class="tmc-stat-label">Chi phí tháng</span>
+                    <span class="tmc-stat-val">${formatCurrency(m.total_spend||0)}</span>
+                </div>
+                <div class="tmc-stat-row">
+                    <span class="tmc-stat-label">Tổng Data</span>
+                    <span class="tmc-stat-val">${(m.total_data||0).toLocaleString('en-US')}</span>
+                </div>
+                <div class="tmc-stat-row">
+                    <span class="tmc-stat-label">Chi phí/Data</span>
+                    <span><span class="tmc-cpr-badge ${cprCls}">${cprLabel}</span></span>
+                </div>
+            </div>
+            <div class="tmc-footer">
+                <button class="btn-member-detail" onclick="enterMemberView('${m.sheet_url||''}','${memberName}')">
+                    <i class="fas fa-search"></i> Xem chi tiết
+                </button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function sortTeamPanel(mode) {
+    _teamPanelSortMode = mode;
+    ['cpr','spend','data'].forEach(m => {
+        const btn = document.getElementById('tmSort' + m.charAt(0).toUpperCase() + m.slice(1));
+        if (btn) btn.classList.toggle('active', m === mode);
+    });
+    const summaries = currentData && currentData.memberSummaries;
+    if (summaries && summaries.length) _renderTeamCards(summaries, mode);
+}
+
+async function enterMemberView(sheetUrl, memberName) {
+    if (!sheetUrl) return;
+    // Save current team state
+    _teamPanelSavedData = { data: currentData, filtered: filteredRows };
+    // Show back bar
+    const backBar = document.getElementById('teamBackBar');
+    const backLabel = document.getElementById('teamBackLabel');
+    if (backBar) backBar.style.display = 'flex';
+    if (backLabel) backLabel.textContent = memberName;
+    // Hide team cards, keep panel visible as container
+    const grid = document.getElementById('teamMemberGrid');
+    if (grid) grid.style.display = 'none';
+    const healthBar = document.getElementById('teamHealthBar');
+    if (healthBar) healthBar.style.display = 'none';
+    // Load member data
+    await fetchAndRender(sheetUrl, false);
+}
+
+function backToTeamView() {
+    if (!_teamPanelSavedData) return;
+    // Restore team data
+    currentData = _teamPanelSavedData.data;
+    filteredRows = _teamPanelSavedData.filtered;
+    _teamPanelSavedData = null;
+    // Restore team panel UI
+    const backBar = document.getElementById('teamBackBar');
+    if (backBar) backBar.style.display = 'none';
+    const grid = document.getElementById('teamMemberGrid');
+    if (grid) grid.style.display = 'grid';
+    const healthBar = document.getElementById('teamHealthBar');
+    if (healthBar) healthBar.style.display = 'flex';
+    // Re-render main view with team data
+    renderData();
+}
+
+// Patch loadAllData result to also call renderTeamPanel for lead role
+(function() {
+    if (typeof ROLE === 'undefined' || ROLE !== 'lead') return;
+    const origLoadAll = window.loadAllData;
+    if (typeof origLoadAll !== 'function') return;
+    window.loadAllData = async function() {
+        await origLoadAll.call(this);
+        const summaries = currentData && currentData.memberSummaries;
+        if (summaries && summaries.length) {
+            try { renderTeamPanel(summaries); } catch(_) {}
+        }
+    };
+})();
