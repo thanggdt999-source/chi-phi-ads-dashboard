@@ -47,8 +47,15 @@
         + '  <button type="button" class="ai-chat-close" aria-label="Đóng">×</button>'
         + '</div>'
         + '<div class="ai-chat-body" id="aiChatBody"></div>'
+        + '<div class="ai-chat-prompts" id="aiChatPrompts">'
+        + '  <button class="ai-prompt-chip" data-prompt="ROAS hôm nay đang ổn không?">ROAS hôm nay?</button>'
+        + '  <button class="ai-prompt-chip" data-prompt="Sản phẩm nào có chi phí/data thấp nhất?">Chi phí/data</button>'
+        + '  <button class="ai-prompt-chip" data-prompt="Cần tối ưu quảng cáo nào ngay hôm nay?">Tối ưu</button>'
+        + '  <button class="ai-prompt-chip" data-prompt="Tóm tắt hiệu suất tuần này">Tuần này</button>'
+        + '</div>'
         + '<div class="ai-chat-status" id="aiChatStatus">Sẵn sàng</div>'
         + '<div class="ai-chat-input-row">'
+        + '  <button class="ai-chat-voice" id="aiChatVoice" type="button" title="Nói thành văn bản"><i class="fas fa-microphone"></i></button>'
         + '  <input class="ai-chat-input" id="aiChatInput" type="text" placeholder="Hỏi AI về số liệu, ads, vận hành..." maxlength="3000" />'
         + '  <button class="ai-chat-send" id="aiChatSend" type="button">Gửi</button>'
         + '</div>';
@@ -141,10 +148,51 @@
         status.textContent = text || "";
     }
 
+    // M2: Render markdown tables and basic formatting in bot messages
+    function renderMarkdown(text) {
+        if (!text) return "";
+        var escaped = text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+        var lines = escaped.split("\n");
+        var out = []; var inTable = false; var tableRows = [];
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+            if (line.trim().charAt(0) === "|" && line.indexOf("|", 1) >= 0) {
+                if (!inTable) { inTable = true; tableRows = []; }
+                tableRows.push(line);
+            } else {
+                if (inTable) { out.push(buildMdTable(tableRows)); tableRows = []; inTable = false; }
+                out.push(line);
+            }
+        }
+        if (inTable) out.push(buildMdTable(tableRows));
+        var html = out.join("\n");
+        html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+        html = html.replace(/\*(.*?)\*/g, "<em>$1</em>");
+        html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+        html = html.replace(/\n/g, "<br>");
+        return html;
+    }
+    function buildMdTable(rows) {
+        var cells = rows.map(function(r) {
+            return r.split("|").map(function(c){ return c.trim(); }).filter(function(c,i,a){ return i>0 && i<a.length-1; });
+        });
+        if (cells.length < 2) return rows.join("\n");
+        var header = cells[0];
+        var isSep = cells[1].every(function(c){ return /^[-: ]+$/.test(c); });
+        var bodyRows = isSep ? cells.slice(2) : cells.slice(1);
+        var thead = "<thead><tr>" + header.map(function(h){ return "<th>"+h+"</th>"; }).join("") + "</tr></thead>";
+        var tbody = "<tbody>" + bodyRows.map(function(row){ return "<tr>" + row.map(function(c){ return "<td>"+c+"</td>"; }).join("") + "</tr>"; }).join("") + "</tbody>";
+        return "<div class='ai-table-wrap'><table class='ai-md-table'>" + thead + tbody + "</table></div>";
+    }
+
     function addMessage(role, text) {
         var div = document.createElement("div");
         div.className = "ai-chat-msg " + (role === "user" ? "user" : "bot");
-        div.textContent = text || "";
+        if (role === "bot") {
+            div.innerHTML = renderMarkdown(text || "");
+        } else {
+            div.textContent = text || "";
+        }
         body.appendChild(div);
         body.scrollTop = body.scrollHeight;
     }
@@ -278,6 +326,46 @@
             sendMessage();
         }
     });
+
+    // M1: Suggested prompt chips
+    var promptsBar = panel.querySelector("#aiChatPrompts");
+    if (promptsBar) {
+        promptsBar.querySelectorAll(".ai-prompt-chip").forEach(function (chip) {
+            chip.addEventListener("click", function () {
+                var prompt = chip.getAttribute("data-prompt") || chip.textContent.trim();
+                input.value = prompt;
+                input.focus();
+                sendMessage();
+            });
+        });
+    }
+
+    // M4: Voice input via Web Speech API
+    var voiceBtn = panel.querySelector("#aiChatVoice");
+    if (voiceBtn) {
+        var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            voiceBtn.style.display = "none";
+        } else {
+            var recog = new SpeechRecognition();
+            recog.lang = "vi-VN";
+            recog.continuous = false;
+            recog.interimResults = false;
+            var recognizing = false;
+            recog.onstart = function () { recognizing = true; voiceBtn.classList.add("recording"); setStatus("🎤 Đang nghe..."); };
+            recog.onend   = function () { recognizing = false; voiceBtn.classList.remove("recording"); setStatus("Sẵn sàng"); };
+            recog.onerror = function () { recognizing = false; voiceBtn.classList.remove("recording"); setStatus("Sẵn sàng"); };
+            recog.onresult = function (e) {
+                var transcript = e.results[0][0].transcript;
+                input.value = transcript;
+                sendMessage();
+            };
+            voiceBtn.addEventListener("click", function () {
+                if (recognizing) { recog.stop(); }
+                else { try { recog.start(); } catch (_) {} }
+            });
+        }
+    }
 
     window.addEventListener("resize", function () {
         if (!fabPos) return;

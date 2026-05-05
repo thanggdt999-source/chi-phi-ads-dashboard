@@ -5989,6 +5989,28 @@ def api_admin_export_users_config():
     return jsonify({"success": True, "users_config_json": compact, "count": len(users)})
 
 
+@app.route("/api/admin/audit-log", methods=["GET"])
+@api_role_required("admin")
+def api_admin_audit_log():
+    """Return the most recent audit log entries (last 200 lines)."""
+    try:
+        if not AUDIT_LOG_PATH.exists():
+            return jsonify({"success": True, "entries": [], "total": 0})
+        lines = AUDIT_LOG_PATH.read_text(encoding="utf-8").strip().splitlines()
+        # Most recent first
+        entries = []
+        for line in reversed(lines[-500:]):
+            try:
+                entries.append(json.loads(line))
+            except Exception:
+                pass
+            if len(entries) >= 200:
+                break
+        return jsonify({"success": True, "entries": entries, "total": len(lines)})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/admin/users", methods=["GET"])
 @api_role_required("admin")
 def api_admin_list_users():

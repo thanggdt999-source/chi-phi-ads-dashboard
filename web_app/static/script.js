@@ -25,6 +25,10 @@ let pageSize = 50;
 let inactivityTimer = null;
 let lastKeepAliveAt = 0;
 let activeSheetInputId = "sheetUrl"; // Track which URL input is active
+let _prevRows = []; // for diff highlight
+let _hiddenCols = new Set(); // for column visibility
+let _cmdActiveIdx = -1; // command palette selected index
+let _activePreset = null; // date preset active chip
 
 // ─── Init ─────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", async () => {
@@ -1471,3 +1475,624 @@ function handleSessionExpiredGate(data, statusCode) {
     }
     return false;
 }
+
+// ═══════════════════════════════════════════════════════
+//  FEATURE ADDITIONS — G1 G2 G3 H1 I1 I2 I3 I4 J1 J2
+//                      K1 K2 K3 L1 L2 L3 L5 M1
+// ═══════════════════════════════════════════════════════
+
+// ─── G1: Dark / Light mode ───────────────────────────
+(function initDarkMode() {
+    const DARK_KEY = "ads_dark_mode";
+    const btn = document.getElementById("darkModeToggleBtn");
+    const icon = document.getElementById("darkModeIcon");
+    const label = document.getElementById("darkModeLabel");
+    function apply(dark) {
+        if (dark) {
+            document.documentElement.classList.add("dark-mode");
+        } else {
+            document.documentElement.classList.remove("dark-mode");
+        }
+        if (icon) icon.className = dark ? "fas fa-sun" : "fas fa-moon";
+        if (label) label.textContent = dark ? "Sáng" : "Tối";
+        try { localStorage.setItem(DARK_KEY, dark ? "1" : "0"); } catch (_) {}
+    }
+    window.toggleDarkMode = function () {
+        const isDark = document.documentElement.classList.contains("dark-mode");
+        apply(!isDark);
+    };
+    // Restore preference or respect OS
+    const stored = (() => { try { return localStorage.getItem(DARK_KEY); } catch (_) { return null; } })();
+    if (stored === "1") apply(true);
+    else if (stored === "0") apply(false);
+    else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) apply(true);
+})();
+
+// ─── G2: Skeleton loading on stat cards ──────────────
+function showStatSkeletons() {
+    document.querySelectorAll(".stat-card").forEach(c => c.classList.add("loading"));
+}
+function hideStatSkeletons() {
+    document.querySelectorAll(".stat-card").forEach(c => c.classList.remove("loading"));
+}
+
+// ─── G3: CountUp animation ───────────────────────────
+function animateCount(el, targetStr) {
+    if (!el) return;
+    const num = parseFloat(String(targetStr).replace(/[^0-9.\-]/g, ""));
+    if (isNaN(num) || num < 10) { el.classList.add("count-updated"); setTimeout(() => el.classList.remove("count-updated"), 600); return; }
+    el.classList.remove("count-updated");
+    void el.offsetWidth; // reflow
+    el.classList.add("count-updated");
+    setTimeout(() => el.classList.remove("count-updated"), 600);
+}
+
+// ─── H1: Sparkline SVG in stat cards ─────────────────
+function renderSparklines(rows) {
+    const spendData = {};
+    rows.forEach(row => {
+        const dateKey = (row["Ngày"] || "").trim();
+        if (!dateKey) return;
+        const spend = parseSpendJS(row["Số tiền chi tiêu - VND"] || "");
+        spendData[dateKey] = (spendData[dateKey] || 0) + spend;
+    });
+    const sortedKeys = Object.keys(spendData).sort((a, b) => {
+        const pa = a.split("/"); const pb = b.split("/");
+        const da = pa.length === 3 ? new Date(`${pa[2]}-${pa[1].padStart(2,"0")}-${pa[0].padStart(2,"0")}`) : new Date(a);
+        const db = pb.length === 3 ? new Date(`${pb[2]}-${pb[1].padStart(2,"0")}-${pb[0].padStart(2,"0")}`) : new Date(b);
+        return da - db;
+    }).slice(-14);
+    const vals = sortedKeys.map(k => spendData[k]);
+    if (vals.length < 2) return;
+    const max = Math.max(...vals) || 1;
+    const W = 80, H = 24, pts = vals.map((v, i) => {
+        const x = (i / (vals.length - 1)) * W;
+        const y = H - (v / max) * (H - 4) - 2;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(" ");
+    const svg = `<svg class="stat-sparkline" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><polyline points="${pts}" fill="none" stroke="#6366f1" stroke-width="1.5" stroke-linejoin="round" opacity="0.7"/></svg>`;
+    const spendCard = document.getElementById("totalSpend");
+    if (spendCard && spendCard.closest(".stat-card")) {
+        const card = spendCard.closest(".stat-card");
+        let existing = card.querySelector(".stat-sparkline");
+        if (existing) existing.remove();
+        card.insertAdjacentHTML("beforeend", svg);
+    }
+}
+
+// ─── I1: Command palette ─────────────────────────────
+const CMD_ITEMS = [
+    { icon: "fa-rotate-right", label: "Tải lại dữ liệu", sub: "R", group: "Hành động", action: () => { const url = (document.getElementById("sheetUrl")?.value || "").trim(); if (url) fetchAndRender(url, false); } },
+    { icon: "fa-filter", label: "Focus bộ lọc ngày", sub: "F", group: "Hành động", action: () => document.getElementById("dateFrom")?.focus() },
+    { icon: "fa-table", label: "Cuộn xuống bảng dữ liệu", sub: "", group: "Điều hướng", action: () => document.getElementById("tableSection")?.scrollIntoView({behavior:"smooth"}) },
+    { icon: "fa-chart-bar", label: "Cuộn xuống biểu đồ", sub: "", group: "Điều hướng", action: () => document.getElementById("chartsSection")?.scrollIntoView({behavior:"smooth"}) },
+    { icon: "fa-moon", label: "Chuyển dark / light mode", sub: "", group: "Giao diện", action: () => window.toggleDarkMode() },
+    { icon: "fa-file-csv", label: "Xuất bảng ra CSV", sub: "", group: "Xuất dữ liệu", action: () => exportTableCSV() },
+    { icon: "fa-calendar-day", label: "Lọc: Hôm nay", sub: "", group: "Lọc nhanh", action: () => applyDatePreset("today") },
+    { icon: "fa-calendar-week", label: "Lọc: 7 ngày gần nhất", sub: "", group: "Lọc nhanh", action: () => applyDatePreset("7d") },
+    { icon: "fa-calendar", label: "Lọc: Tháng này", sub: "", group: "Lọc nhanh", action: () => applyDatePreset("month") },
+    { icon: "fa-wand-magic-sparkles", label: "Mở AI chat", sub: "/", group: "Hành động", action: () => { const fab = document.querySelector(".ai-chat-fab"); if (fab) fab.click(); } },
+    { icon: "fa-times", label: "Xóa bộ lọc", sub: "", group: "Hành động", action: () => resetDateFilter() },
+];
+// Dynamically add month items from MONTHLY_SHEETS
+function getCmdItems() {
+    const monthItems = (MONTHLY_SHEETS || []).slice(0, 12).map(s => ({
+        icon: "fa-table-cells",
+        label: `Tháng: ${s.month_label || s.month_key}`,
+        sub: s.month_key,
+        group: "Tháng",
+        action: () => { const sel = document.getElementById("monthSelect"); if (sel) { sel.value = s.month_key; loadMonthSheet(s.month_key); } }
+    }));
+    const memberItems = (window.APP_SHEETS || []).slice(0, 10).map(s => ({
+        icon: "fa-user",
+        label: s.name || s.url,
+        sub: s.team || "",
+        group: "Thành viên",
+        action: () => { const sel = document.getElementById("memberSelect"); if (sel) { sel.value = s.url; loadMemberSheet(s.url); } }
+    }));
+    return [...CMD_ITEMS, ...monthItems, ...memberItems];
+}
+function openCmdPalette() {
+    const overlay = document.getElementById("cmdPaletteOverlay");
+    if (!overlay) return;
+    overlay.style.display = "flex";
+    const inp = document.getElementById("cmdInput");
+    if (inp) { inp.value = ""; inp.focus(); }
+    _cmdActiveIdx = -1;
+    renderCmdResults();
+}
+function closeCmdPalette(e) {
+    if (e && e.target !== document.getElementById("cmdPaletteOverlay")) return;
+    const overlay = document.getElementById("cmdPaletteOverlay");
+    if (overlay) overlay.style.display = "none";
+}
+function renderCmdResults() {
+    const q = (document.getElementById("cmdInput")?.value || "").toLowerCase().trim();
+    const items = getCmdItems();
+    const filtered = q ? items.filter(it => it.label.toLowerCase().includes(q) || (it.group || "").toLowerCase().includes(q)) : items;
+    const container = document.getElementById("cmdResults");
+    if (!container) return;
+    _cmdActiveIdx = -1;
+    if (!filtered.length) { container.innerHTML = '<div class="cmd-group-title">Không tìm thấy kết quả</div>'; return; }
+    const groups = {};
+    filtered.forEach(it => {
+        if (!groups[it.group]) groups[it.group] = [];
+        groups[it.group].push(it);
+    });
+    let html = "";
+    let globalIdx = 0;
+    Object.entries(groups).forEach(([group, its]) => {
+        html += `<div class="cmd-group-title">${group}</div>`;
+        its.forEach(it => {
+            html += `<div class="cmd-result-item" data-idx="${globalIdx++}" onclick="executeCmdItem(${items.indexOf(it)})">
+                <i class="fas ${it.icon}"></i>${escapeHtml(it.label)}
+                ${it.sub ? `<span class="cmd-result-sub">${escapeHtml(it.sub)}</span>` : ""}
+            </div>`;
+        });
+    });
+    container.innerHTML = html;
+}
+function executeCmdItem(idx) {
+    const items = getCmdItems();
+    const it = items[idx];
+    const overlay = document.getElementById("cmdPaletteOverlay");
+    if (overlay) overlay.style.display = "none";
+    if (it && it.action) setTimeout(it.action, 50);
+}
+
+// ─── I2: Date range presets ───────────────────────────
+function applyDatePreset(preset) {
+    const from = document.getElementById("dateFrom");
+    const to   = document.getElementById("dateTo");
+    if (!from || !to) return;
+    const now = new Date();
+    const fmt = d => d.toISOString().slice(0, 10);
+    document.querySelectorAll(".date-chip").forEach(c => c.classList.remove("active"));
+    const active = document.querySelector(`.date-chip[onclick*="'${preset}'"]`);
+    if (active) active.classList.add("active");
+    _activePreset = preset;
+    if (preset === "today") {
+        from.value = fmt(now); to.value = fmt(now);
+    } else if (preset === "yesterday") {
+        const y = new Date(now); y.setDate(y.getDate() - 1);
+        from.value = fmt(y); to.value = fmt(y);
+    } else if (preset === "7d") {
+        const s = new Date(now); s.setDate(s.getDate() - 6);
+        from.value = fmt(s); to.value = fmt(now);
+    } else if (preset === "month") {
+        from.value = fmt(new Date(now.getFullYear(), now.getMonth(), 1));
+        to.value = fmt(now);
+    }
+    applyDateFilter();
+}
+
+// ─── I3: Saved filter presets ────────────────────────
+const SAVED_FILTER_KEY = "ads_saved_filters_v1";
+function loadSavedFilters() {
+    try { return JSON.parse(localStorage.getItem(SAVED_FILTER_KEY) || "[]"); } catch (_) { return []; }
+}
+function persistSavedFilters(list) {
+    try { localStorage.setItem(SAVED_FILTER_KEY, JSON.stringify(list)); } catch (_) {}
+}
+function renderSavedFilterBar() {
+    const bar = document.getElementById("savedFiltersBar");
+    if (!bar) return;
+    const filters = loadSavedFilters();
+    if (!filters.length) { bar.style.display = "none"; return; }
+    bar.style.display = "flex";
+    bar.innerHTML = filters.map((f, i) =>
+        `<span class="sf-chip" onclick="applySavedFilter(${i})">${escapeHtml(f.label)}<span class="sf-del" onclick="deleteSavedFilter(event,${i})">×</span></span>`
+    ).join("");
+}
+function saveCurrentFilter() {
+    const from = document.getElementById("dateFrom")?.value || "";
+    const to   = document.getElementById("dateTo")?.value || "";
+    if (!from && !to) { showToast("⚠️ Chưa chọn khoảng ngày để lưu"); return; }
+    const label = from === to ? from : `${from || "—"} → ${to || "—"}`;
+    const name = window.prompt("Đặt tên cho bộ lọc:", label);
+    if (!name) return;
+    const filters = loadSavedFilters();
+    filters.push({ label: name.trim(), from, to });
+    persistSavedFilters(filters);
+    renderSavedFilterBar();
+    showToast("✅ Đã lưu bộ lọc: " + name.trim());
+}
+function applySavedFilter(idx) {
+    const f = loadSavedFilters()[idx];
+    if (!f) return;
+    const from = document.getElementById("dateFrom");
+    const to   = document.getElementById("dateTo");
+    if (from) from.value = f.from;
+    if (to)   to.value   = f.to;
+    applyDateFilter();
+}
+function deleteSavedFilter(e, idx) {
+    e.stopPropagation();
+    const filters = loadSavedFilters();
+    filters.splice(idx, 1);
+    persistSavedFilters(filters);
+    renderSavedFilterBar();
+}
+// Load saved filters on page ready
+document.addEventListener("DOMContentLoaded", () => renderSavedFilterBar());
+
+// ─── I4: Column visibility ────────────────────────────
+function toggleColVisPanel() {
+    const panel = document.getElementById("colVisPanel");
+    if (!panel) return;
+    panel.style.display = panel.style.display === "none" ? "block" : "none";
+    if (panel.style.display === "block") buildColVisCheckboxes();
+}
+function buildColVisCheckboxes() {
+    const container = document.getElementById("colVisCheckboxes");
+    if (!container) return;
+    const headers = (currentData.headers || []);
+    const allCols = [...headers, "Chi phí/KQ (USD)"];
+    container.innerHTML = allCols.map(h =>
+        `<label><input type="checkbox" ${_hiddenCols.has(h) ? "" : "checked"} onchange="toggleCol('${h.replace(/'/g,"\\'")}', this.checked)">${escapeHtml(h)}</label>`
+    ).join("");
+}
+function toggleCol(colName, visible) {
+    if (visible) { _hiddenCols.delete(colName); }
+    else          { _hiddenCols.add(colName); }
+    applyColVisibility();
+}
+function applyColVisibility() {
+    const table = document.getElementById("dataTable");
+    if (!table) return;
+    const headers = (currentData.headers || []);
+    const allCols = [...headers, "Chi phí/KQ (USD)"];
+    allCols.forEach((h, i) => {
+        const display = _hiddenCols.has(h) ? "none" : "";
+        const ths = table.querySelectorAll(`thead tr th:nth-child(${i + 1})`);
+        const tds = table.querySelectorAll(`tbody tr td:nth-child(${i + 1})`);
+        ths.forEach(el => el.style.display = display);
+        tds.forEach(el => el.style.display = display);
+    });
+}
+function resetColVis() {
+    _hiddenCols.clear();
+    buildColVisCheckboxes();
+    applyColVisibility();
+}
+
+// ─── J1: Export CSV ───────────────────────────────────
+function exportTableCSV() {
+    const rows = filteredRows;
+    if (!rows || !rows.length) { showToast("⚠️ Không có dữ liệu để xuất"); return; }
+    const headers = currentData.headers || [];
+    const allCols = [...headers, "Chi phí/KQ (USD)"];
+    const visible = allCols.filter(h => !_hiddenCols.has(h));
+    const escape = v => `"${String(v || "").replace(/"/g, '""')}"`;
+    const lines = [visible.map(escape).join(",")];
+    rows.forEach(row => {
+        const usdRaw = row["Số tiền chi tiêu - USD"] || "";
+        const usdVal = parseSpendJS(usdRaw);
+        const dataVal = parseInt(row["Số Data"] || "0", 10) || 0;
+        const cpr = (usdVal > 0 && dataVal > 0) ? (usdVal / dataVal).toFixed(3) : "";
+        const cells = visible.map(h => h === "Chi phí/KQ (USD)" ? escape(cpr) : escape(row[h] || ""));
+        lines.push(cells.join(","));
+    });
+    const bom = "\uFEFF";
+    const blob = new Blob([bom + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ads_data_${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+    showToast(`✅ Đã xuất ${rows.length} dòng ra CSV`);
+}
+
+// ─── K1: Budget alert thresholds ─────────────────────
+const BUDGET_ALERT_KEY = "ads_budget_alerts_v1";
+function loadBudgetAlerts() {
+    try { return JSON.parse(localStorage.getItem(BUDGET_ALERT_KEY) || "{}"); } catch (_) { return {}; }
+}
+function toggleBudgetPanel() {
+    const panel = document.getElementById("budgetAlertPanel");
+    if (!panel) return;
+    panel.style.display = panel.style.display === "none" ? "block" : "none";
+    if (panel.style.display === "block") {
+        const alerts = loadBudgetAlerts();
+        const cprEl = document.getElementById("alertCprThreshold");
+        const adsEl = document.getElementById("alertAdsThreshold");
+        if (cprEl) cprEl.value = alerts.cpr_threshold || "";
+        if (adsEl) adsEl.value = alerts.ads_threshold || "";
+    }
+}
+function saveBudgetAlerts() {
+    const cprEl = document.getElementById("alertCprThreshold");
+    const adsEl = document.getElementById("alertAdsThreshold");
+    const data = {
+        cpr_threshold: parseFloat(cprEl?.value || "0") || 0,
+        ads_threshold: parseFloat(adsEl?.value || "0") || 0,
+    };
+    try { localStorage.setItem(BUDGET_ALERT_KEY, JSON.stringify(data)); } catch (_) {}
+    const statusEl = document.getElementById("budgetAlertStatus");
+    if (statusEl) statusEl.textContent = "✅ Đã lưu!";
+    setTimeout(() => { if (statusEl) statusEl.textContent = ""; }, 2000);
+    showToast("✅ Đã lưu ngưỡng cảnh báo");
+    checkBudgetAlerts();
+}
+function checkBudgetAlerts() {
+    const alerts = loadBudgetAlerts();
+    if (!alerts.cpr_threshold && !alerts.ads_threshold) return;
+    if (!currentData.rows.length) return;
+    const today = new Date();
+    const todayKey = `${String(today.getDate()).padStart(2,"0")}/${String(today.getMonth()+1).padStart(2,"0")}/${today.getFullYear()}`;
+    let todaySpend = 0, todayData = 0;
+    currentData.rows.filter(r => (r["Ngày"]||"").trim() === todayKey).forEach(r => {
+        todaySpend += parseSpendJS(r["Số tiền chi tiêu - VND"] || "");
+        todayData  += parseInt(r["Số Data"] || "0", 10) || 0;
+    });
+    const cpr = todayData > 0 ? Math.round(todaySpend / todayData) : 0;
+    if (alerts.cpr_threshold && cpr > 0 && cpr > alerts.cpr_threshold) {
+        showToast(`🔔 Cảnh báo! Chi phí/data hôm nay: ${cpr.toLocaleString("vi-VN")} VND > ngưỡng ${alerts.cpr_threshold.toLocaleString("vi-VN")}`, 7000);
+    }
+    const adsPercent = parseFloat((currentData.ads_percent || "0").replace(",", ".")) || 0;
+    if (alerts.ads_threshold && adsPercent > 0 && adsPercent > alerts.ads_threshold) {
+        showToast(`🔔 Cảnh báo! % Ads: ${adsPercent}% > ngưỡng ${alerts.ads_threshold}%`, 7000);
+    }
+}
+
+// ─── K2: Anomaly detection ────────────────────────────
+function detectAnomalies(rows) {
+    if (!rows || rows.length < 4) return;
+    const spends = rows.map(r => parseSpendJS(r["Số tiền chi tiêu - VND"] || "")).filter(v => v > 0);
+    if (spends.length < 4) return;
+    const mean = spends.reduce((a, b) => a + b, 0) / spends.length;
+    const threshold = mean * 2.2;
+    const tbody = document.getElementById("tableBody");
+    if (!tbody) return;
+    const trs = tbody.querySelectorAll("tr");
+    rows.forEach((row, i) => {
+        const spend = parseSpendJS(row["Số tiền chi tiêu - VND"] || "");
+        if (trs[i] && spend > threshold) {
+            trs[i].classList.add("anomaly-row");
+            trs[i].title = `⚠️ Chi tiêu bất thường: ${spend.toLocaleString("vi-VN")} VND (trung bình: ${Math.round(mean).toLocaleString("vi-VN")} VND)`;
+        } else if (trs[i]) {
+            trs[i].classList.remove("anomaly-row");
+        }
+    });
+}
+
+// ─── K3: Browser push notifications ──────────────────
+(function initPushNotify() {
+    const btn = document.getElementById("pushNotifyBtn");
+    if (!("Notification" in window)) return;
+    if (btn) btn.style.display = "";
+    function updatePushBtnState() {
+        if (!btn) return;
+        if (Notification.permission === "granted") {
+            btn.title = "Thông báo đã bật";
+            btn.style.opacity = "1";
+            btn.querySelector("i").className = "fas fa-bell";
+        } else {
+            btn.title = "Bật thông báo trình duyệt";
+            btn.querySelector("i").className = "fas fa-bell-slash";
+        }
+    }
+    updatePushBtnState();
+    window.requestPushPermission = async function () {
+        if (Notification.permission === "granted") {
+            new Notification("Chi Phí Ads Dashboard", {
+                body: "Thông báo đã được bật rồi đại ca ơi!",
+                icon: "/static/favicon.ico",
+            });
+            return;
+        }
+        const result = await Notification.requestPermission();
+        updatePushBtnState();
+        if (result === "granted") {
+            new Notification("Chi Phí Ads Dashboard", {
+                body: "✅ Đã bật thông báo! Em sẽ báo khi có cảnh báo ngân sách.",
+                icon: "/static/favicon.ico",
+            });
+            showToast("✅ Đã bật thông báo trình duyệt");
+        } else {
+            showToast("⚠️ Trình duyệt từ chối quyền thông báo");
+        }
+    };
+    window._sendPushNotification = function (title, body) {
+        if (Notification.permission !== "granted") return;
+        new Notification(title || "Chi Phí Ads", { body: body || "", icon: "/static/favicon.ico" });
+    };
+})();
+
+// ─── L1: Onboarding checklist ─────────────────────────
+(function initOnboarding() {
+    const DISMISS_KEY = "ads_onboarding_dismissed_v1";
+    const dismissed = (() => { try { return localStorage.getItem(DISMISS_KEY) === "1"; } catch (_) { return false; } })();
+    if (dismissed) return;
+    const steps = [
+        { label: "Nhập link Google Sheet báo cáo", done: () => !!(document.getElementById("sheetUrl")?.value || SHEET_URL) },
+        { label: "Kết nối Telegram để nhận báo cáo", done: () => false }, // server-side check not accessible
+        { label: "Đọc dữ liệu lần đầu", done: () => currentData.rows.length > 0 },
+        { label: "Khám phá AI trợ lý (bấm nút ✨)", done: () => false },
+    ];
+    function render() {
+        const panel = document.getElementById("onboardingPanel");
+        const list = document.getElementById("onboardingList");
+        if (!panel || !list) return;
+        const allDone = steps.every(s => s.done());
+        if (allDone) { panel.style.display = "none"; return; }
+        list.innerHTML = steps.map(s => {
+            const done = s.done();
+            return `<li class="${done ? "done" : ""}">${escapeHtml(s.label)}</li>`;
+        }).join("");
+        panel.style.display = "block";
+    }
+    window.dismissOnboarding = function () {
+        try { localStorage.setItem(DISMISS_KEY, "1"); } catch (_) {}
+        const panel = document.getElementById("onboardingPanel");
+        if (panel) panel.style.display = "none";
+    };
+    // Delay render slightly so currentData may be available
+    setTimeout(render, 500);
+    // Re-render on data load
+    const _origRender = window.renderData;
+    window.renderData = function () {
+        if (_origRender) _origRender.call(this, ...arguments);
+        setTimeout(render, 300);
+    };
+})();
+
+// ─── L2: Keyboard shortcuts ───────────────────────────
+(function initKeyboardShortcuts() {
+    document.addEventListener("keydown", e => {
+        const tag = (document.activeElement?.tagName || "").toLowerCase();
+        const inInput = tag === "input" || tag === "textarea" || tag === "select" || document.activeElement?.isContentEditable;
+        // Ctrl+K → command palette
+        if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+            e.preventDefault();
+            const overlay = document.getElementById("cmdPaletteOverlay");
+            if (overlay?.style.display === "flex") closeCmdPalette(); else openCmdPalette();
+            return;
+        }
+        // Escape → close command palette
+        if (e.key === "Escape") {
+            const overlay = document.getElementById("cmdPaletteOverlay");
+            if (overlay?.style.display === "flex") { overlay.style.display = "none"; return; }
+        }
+        // Arrow keys in command palette
+        if (document.getElementById("cmdPaletteOverlay")?.style.display === "flex") {
+            const items = document.querySelectorAll(".cmd-result-item");
+            if (e.key === "ArrowDown") {
+                e.preventDefault();
+                _cmdActiveIdx = Math.min(_cmdActiveIdx + 1, items.length - 1);
+                items.forEach((el, i) => el.classList.toggle("active", i === _cmdActiveIdx));
+                items[_cmdActiveIdx]?.scrollIntoView({ block: "nearest" });
+                return;
+            }
+            if (e.key === "ArrowUp") {
+                e.preventDefault();
+                _cmdActiveIdx = Math.max(_cmdActiveIdx - 1, 0);
+                items.forEach((el, i) => el.classList.toggle("active", i === _cmdActiveIdx));
+                items[_cmdActiveIdx]?.scrollIntoView({ block: "nearest" });
+                return;
+            }
+            if (e.key === "Enter" && _cmdActiveIdx >= 0) {
+                e.preventDefault();
+                items[_cmdActiveIdx]?.click();
+                return;
+            }
+        }
+        if (inInput) return; // don't intercept normal typing
+        // R → reload
+        if (e.key === "r" || e.key === "R") {
+            const url = (document.getElementById("sheetUrl")?.value || "").trim();
+            if (url) { e.preventDefault(); showToast("🔄 Đang tải lại..."); fetchAndRender(url, false); }
+        }
+        // F → focus date from
+        if (e.key === "f" || e.key === "F") {
+            const el = document.getElementById("dateFrom");
+            if (el) { e.preventDefault(); el.focus(); }
+        }
+        // / → open AI chat
+        if (e.key === "/") {
+            e.preventDefault();
+            const fab = document.querySelector(".ai-chat-fab");
+            if (fab) fab.click();
+        }
+        // T → scroll to table
+        if (e.key === "t" || e.key === "T") {
+            document.getElementById("tableSection")?.scrollIntoView({ behavior: "smooth" });
+        }
+    });
+    // Show hint toast once
+    const HINT_KEY = "ads_kbd_hint_shown";
+    if (!localStorage.getItem(HINT_KEY)) {
+        setTimeout(() => {
+            showToast("⌨️ Phím tắt: Ctrl+K = tìm kiếm · R = reload · / = AI chat", 5000);
+            try { localStorage.setItem(HINT_KEY, "1"); } catch (_) {}
+        }, 3000);
+    }
+})();
+
+// ─── L3: Diff highlight changed rows ──────────────────
+function diffAndHighlight(newRows) {
+    const prevMap = {};
+    _prevRows.forEach(r => {
+        const key = `${r["Ngày"]}|${r["Tên tài khoản"]}`;
+        prevMap[key] = r["Số tiền chi tiêu - VND"] || "";
+    });
+    const tbody = document.getElementById("tableBody");
+    if (!tbody) { _prevRows = [...newRows]; return; }
+    const trs = tbody.querySelectorAll("tr");
+    newRows.forEach((row, i) => {
+        const key = `${row["Ngày"]}|${row["Tên tài khoản"]}`;
+        const prevVal = prevMap[key];
+        const curVal  = row["Số tiền chi tiêu - VND"] || "";
+        if (prevVal !== undefined && prevVal !== curVal && trs[i]) {
+            trs[i].classList.remove("row-changed");
+            void trs[i].offsetWidth; // reflow to restart animation
+            trs[i].classList.add("row-changed");
+            setTimeout(() => trs[i]?.classList.remove("row-changed"), 2200);
+        }
+    });
+    _prevRows = [...newRows];
+}
+
+// ─── L5: Multi-tab BroadcastChannel sync ─────────────
+(function initTabSync() {
+    if (!("BroadcastChannel" in window)) return;
+    const ch = new BroadcastChannel("ads_dashboard_sync");
+    ch.addEventListener("message", e => {
+        if (!e.data) return;
+        if (e.data.type === "data_reload") {
+            showToast("🔄 Tab khác đã tải lại dữ liệu mới", 2500);
+        }
+        if (e.data.type === "dark_mode") {
+            const isDark = e.data.dark;
+            if (isDark) document.documentElement.classList.add("dark-mode");
+            else        document.documentElement.classList.remove("dark-mode");
+        }
+    });
+    window._broadcastDataReload = () => { try { ch.postMessage({ type: "data_reload" }); } catch (_) {} };
+    // patch toggleDarkMode to broadcast
+    const _origToggle = window.toggleDarkMode;
+    window.toggleDarkMode = function () {
+        if (_origToggle) _origToggle();
+        const isDark = document.documentElement.classList.contains("dark-mode");
+        try { ch.postMessage({ type: "dark_mode", dark: isDark }); } catch (_) {}
+    };
+})();
+
+// ─── Patch renderData/renderTable to call new features ─
+(function patchRenderHooks() {
+    const _origRenderTable = window.renderTable;
+    window.renderTable = function (rows) {
+        if (_origRenderTable) _origRenderTable.call(this, rows);
+        // Apply col visibility after render
+        try { applyColVisibility(); } catch (_) {}
+        // Diff highlight
+        try { diffAndHighlight(rows); } catch (_) {}
+        // Anomaly detection
+        try { detectAnomalies(rows); } catch (_) {}
+    };
+    const _origRenderStatsOuter = window.renderStats;
+    window.renderStats = function (rows) {
+        hideStatSkeletons();
+        if (_origRenderStatsOuter) _origRenderStatsOuter.call(this, rows);
+        // Sparklines
+        try { renderSparklines(rows || currentData.rows || []); } catch (_) {}
+        // Budget alerts
+        try { checkBudgetAlerts(); } catch (_) {}
+        // CountUp flash on stat values
+        try {
+            document.querySelectorAll(".stat-value").forEach(el => {
+                animateCount(el, el.textContent);
+            });
+        } catch (_) {}
+        // Broadcast to other tabs
+        try { if (window._broadcastDataReload) _broadcastDataReload(); } catch (_) {}
+    };
+    // Show skeletons when fetch starts
+    const _origFetch = window.fetchAndRender;
+    window.fetchAndRender = function () {
+        showStatSkeletons();
+        return _origFetch ? _origFetch.apply(this, arguments) : Promise.resolve();
+    };
+})();
+

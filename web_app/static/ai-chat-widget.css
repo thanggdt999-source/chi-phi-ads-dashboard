@@ -155,3 +155,52 @@
         height: min(70vh, 560px);
     }
 }
+
+/* ─── M1: Suggested prompt chips ─────────────────────── */
+.ai-chat-prompts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    padding: 6px 10px 2px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+}
+.ai-prompt-chip {
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(139,92,246,0.35);
+    background: rgba(139,92,246,0.1);
+    color: #c4b5fd;
+    font-size: 0.72rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    white-space: nowrap;
+}
+.ai-prompt-chip:hover { background: rgba(139,92,246,0.4); color: #fff; }
+
+/* ─── M4: Voice button ────────────────────────────────── */
+.ai-chat-voice {
+    width: 30px; height: 30px;
+    flex: 0 0 30px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255,255,255,0.1);
+    color: rgba(255,255,255,0.6);
+    font-size: 0.78rem;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s, color 0.15s;
+}
+.ai-chat-voice:hover { background: rgba(139,92,246,0.5); color: #fff; }
+.ai-chat-voice.recording { background: #ef4444; color: #fff; animation: pulse-rec 0.8s ease infinite alternate; }
+@keyframes pulse-rec { from { opacity: 0.7; } to { opacity: 1; } }
+
+/* ─── M2: AI markdown table ──────────────────────────── */
+.ai-table-wrap { overflow-x: auto; margin: 6px 0; }
+.ai-md-table { border-collapse: collapse; font-size: 0.78rem; width: 100%; }
+.ai-md-table th { background: rgba(139,92,246,0.3); color: #e9d5ff; padding: 5px 8px; text-align: left; }
+.ai-md-table td { padding: 4px 8px; border-bottom: 1px solid rgba(255,255,255,0.07); color: #e2e8f0; }
+.ai-md-table tbody tr:nth-child(even) td { background: rgba(255,255,255,0.03); }
+.ai-md-table code { background: rgba(0,0,0,0.25); padding: 1px 4px; border-radius: 3px; font-size: 0.9em; }
+.ai-chat-msg.bot strong { color: #c4b5fd; }
+.ai-chat-msg.bot code { background: rgba(0,0,0,0.3); padding: 1px 5px; border-radius: 4px; font-size: 0.85em; color: #86efac; }

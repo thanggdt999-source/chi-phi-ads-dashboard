@@ -191,6 +191,31 @@
         </div>
     </div>
 
+    <!-- Audit log panel (N2) -->
+    <div class="card" style="margin-top:24px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap;">
+            <h2 style="font-size:1.05rem;font-weight:700;color:#f1f5f9;margin:0;"><i class="fas fa-clipboard-list"></i> Lịch sử hoạt động (Audit Log)</h2>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <input type="text" id="auditSearch" placeholder="Tìm kiếm action / user..." style="padding:6px 10px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;border-radius:8px;font-size:0.82rem;outline:none;width:220px;">
+                <button class="btn btn-primary" style="padding:6px 12px;font-size:0.82rem;" onclick="loadAuditLog()"><i class="fas fa-rotate-right"></i> Làm mới</button>
+            </div>
+        </div>
+        <div style="overflow-x:auto;max-height:380px;overflow-y:auto;">
+            <table id="auditTable" style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                <thead>
+                    <tr style="background:#1e293b;position:sticky;top:0;z-index:2;">
+                        <th style="padding:8px 10px;text-align:left;color:#94a3b8;font-weight:700;border-bottom:1px solid #334155;white-space:nowrap;">Thời gian</th>
+                        <th style="padding:8px 10px;text-align:left;color:#94a3b8;font-weight:700;border-bottom:1px solid #334155;">Hành động</th>
+                        <th style="padding:8px 10px;text-align:left;color:#94a3b8;font-weight:700;border-bottom:1px solid #334155;">User</th>
+                        <th style="padding:8px 10px;text-align:left;color:#94a3b8;font-weight:700;border-bottom:1px solid #334155;">Chi tiết</th>
+                    </tr>
+                </thead>
+                <tbody id="auditBody"><tr><td colspan="4" style="padding:12px;text-align:center;color:#475569;">Đang tải...</td></tr></tbody>
+            </table>
+        </div>
+        <div id="auditTotalInfo" style="font-size:0.76rem;color:#64748b;margin-top:6px;"></div>
+    </div>
+
 </div>
 
 <footer class="app-footer">
@@ -493,6 +518,52 @@
         if (toastTimer) clearTimeout(toastTimer);
         toastTimer = setTimeout(() => { el.className = ''; }, 3500);
     }
+
+    // ── Audit Log (N2) ──────────────────────────────────────────────
+    let _auditAll = [];
+    async function loadAuditLog() {
+        const tbody = document.getElementById('auditBody');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="4" style="padding:12px;text-align:center;color:#475569;">Đang tải...</td></tr>';
+        try {
+            const res = await fetch('/api/admin/audit-log');
+            const json = await res.json();
+            if (!json.success) return;
+            _auditAll = json.entries || [];
+            const totalEl = document.getElementById('auditTotalInfo');
+            if (totalEl) totalEl.textContent = `Tổng ${json.total || 0} sự kiện · Hiển thị ${_auditAll.length} gần nhất`;
+            renderAuditTable(_auditAll);
+        } catch (e) {
+            if (tbody) tbody.innerHTML = '<tr><td colspan="4" style="padding:12px;text-align:center;color:#ef4444;">Lỗi tải log</td></tr>';
+        }
+    }
+    function renderAuditTable(entries) {
+        const tbody = document.getElementById('auditBody');
+        if (!tbody) return;
+        if (!entries.length) { tbody.innerHTML = '<tr><td colspan="4" style="padding:12px;text-align:center;color:#475569;">Không có dữ liệu</td></tr>'; return; }
+        const ACTION_COLORS = { ai_chat: '#818cf8', save_sheet: '#34d399', login: '#60a5fa', logout: '#94a3b8' };
+        tbody.innerHTML = entries.map(e => {
+            const ts = (e.ts || '').replace('T', ' ').replace('Z', '');
+            const action = e.action || '—';
+            const user = e.username || '—';
+            const extra = Object.entries(e).filter(([k]) => !['ts','action','username'].includes(k)).map(([k,v]) => `<span style="color:#64748b">${k}:</span> ${String(v).slice(0,60)}`).join(' · ');
+            const color = ACTION_COLORS[action] || '#94a3b8';
+            return `<tr>
+                <td style="padding:7px 10px;color:#64748b;white-space:nowrap;font-size:0.78rem;">${ts}</td>
+                <td style="padding:7px 10px;"><span style="background:rgba(99,102,241,0.15);color:${color};padding:2px 8px;border-radius:6px;font-size:0.75rem;font-weight:700;">${action}</span></td>
+                <td style="padding:7px 10px;color:#e2e8f0;font-size:0.82rem;">${user}</td>
+                <td style="padding:7px 10px;color:#94a3b8;font-size:0.76rem;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${extra}</td>
+            </tr>`;
+        }).join('');
+    }
+    document.addEventListener('DOMContentLoaded', () => {
+        loadAuditLog();
+        const searchEl = document.getElementById('auditSearch');
+        if (searchEl) searchEl.addEventListener('input', () => {
+            const q = searchEl.value.toLowerCase().trim();
+            const filtered = q ? _auditAll.filter(e => JSON.stringify(e).toLowerCase().includes(q)) : _auditAll;
+            renderAuditTable(filtered);
+        });
+    });
 
     // ── Init ──────────────────────────────────────────────────────────
     renderTable();

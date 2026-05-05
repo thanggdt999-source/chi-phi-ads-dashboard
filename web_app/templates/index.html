@@ -641,6 +641,12 @@
                             <i class="fas fa-users-cog"></i> Quản lý Users
                         </a>
                         {% endif %}
+                        <button type="button" class="action-link dark-toggle" id="darkModeToggleBtn" onclick="toggleDarkMode()" title="Chế độ sáng/tối">
+                            <i class="fas fa-moon" id="darkModeIcon"></i> <span id="darkModeLabel">Tối</span>
+                        </button>
+                        <button type="button" class="action-link push-notify" id="pushNotifyBtn" onclick="requestPushPermission()" title="Bật thông báo trình duyệt" style="display:none;">
+                            <i class="fas fa-bell"></i>
+                        </button>
                         <a href="{{ url_for('logout') }}" class="action-link logout"><i class="fas fa-sign-out-alt"></i> Đăng xuất</a>
                             <a href="{{ url_for('change_password_page') }}" class="action-link change-pw"><i class="fas fa-key"></i> Đổi mật khẩu</a>
                     </div>
@@ -853,16 +859,54 @@
                 <div class="card">
                     <div class="table-header-row">
                         <h2><i class="fas fa-table"></i> Chi Tiết Dữ Liệu</h2>
-                        <div class="date-filter-bar">
-                            <label><i class="fas fa-calendar-alt"></i> Từ ngày</label>
-                            <input type="date" id="dateFrom" class="date-input">
-                            <label>Đến ngày</label>
-                            <input type="date" id="dateTo" class="date-input">
-                            <button class="btn btn-filter" onclick="applyDateFilter()"><i class="fas fa-filter"></i> Lọc</button>
-                            <button class="btn btn-reset" onclick="resetDateFilter()"><i class="fas fa-times"></i> Xóa lọc</button>
+                        <div class="table-toolbar">
+                            <!-- Date presets -->
+                            <div class="date-preset-chips" id="datePresetChips">
+                                <button class="date-chip" onclick="applyDatePreset('today')">Hôm nay</button>
+                                <button class="date-chip" onclick="applyDatePreset('yesterday')">Hôm qua</button>
+                                <button class="date-chip" onclick="applyDatePreset('7d')">7 ngày</button>
+                                <button class="date-chip" onclick="applyDatePreset('month')">Tháng này</button>
+                            </div>
+                            <div class="date-filter-bar">
+                                <label><i class="fas fa-calendar-alt"></i> Từ ngày</label>
+                                <input type="date" id="dateFrom" class="date-input">
+                                <label>Đến ngày</label>
+                                <input type="date" id="dateTo" class="date-input">
+                                <button class="btn btn-filter" onclick="applyDateFilter()"><i class="fas fa-filter"></i> Lọc</button>
+                                <button class="btn btn-reset" onclick="resetDateFilter()"><i class="fas fa-times"></i> Xóa lọc</button>
+                            </div>
                         </div>
                     </div>
-                    <div id="filterInfo" class="filter-info" style="display:none;"></div>
+                    <!-- Saved filter presets -->
+                    <div id="savedFiltersBar" class="saved-filters-bar" style="display:none;"></div>
+                    <div class="table-action-bar">
+                        <div id="filterInfo" class="filter-info" style="display:none; margin:0;"></div>
+                        <div class="table-action-btns">
+                            <button class="btn-icon-tool" onclick="exportTableCSV()" title="Xuất CSV"><i class="fas fa-file-csv"></i> CSV</button>
+                            <button class="btn-icon-tool" id="saveFilterBtn" onclick="saveCurrentFilter()" title="Lưu bộ lọc"><i class="fas fa-bookmark"></i> Lưu lọc</button>
+                            <button class="btn-icon-tool" id="colVisBtn" onclick="toggleColVisPanel()" title="Hiện/ẩn cột"><i class="fas fa-columns"></i> Cột</button>
+                            <button class="btn-icon-tool" id="budgetAlertBtn" onclick="toggleBudgetPanel()" title="Cảnh báo ngân sách"><i class="fas fa-bell"></i> Alert</button>
+                        </div>
+                    </div>
+                    <!-- Column visibility panel -->
+                    <div id="colVisPanel" class="col-vis-panel" style="display:none;">
+                        <div class="col-vis-title">Hiện/ẩn cột <button type="button" onclick="resetColVis()" class="col-vis-reset">Reset</button></div>
+                        <div id="colVisCheckboxes" class="col-vis-checkboxes"></div>
+                    </div>
+                    <!-- Budget alert panel -->
+                    <div id="budgetAlertPanel" class="budget-alert-panel" style="display:none;">
+                        <div class="budget-panel-title"><i class="fas fa-bell"></i> Cảnh báo ngân sách</div>
+                        <div class="budget-panel-row">
+                            <label>Chi phí/data tối đa (VND)</label>
+                            <input type="number" id="alertCprThreshold" placeholder="vd: 80000" class="budget-input">
+                        </div>
+                        <div class="budget-panel-row">
+                            <label>% Ads tối đa (%)</label>
+                            <input type="number" id="alertAdsThreshold" placeholder="vd: 25" class="budget-input">
+                        </div>
+                        <button class="btn-save-alert" onclick="saveBudgetAlerts()"><i class="fas fa-save"></i> Lưu</button>
+                        <div id="budgetAlertStatus" class="budget-alert-status"></div>
+                    </div>
                     <div class="table-meta-row">
                         <div id="tableCountInfo" class="table-count-info">0 dòng dữ liệu</div>
                         <div class="table-page-size-wrap">
@@ -895,6 +939,26 @@
             <div class="app-footer-brand">GDT Group | Chi Phi Ads Dashboard</div>
             <div class="app-footer-meta">Phat trien phan mem: Nguyen Ba Thang | Version 1.0.0</div>
         </footer>
+    </div>
+
+    <!-- Command palette (Ctrl+K) -->
+    <div id="cmdPaletteOverlay" class="cmd-overlay" style="display:none;" onclick="closeCmdPalette(event)">
+        <div class="cmd-palette">
+            <div class="cmd-search-wrap">
+                <i class="fas fa-search cmd-icon"></i>
+                <input type="text" id="cmdInput" class="cmd-input" placeholder="Tìm tính năng, thành viên, tháng... (Ctrl+K)" oninput="renderCmdResults()" autocomplete="off">
+                <span class="cmd-esc" onclick="closeCmdPalette()">ESC</span>
+            </div>
+            <div id="cmdResults" class="cmd-results"></div>
+            <div class="cmd-hint">↑↓ di chuyển · Enter chọn · Esc đóng</div>
+        </div>
+    </div>
+
+    <!-- Onboarding checklist (first-time) -->
+    <div id="onboardingPanel" class="onboarding-panel" style="display:none;">
+        <div class="onboarding-title"><i class="fas fa-rocket"></i> Bắt đầu nhanh</div>
+        <ul class="onboarding-list" id="onboardingList"></ul>
+        <button class="onboarding-dismiss" onclick="dismissOnboarding()">Ẩn hướng dẫn</button>
     </div>
 
     <div id="metaApiHelperModal" class="meta-api-modal" aria-hidden="true">
