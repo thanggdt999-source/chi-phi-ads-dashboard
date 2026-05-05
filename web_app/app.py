@@ -63,6 +63,23 @@ SHEET_HEALTH_STATE_PATH = Path(
 )
 SHEET_HEALTH_CHECK_INTERVAL_SECONDS = max(300, int(os.getenv("SHEET_HEALTH_CHECK_INTERVAL_SECONDS", "1200")))  # default 20 min
 _SHEET_HEALTH_SCHEDULER_STARTED = False
+AUDIT_LOG_PATH = Path(
+    os.getenv(
+        "AUDIT_LOG_PATH",
+        str(Path(__file__).parent.parent / "storage" / "logs" / "audit.jsonl"),
+    )
+)
+USERS_DAILY_BACKUP_DIR = Path(
+    os.getenv(
+        "USERS_DAILY_BACKUP_DIR",
+        str(Path(__file__).parent.parent / "storage" / "config" / "daily_backups"),
+    )
+)
+AI_CHAT_RATE_LIMIT_PER_MIN = max(1, int(os.getenv("AI_CHAT_RATE_LIMIT_PER_MIN", "12")))
+_ai_rate_limit_store: dict = {}  # {session_key: [timestamp, ...]}
+_ai_rate_limit_lock = threading.Lock()
+DASHBOARD_URL = os.getenv("DASHBOARD_URL", "https://ads.hexistoree.click/dashboard").strip()
+APP_START_TIME = datetime.now()
 TELEGRAM_REPORT_TIMEZONE = os.getenv("TELEGRAM_REPORT_TIMEZONE", "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
 TELEGRAM_REPORT_START_HOUR = 7
 TELEGRAM_REPORT_START_MINUTE = 0
@@ -899,6 +916,44 @@ def save_sheet_health_state(state: dict) -> None:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
+# ─── Audit log ────────────────────────────────────────
+def write_audit_log(action: str, username: str = "", extra: Optional[dict] = None) -> None:
+    """Append a single audit event to the JSONL audit log (fire-and-forget)."""
+    try:
+        AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "ts": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            "action": action,
+            "username": username,
+        }
+        if extra:
+            entry.update(extra)
+        with AUDIT_LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+# ─── Daily users.json backup ──────────────────────────
+def _run_daily_users_backup() -> None:
+    """Called once at startup (in background) — copies users.json to daily_backups/users-YYYY-MM-DD.json if not already done today."""
+    try:
+        users = load_users_config()
+        today_str = datetime.utcnow().strftime("%Y-%m-%d")
+        USERS_DAILY_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        backup_path = USERS_DAILY_BACKUP_DIR / f"users-{today_str}.json"
+        if not backup_path.exists():
+            atomic_write_json_file(backup_path, users)
+        # Purge backups older than 30 days
+        for old in sorted(USERS_DAILY_BACKUP_DIR.glob("users-*.json"))[:-30]:
+            try:
+                old.unlink()
+            except Exception:
+                pass
+    except Exception as exc:
+        print(f"[daily-backup] error: {exc}")
+
+
 def parse_row_date(value: str) -> Optional[date]:
     raw = (value or "").strip()
     if not raw:
@@ -912,19 +967,23 @@ def parse_row_date(value: str) -> Optional[date]:
     return None
 
 
-def send_telegram_message(chat_id: str, text: str, bot_token: str = "") -> tuple[bool, str]:
+def send_telegram_message(chat_id: str, text: str, bot_token: str = "", reply_markup: Optional[dict] = None) -> tuple[bool, str]:
     effective_token = normalize_telegram_bot_token(bot_token) or normalize_telegram_bot_token(TELEGRAM_BOT_TOKEN)
     if not effective_token:
         return False, "Bot token chưa được cấu hình hợp lệ (cả token cá nhân và token hệ thống)."
     if not chat_id:
         return False, "Thiếu Telegram Chat ID."
 
-    payload = json.dumps({
+    body_dict: dict = {
         "chat_id": chat_id,
         "text": text,
         "parse_mode": "HTML",
         "disable_web_page_preview": True,
-    }).encode("utf-8")
+    }
+    if reply_markup:
+        body_dict["reply_markup"] = reply_markup
+
+    payload = json.dumps(body_dict).encode("utf-8")
     req = urllib_request.Request(
         url=f"https://api.telegram.org/bot{effective_token}/sendMessage",
         data=payload,
@@ -1444,11 +1503,24 @@ def build_employee_report_message(username: str, user: dict, now: datetime) -> t
         return False, "", result.get("error", "Không đọc được dữ liệu sheet.")
 
     today = now.date()
+    yesterday = today - timedelta(days=1)
     rows = [row for row in result.get("data", []) if parse_row_date(row.get("Ngày", "")) == today]
+    yesterday_rows = [row for row in result.get("data", []) if parse_row_date(row.get("Ngày", "")) == yesterday]
     products = aggregate_product_metrics(rows)
     total_spend = round(sum(parse_spend(row.get("Số tiền chi tiêu - VND", "")) for row in rows))
     total_data = sum(parse_int(row.get("Số Data", "")) for row in rows)
     cost_per_data = round(total_spend / total_data) if total_data > 0 else 0
+    # Yesterday totals for delta
+    yest_spend = round(sum(parse_spend(row.get("Số tiền chi tiêu - VND", "")) for row in yesterday_rows))
+    yest_data = sum(parse_int(row.get("Số Data", "")) for row in yesterday_rows)
+
+    def _delta_tag(curr: float, prev: float) -> str:
+        if not prev:
+            return ""
+        pct = (curr - prev) / prev * 100
+        arrow = "▲" if pct > 0 else "▼"
+        return f" <i>({arrow}{abs(pct):.0f}%)</i>"
+
     ads_percent = (result.get("ads_percent") or "").strip() or "—"
     summary = {
         "total_spend": total_spend,
@@ -1492,8 +1564,8 @@ def build_employee_report_message(username: str, user: dict, now: datetime) -> t
         f"👤 {display_name}\n"
         f"🕒 {timestamp}\n\n"
         "<b>Báo cáo tổng quan hôm nay</b>\n"
-        f"• Chi tiêu: <b>{total_spend:,} VND</b>\n"
-        f"• Data: <b>{total_data:,}</b>\n"
+        f"• Chi tiêu: <b>{total_spend:,} VND</b>{_delta_tag(total_spend, yest_spend)}\n"
+        f"• Data: <b>{total_data:,}</b>{_delta_tag(total_data, yest_data)}\n"
         f"• Chi phí/data: <b>{cost_per_data:,} VND</b>\n"
         f"• % Ads: <b>{html.escape(ads_percent)}</b>"
         f"{profit_section}\n\n"
@@ -1804,7 +1876,16 @@ def run_telegram_report_job(*, force: bool = False, dry_run: bool = False, usern
                 slot_sent_count += 1
                 continue
 
-            send_ok, send_info = send_telegram_message(chat_id, message, bot_token=personal_bot_token)
+            send_ok, send_info = send_telegram_message(
+                chat_id,
+                message,
+                bot_token=personal_bot_token,
+                reply_markup={
+                    "inline_keyboard": [[
+                        {"text": "📊 Xem dashboard", "url": DASHBOARD_URL},
+                    ]]
+                },
+            )
             results.append({
                 "slot": pending_slot,
                 "username": username,
@@ -1813,6 +1894,26 @@ def run_telegram_report_job(*, force: bool = False, dry_run: bool = False, usern
             })
             if send_ok:
                 sent_count += 1
+                slot_sent_count += 1
+                # B4: Warn once if day ≥ 25 and next month's sheet not yet registered
+                if role == "employee" and not dry_run and slot_time.day >= 25:
+                    next_month = slot_time.replace(day=1) + timedelta(days=32)
+                    next_mk = normalize_month_key(next_month.year, next_month.month)
+                    next_entry = get_user_monthly_sheet_entry(username, next_mk)
+                    if not next_entry:
+                        next_warn_key = f"{username}:nextmonth:{next_mk}"
+                        next_warn_date = slot_time.strftime("%Y-%m-%d")
+                        if missing_sheet_warned.get(next_warn_key) != next_warn_date:
+                            display_name = html.escape(str(user.get("display_name") or username))
+                            next_warn_text = (
+                                "📅 <b>Nhắc tạo sheet tháng mới</b>\n"
+                                f"👤 {display_name}\n\n"
+                                f"Tháng {month_label(next_mk)} sắp đến. "
+                                "Đại ca nhớ tạo sheet mới và dán link vào dashboard trước khi sang tháng nhé!"
+                            )
+                            send_telegram_message(chat_id, next_warn_text, bot_token=personal_bot_token)
+                            missing_sheet_warned[next_warn_key] = next_warn_date
+                            state_changed = True
                 slot_sent_count += 1
 
         if slot_sent_count > 0:
@@ -5620,12 +5721,62 @@ def list_sheets():
     return jsonify({"success": True, "sheets": sheets})
 
 
+@app.route("/health", methods=["GET"])
+def health_check():
+    uptime_seconds = int((datetime.now() - APP_START_TIME).total_seconds())
+    gsheets_ok = True
+    try:
+        get_gspread_client()
+    except Exception:
+        gsheets_ok = False
+    return jsonify({
+        "status": "ok",
+        "uptime_seconds": uptime_seconds,
+        "google_sheets": "ok" if gsheets_ok else "error",
+        "ai_enabled": AI_CHAT_ENABLED,
+    })
+
+
+def _ai_check_rate_limit(key: str) -> bool:
+    """Return True if request is allowed, False if rate-limited. Uses a 60-second sliding window."""
+    now_ts = time.time()
+    window = 60.0
+    with _ai_rate_limit_lock:
+        timestamps = _ai_rate_limit_store.get(key, [])
+        timestamps = [t for t in timestamps if now_ts - t < window]
+        if len(timestamps) >= AI_CHAT_RATE_LIMIT_PER_MIN:
+            _ai_rate_limit_store[key] = timestamps
+            return False
+        timestamps.append(now_ts)
+        _ai_rate_limit_store[key] = timestamps
+        # Periodically purge old keys to avoid unbounded growth
+        if len(_ai_rate_limit_store) > 500:
+            stale = [k for k, v in _ai_rate_limit_store.items() if not any(now_ts - t < window for t in v)]
+            for k in stale:
+                del _ai_rate_limit_store[k]
+        return True
+
+
 @app.route("/api/ai/chat", methods=["POST"])
 def ai_chat_message():
     try:
+        # Rate limit by session ID or remote IP
+        rate_key = session.get("username") or request.remote_addr or "anon"
+        if not _ai_check_rate_limit(rate_key):
+            return jsonify({"success": False, "error": f"Bạn đang gửi quá nhanh. Vui lòng chờ 1 phút và thử lại."}), 429
+
         data = request.get_json(silent=True) or {}
         message = str(data.get("message") or "").strip()
-        history = data.get("history") if isinstance(data.get("history"), list) else []
+        # Merge frontend history with server-side session history (last 6 turns)
+        frontend_history = data.get("history") if isinstance(data.get("history"), list) else []
+        session_history = session.get("ai_history") if isinstance(session.get("ai_history"), list) else []
+        # Server history takes precedence as ground truth; merge unique new items
+        existing_contents = {str(h.get("content", "")) for h in session_history}
+        for h in frontend_history:
+            if str(h.get("content", "")) not in existing_contents:
+                session_history.append(h)
+                existing_contents.add(str(h.get("content", "")))
+        history = session_history[-10:]  # keep last 10 turns
 
         if not message:
             return jsonify({"success": False, "error": "Vui lòng nhập nội dung cần hỏi AI."}), 400
@@ -5634,10 +5785,26 @@ def ai_chat_message():
 
         data_context = ""
         if should_use_ads_data_context(message, history):
-            data_context = build_ai_sheet_context()
+            # A2: Use cached sheet context (TTL 5 min) to avoid hitting Google Sheets API per message
+            cached_ctx = session.get("ai_sheet_context_cache")
+            cached_at = session.get("ai_sheet_context_cached_at", 0)
+            if cached_ctx and (time.time() - cached_at) < 300:
+                data_context = cached_ctx
+            else:
+                data_context = build_ai_sheet_context()
+                session["ai_sheet_context_cache"] = data_context
+                session["ai_sheet_context_cached_at"] = time.time()
         ok, reply = ask_openai_chat(message, history, data_context=data_context)
         if not ok:
             return jsonify({"success": False, "error": reply}), 400
+
+        # Persist updated history in session
+        history.append({"role": "user", "content": message})
+        history.append({"role": "assistant", "content": reply})
+        session["ai_history"] = history[-10:]
+
+        # Audit log (lightweight, no PII)
+        write_audit_log("ai_chat", username=str(session.get("username", "") or ""), extra={"has_context": bool(data_context)})
 
         return jsonify({"success": True, "reply": reply})
     except Exception as exc:
@@ -6067,9 +6234,36 @@ def save_sheet():
             session["performance_sheet_url"] = pinned_performance_sheet_url
 
     msg = f'Đã lưu sheet "{sheet_name}" vào thư mục tháng {month_label(month_key)}.'
+
+    # B2: Check if expected tabs exist; warn but don't block save
+    tab_warning = ""
+    try:
+        client = get_gspread_client()
+        spreadsheet = client.open_by_key(sheet_id)
+        ws_titles = {ws.title.strip() for ws in spreadsheet.worksheets()}
+        EXPECTED_ADS_TABS = {"Chi phí ads FB", "Data FB", "CHI PHÍ ADS FB", "DATA FB", "Chi phí ADS"}
+        EXPECTED_PERF_TABS = {"TỔNG", "Tổng", "Tong", "TikTok", "Tiktok", "LNG"}
+        has_ads_tab = bool(ws_titles & EXPECTED_ADS_TABS)
+        has_perf_tab = bool(ws_titles & EXPECTED_PERF_TABS)
+        if not has_ads_tab:
+            tab_warning = (
+                "⚠️ Không tìm thấy tab 'Chi phí ads FB' hoặc 'Data FB' trong sheet. "
+                "Kiểm tra đúng file chưa hoặc đổi tên tab theo chuẩn."
+            )
+        elif not has_perf_tab and not pinned_performance_sheet_url:
+            tab_warning = (
+                "ℹ️ Sheet không có tab Tổng/TikTok/LNG. Nếu bạn muốn theo dõi hiệu suất, "
+                "hãy nhập thêm link bảng hiệu suất."
+            )
+    except Exception:
+        pass
+
+    write_audit_log("save_sheet", username=username, extra={"sheet_name": sheet_name, "month_key": month_key})
+
     return jsonify({
         "success": True,
         "message": msg,
+        "tab_warning": tab_warning,
         "name": sheet_name,
         "already_exists": already_exists,
         "month_key": month_key,
@@ -6540,6 +6734,8 @@ def forgot_password_verify():
 
 start_telegram_internal_scheduler()
 start_sheet_health_scheduler()
+# Daily backup runs once in background, ~10s after startup
+threading.Thread(target=_run_daily_users_backup, name="daily-backup", daemon=True).start()
 
 
 if __name__ == "__main__":

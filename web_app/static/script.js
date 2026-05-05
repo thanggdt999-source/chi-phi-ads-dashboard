@@ -858,7 +858,19 @@ function renderTable(rows) {
     const pageRows = rows;
 
     const COMPUTED_COL = "Chi phí/KQ (USD)";
-    const headerHTML = headers.map(h => `<th>${h}</th>`).join("") + `<th>${COMPUTED_COL}</th>`;
+    const COL_TOOLTIPS = {
+        "Ngày": "Ngày chạy quảng cáo",
+        "Tên tài khoản": "Tên tài khoản quảng cáo Meta/TikTok",
+        "Tên sản phẩm - VN": "Tên sản phẩm trong chiến dịch",
+        "Số Data": "Số lead / kết quả thu về (data khách hàng)",
+        "Số tiền chi tiêu - VND": "Tổng chi phí quảng cáo theo VND trong ngày",
+        "Số tiền chi tiêu - USD": "Tổng chi phí quảng cáo theo USD trong ngày",
+        "Chi phí/KQ (USD)": "Chi phí trung bình để có 1 kết quả (CPR) tính bằng USD",
+    };
+    const headerHTML = headers.map(h => {
+        const tip = COL_TOOLTIPS[h] ? ` title="${COL_TOOLTIPS[h]}" class="th-tip"` : "";
+        return `<th${tip}>${h}</th>`;
+    }).join("") + `<th title="${COL_TOOLTIPS[COMPUTED_COL]}" class="th-tip">${COMPUTED_COL}</th>`;
     document.getElementById("tableHeader").innerHTML = headerHTML;
 
     document.getElementById("tableBody").innerHTML = pageRows.map(row => {
@@ -1033,9 +1045,55 @@ function renderLNGInsight(container) {
     }).join("");
 }
 
+// B3: Auto-detect month from sheet URL hints when user types/pastes
+function _autoDetectMonthFromUrl() {
+    if (ROLE !== "employee") return;
+    const sel = document.getElementById("monthSelect");
+    if (!sel || sel.options.length <= 1) return;
+    const val = (this.value || "").toLowerCase();
+    const MONTH_NAMES_MAP = {
+        "thang 1":1,"thang 2":2,"thang 3":3,"thang 4":4,"thang 5":5,"thang 6":6,
+        "thang 7":7,"thang 8":8,"thang 9":9,"thang 10":10,"thang 11":11,"thang 12":12,
+        "jan":1,"feb":2,"mar":3,"apr":4,"may":5,"jun":6,
+        "jul":7,"aug":8,"sep":9,"oct":10,"nov":11,"dec":12,
+    };
+    let detectedMonth = 0, detectedYear = new Date().getFullYear();
+    for (const [name, m] of Object.entries(MONTH_NAMES_MAP)) {
+        if (val.includes(name)) { detectedMonth = m; break; }
+    }
+    if (!detectedMonth) {
+        const patterns = [
+            /(\d{4})[_\-](\d{2})/,
+            /t(\d{1,2})[_\-](\d{4})/i,
+            /thang[_\- ]?(\d{1,2})/i,
+        ];
+        for (const p of patterns) {
+            const m = val.match(p);
+            if (m) {
+                if (p.source.startsWith("(\\d{4})")) {
+                    detectedYear = parseInt(m[1], 10);
+                    detectedMonth = parseInt(m[2], 10);
+                } else if (p.source.startsWith("t(\\d")) {
+                    detectedMonth = parseInt(m[1], 10);
+                    detectedYear = parseInt(m[2], 10);
+                } else {
+                    detectedMonth = parseInt(m[1], 10);
+                }
+                break;
+            }
+        }
+    }
+    if (!detectedMonth || detectedMonth < 1 || detectedMonth > 12) return;
+    const mk = `${detectedYear}-${String(detectedMonth).padStart(2, "0")}`;
+    const found = MONTHLY_SHEETS.find(s => s.month_key === mk);
+    if (found && sel.value !== mk) {
+        sel.value = mk;
+        showToast(`📅 Tự động chọn tháng ${found.month_label || mk}`, 2500);
+    }
+}
+
 // ─── URL suggestions ──────────────────────────────────
 function initURLInputListeners() {
-    const sheetInput = document.getElementById("sheetUrl");
     const perfInput = document.getElementById("performanceSheetUrl");
     const box = document.getElementById("sheetSuggestions");
     const wrap = document.querySelector(".input-wrap");
@@ -1067,6 +1125,8 @@ function initURLInputListeners() {
         sheetInput.addEventListener("click", show("sheetUrl"));
         sheetInput.addEventListener("input", show("sheetUrl"));
         sheetInput.addEventListener("blur", hide);
+        // B3: Auto-detect month key from sheet name hint
+        sheetInput.addEventListener("input", _autoDetectMonthFromUrl);
     }
     
     // Performance sheet input listeners
@@ -1244,6 +1304,10 @@ async function saveSheetUrl(sheetUrl, performanceSheetUrl = "") {
 
         if (data.success) {
             if (!data.already_exists) showToast("✅ " + data.message);
+            // Show tab warning as a non-blocking notification
+            if (data.tab_warning) {
+                setTimeout(() => showToast("⚠️ " + data.tab_warning, 6000), 800);
+            }
             const perfInput = document.getElementById("performanceSheetUrl");
             if (perfInput && !perfInput.value && data.pinned_performance_sheet_url) {
                 perfInput.value = data.pinned_performance_sheet_url;
@@ -1314,7 +1378,7 @@ function buildSheetAccessHint(data) {
 
     return "";
 }
-function showToast(message) {
+function showToast(message, duration = 3500) {
     let t = document.getElementById("toastNotification");
     if (!t) {
         t = document.createElement("div"); t.id = "toastNotification";
@@ -1322,7 +1386,7 @@ function showToast(message) {
         document.body.appendChild(t);
     }
     t.textContent = message; t.style.opacity = "1";
-    clearTimeout(t._timeout); t._timeout = setTimeout(() => { t.style.opacity = "0"; }, 3500);
+    clearTimeout(t._timeout); t._timeout = setTimeout(() => { t.style.opacity = "0"; }, duration);
 }
 
 function setupInactivityLogout() {
