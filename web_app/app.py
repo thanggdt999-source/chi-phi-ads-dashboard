@@ -5746,8 +5746,35 @@ def account_status():
                 "can_auto_open_sheet": True,
             }
         ), 400
+    except gspread.exceptions.APIError as e:
+        lower = str(e).lower()
+        if "403" in str(e) or "permission" in lower or "forbidden" in lower:
+            svc_email = get_service_account_client_email()
+            return jsonify({
+                "success": False,
+                "error": "Sheet chưa chia sẻ cho service account. Vui lòng chia sẻ quyền Editor/Viewer.",
+                "service_account_email": svc_email,
+                "can_auto_open_sheet": True,
+            }), 403
+        return jsonify({"success": False, "error": f"Google Sheets lỗi: {str(e)[:120]}"}), 400
     except Exception as e:
-        return jsonify({"success": False, "error": f"Không lấy được trạng thái tài khoản: {str(e)}"}), 500
+        raw = str(e)
+        lower = raw.lower()
+        if "service account" in lower or "client_email" in lower or "token_uri" in lower:
+            return jsonify({
+                "success": False,
+                "error": "Cấu hình service account chưa đúng. Liên hệ admin để kiểm tra lại GOOGLE_SERVICE_ACCOUNT_JSON.",
+            }), 400
+        if "403" in raw or "permission" in lower or "forbidden" in lower:
+            svc_email = get_service_account_client_email()
+            return jsonify({
+                "success": False,
+                "error": "Sheet chưa chia sẻ cho service account. Vui lòng chia sẻ quyền Editor/Viewer.",
+                "service_account_email": svc_email,
+                "can_auto_open_sheet": True,
+            }), 400
+        app.logger.exception("account-status unexpected error")
+        return jsonify({"success": False, "error": f"Không lấy được trạng thái tài khoản: {raw[:120]}"}), 500
 
 
 @app.route("/api/performance-summary", methods=["POST"])
@@ -5805,7 +5832,13 @@ def performance_summary():
                 "success": False,
                 "error": "Google Sheets đang tạm giới hạn số lần đọc dữ liệu (quota/phút). Vui lòng đợi 60-90 giây rồi bấm Tải Dữ Liệu lại.",
             }), 429
-        return jsonify({"success": False, "error": f"Không đọc được bảng hiệu suất: {raw_error}"}), 500
+        if "service account" in lower_error or "client_email" in lower_error or "token_uri" in lower_error:
+            return jsonify({
+                "success": False,
+                "error": "Cấu hình service account chưa đúng. Liên hệ admin để kiểm tra lại GOOGLE_SERVICE_ACCOUNT_JSON.",
+            }), 400
+        app.logger.exception("performance-summary unexpected error")
+        return jsonify({"success": False, "error": f"Không đọc được bảng hiệu suất: {raw_error[:120]}"}), 500
 
 
 @app.route("/api/auto-fill-status", methods=["GET"])
