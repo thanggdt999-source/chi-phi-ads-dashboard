@@ -31,6 +31,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupInactivityLogout();
     initMetaApiHelperModal();
     populateMemberSelect();
+    await loadSheetMemoryStatus();
     populateMonthSelect();
     await loadAutoFillStatus();
     initURLInputListeners();
@@ -56,6 +57,31 @@ document.addEventListener("DOMContentLoaded", async () => {
         await loadAllData();
     }
 });
+
+async function loadSheetMemoryStatus() {
+    if (ROLE !== "employee") return;
+    try {
+        const response = await fetch("/api/sheet-memory/status");
+        if (await handleSessionExpiredGateFromResponse(response)) return;
+        const data = await response.json();
+        if (!data || !data.success) return;
+
+        if (Array.isArray(data.monthly_sheets)) {
+            MONTHLY_SHEETS.length = 0;
+            data.monthly_sheets.forEach(item => MONTHLY_SHEETS.push(item));
+        }
+
+        const sheetInput = document.getElementById("sheetUrl");
+        if (sheetInput && !sheetInput.value && data.current_ads_sheet_url) {
+            sheetInput.value = data.current_ads_sheet_url;
+        }
+
+        const perfInput = document.getElementById("performanceSheetUrl");
+        if (perfInput && !perfInput.value && data.pinned_performance_sheet_url) {
+            perfInput.value = data.pinned_performance_sheet_url;
+        }
+    } catch (_) {}
+}
 
 // ─── Member dropdown ───────────────────────────────────
 function populateMemberSelect() {
@@ -1146,6 +1172,10 @@ async function saveSheetUrl(sheetUrl, performanceSheetUrl = "") {
 
         if (data.success) {
             if (!data.already_exists) showToast("✅ " + data.message);
+            const perfInput = document.getElementById("performanceSheetUrl");
+            if (perfInput && !perfInput.value && data.pinned_performance_sheet_url) {
+                perfInput.value = data.pinned_performance_sheet_url;
+            }
             if (ROLE === "employee" && data.month_key) {
                 const idx = MONTHLY_SHEETS.findIndex(m => m.month_key === data.month_key);
                 const item = {

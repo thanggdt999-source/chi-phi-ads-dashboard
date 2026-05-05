@@ -1693,6 +1693,10 @@ def run_telegram_report_job(*, force: bool = False, dry_run: bool = False, usern
         return {"success": True, "slot": slot, "skipped": True, "reason": "outside_window", "results": []}
 
     state = load_telegram_report_state()
+    missing_sheet_warned = state.get("missing_sheet_warned", {})
+    if not isinstance(missing_sheet_warned, dict):
+        missing_sheet_warned = {}
+    state_changed = False
     last_slot = state.get("last_slot", "")
     pending_slots = build_pending_slots(now, last_slot, force=force)
     if not pending_slots:
@@ -1737,10 +1741,27 @@ def run_telegram_report_job(*, force: bool = False, dry_run: bool = False, usern
                 results.append({"slot": pending_slot, "username": username, "status": "skipped", "reason": "missing_chat"})
                 continue
 
+            personal_bot_token = normalize_telegram_bot_token(str(user.get("telegram_bot_token", "")))
+
             role = str(user.get("role", "") or "").strip()
             if role == "employee":
                 sheet_url = get_effective_user_sheet_url(username, user, reference_time=slot_time)
                 if not sheet_url:
+                    month_key = normalize_month_key(slot_time.year, slot_time.month)
+                    warn_key = f"{username}:{month_key}"
+                    warn_date = slot_time.strftime("%Y-%m-%d")
+                    if not dry_run and missing_sheet_warned.get(warn_key) != warn_date:
+                        display_name = html.escape(str(user.get("display_name") or username))
+                        warn_text = (
+                            "<b>⚠️ Nhắc cập nhật sheet tháng mới</b>\n"
+                            f"👤 {display_name}\n"
+                            f"📅 {month_label(month_key)}\n\n"
+                            "Hệ thống chưa thấy link <b>bảng chi phí ADS</b> cho tháng hiện tại.\n"
+                            "Dạ đại ca chỉ cần dán link sheet tháng mới 1 lần, từ sau em tự ghi nhớ và dùng tự động."
+                        )
+                        send_telegram_message(chat_id, warn_text, bot_token=personal_bot_token)
+                        missing_sheet_warned[warn_key] = warn_date
+                        state_changed = True
                     results.append({"slot": pending_slot, "username": username, "status": "skipped", "reason": "missing_sheet"})
                     continue
                 ok, message, info = build_employee_report_message(username, user, slot_time)
@@ -1757,7 +1778,6 @@ def run_telegram_report_job(*, force: bool = False, dry_run: bool = False, usern
                 slot_sent_count += 1
                 continue
 
-            personal_bot_token = normalize_telegram_bot_token(str(user.get("telegram_bot_token", "")))
             send_ok, send_info = send_telegram_message(chat_id, message, bot_token=personal_bot_token)
             results.append({
                 "slot": pending_slot,
@@ -1772,10 +1792,15 @@ def run_telegram_report_job(*, force: bool = False, dry_run: bool = False, usern
         if slot_sent_count > 0:
             sent_slots.append(pending_slot)
 
+    if not dry_run:
+        state["missing_sheet_warned"] = missing_sheet_warned
     if sent_slots and not dry_run:
         state["last_slot"] = sent_slots[-1]
         state["last_run_at"] = now.strftime("%Y-%m-%d %H:%M:%S")
         state["pending_slots_processed"] = len(sent_slots)
+        state_changed = True
+
+    if state_changed and not dry_run:
         save_telegram_report_state(state)
 
     return {
@@ -2193,6 +2218,33 @@ def get_effective_user_sheet_url(username: str, user: Optional[dict] = None, ref
     return str(profile.get("sheet_url") or "").strip()
 
 
+def get_pinned_performance_sheet_url(username: str, user: Optional[dict] = None) -> str:
+    profile = user or get_user(username) or {}
+    profile_url = str(profile.get("performance_sheet_url") or "").strip()
+    if profile_url:
+        return profile_url
+
+    for item in get_user_monthly_sheets(username):
+        perf_url = str(item.get("performance_sheet_url") or "").strip()
+        if perf_url:
+            return perf_url
+    return ""
+
+
+def get_pinned_performance_sheet_name(username: str, user: Optional[dict] = None) -> str:
+    profile = user or get_user(username) or {}
+    pinned_url = get_pinned_performance_sheet_url(username, profile)
+    if not pinned_url:
+        return ""
+
+    for item in get_user_monthly_sheets(username):
+        if str(item.get("performance_sheet_url") or "").strip() == pinned_url:
+            return str(item.get("performance_sheet_name") or "").strip()
+
+    guessed_name, _, _ = get_sheet_name_and_month(pinned_url)
+    return guessed_name or ""
+
+
 def set_session_user(
     username: str,
     user: dict,
@@ -2210,7 +2262,8 @@ def set_session_user(
     session["display_name"] = user.get("display_name", username)
     effective_sheet_url = get_effective_user_sheet_url(username, user, reference_time=get_notification_now())
     session["sheet_url"] = effective_sheet_url
-    session["performance_sheet_url"] = user.get("performance_sheet_url", "")
+    pinned_performance_sheet_url = get_pinned_performance_sheet_url(username, user)
+    session["performance_sheet_url"] = pinned_performance_sheet_url
     session["is_elevated"] = elevated
     session["last_activity"] = datetime.now().timestamp()
     if actual_role == "employee" and not elevated:
@@ -2219,7 +2272,7 @@ def set_session_user(
             "display_name": user.get("display_name", username),
             "team": user.get("team", ""),
             "sheet_url": effective_sheet_url,
-            "performance_sheet_url": user.get("performance_sheet_url", ""),
+            "performance_sheet_url": pinned_performance_sheet_url,
         }
 
 
@@ -5842,7 +5895,7 @@ def save_sheet():
 
     users = load_users_config() if username else {}
     profile = users.get(username, {}) if username else {}
-    pinned_performance_sheet_url = performance_sheet_url or str(profile.get("performance_sheet_url") or "").strip()
+    pinned_performance_sheet_url = performance_sheet_url or get_pinned_performance_sheet_url(username, profile)
     pinned_performance_sheet_name = performance_sheet_name
     if pinned_performance_sheet_url and not pinned_performance_sheet_name:
         guessed_perf_name, _, guessed_perf_url = get_sheet_name_and_month(pinned_performance_sheet_url)
@@ -5884,8 +5937,43 @@ def save_sheet():
         "month_key": month_key,
         "month_label": month_label(month_key),
         "clean_url": clean_url,
+        "pinned_performance_sheet_url": pinned_performance_sheet_url,
+        "pinned_performance_sheet_name": pinned_performance_sheet_name,
         "service_account_email": access.get("service_account_email", ""),
         "folder_url": url_for("view_month_folder", month_key=month_key),
+    })
+
+
+@app.route("/api/sheet-memory/status", methods=["GET"])
+@api_login_required
+def sheet_memory_status():
+    username = str(session.get("username", "") or "").strip()
+    if not username:
+        return jsonify({"success": False, "error": "Không xác định được tài khoản."}), 401
+
+    users = load_users_config()
+    user = users.get(username, {})
+    now = get_notification_now()
+    current_mk = normalize_month_key(now.year, now.month)
+    current_entry = get_user_monthly_sheet_entry(username, current_mk)
+    current_ads_sheet_url = get_effective_user_sheet_url(username, user, reference_time=now)
+    current_ads_sheet_name = str(current_entry.get("sheet_name") or "").strip()
+    if current_ads_sheet_url and not current_ads_sheet_name:
+        guessed_name, _, _ = get_sheet_name_and_month(current_ads_sheet_url)
+        current_ads_sheet_name = guessed_name or ""
+
+    pinned_perf_url = get_pinned_performance_sheet_url(username, user)
+    pinned_perf_name = get_pinned_performance_sheet_name(username, user)
+
+    return jsonify({
+        "success": True,
+        "month_key": current_mk,
+        "month_label": month_label(current_mk),
+        "current_ads_sheet_url": current_ads_sheet_url,
+        "current_ads_sheet_name": current_ads_sheet_name,
+        "pinned_performance_sheet_url": pinned_perf_url,
+        "pinned_performance_sheet_name": pinned_perf_name,
+        "monthly_sheets": get_user_monthly_sheets(username, fallback_sheet_url=current_ads_sheet_url),
     })
 
 
