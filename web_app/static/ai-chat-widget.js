@@ -120,6 +120,30 @@
         syncPanelPosition();
     }
 
+    function getDefaultFabPosition() {
+        var vp = viewportSize();
+        return { x: vp.w - 74, y: vp.h - 74 };
+    }
+
+    function ensureFabVisible(forceReset) {
+        var vp = viewportSize();
+        var rect = fab.getBoundingClientRect();
+        var hiddenByStyle = false;
+        try {
+            var cs = window.getComputedStyle(fab);
+            hiddenByStyle = cs.display === "none" || cs.visibility === "hidden" || Number(cs.opacity || "1") === 0;
+        } catch (_) {}
+
+        var outOfViewport = rect.width < 20 || rect.height < 20
+            || rect.right < 8 || rect.bottom < 8
+            || rect.left > vp.w - 8 || rect.top > vp.h - 8;
+
+        if (forceReset || hiddenByStyle || outOfViewport) {
+            var fallback = getDefaultFabPosition();
+            placeFab(fallback.x, fallback.y, true);
+        }
+    }
+
     function syncPanelPosition() {
         if (!fabPos) return;
         var vp = viewportSize();
@@ -367,17 +391,30 @@
         }
     }
 
-    window.addEventListener("resize", function () {
-        if (!fabPos) return;
-        placeFab(fabPos.x, fabPos.y, true);
+    function recoverFabPosition() {
+        if (fabPos) {
+            placeFab(fabPos.x, fabPos.y, true);
+        } else {
+            var fallback = getDefaultFabPosition();
+            placeFab(fallback.x, fallback.y, true);
+        }
+        ensureFabVisible(false);
+    }
+
+    window.addEventListener("resize", recoverFabPosition);
+    window.addEventListener("orientationchange", recoverFabPosition);
+    window.addEventListener("pageshow", recoverFabPosition);
+    document.addEventListener("visibilitychange", function () {
+        if (!document.hidden) recoverFabPosition();
     });
 
     (function initPosition() {
-        var vp = viewportSize();
-        var defaultX = vp.w - 74;
-        var defaultY = vp.h - 74;
-        var initial = fabPos || { x: defaultX, y: defaultY };
+        var initial = fabPos || getDefaultFabPosition();
         placeFab(initial.x, initial.y, false);
+        ensureFabVisible(false);
+        // Some mobile browsers apply late viewport shifts after load.
+        setTimeout(function () { ensureFabVisible(false); }, 350);
+        setTimeout(function () { ensureFabVisible(false); }, 1200);
     })();
 
     renderHistory();
