@@ -8,3 +8,4 @@ storage/credentials/service_account.json
 storage/logs/
 storage/credentials/*.json
 !storage/credentials/.gitkeep
+storage/config/*.tmp

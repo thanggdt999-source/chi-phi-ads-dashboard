@@ -942,7 +942,7 @@ def build_ai_sheet_context() -> str:
     ]
 
     raw_sheets = []
-    own_sheet_url = str(user.get("sheet_url") or "").strip()
+    own_sheet_url = get_effective_user_sheet_url(username, user, reference_time=now)
     if own_sheet_url:
         raw_sheets.append(
             {
@@ -1408,7 +1408,7 @@ def build_advice_lines(summary: dict, products: list) -> list:
 
 
 def build_employee_report_message(username: str, user: dict, now: datetime) -> tuple[bool, str, str]:
-    sheet_url = (user.get("sheet_url") or "").strip()
+    sheet_url = get_effective_user_sheet_url(username, user, reference_time=now)
     sheet_id = extract_sheet_id(sheet_url)
     if not sheet_id:
         return False, "", "Sheet URL không hợp lệ."
@@ -1482,22 +1482,25 @@ def build_employee_report_message(username: str, user: dict, now: datetime) -> t
 
 def get_management_scope_users(owner_username: str, owner_user: dict, users: dict) -> list[tuple[str, dict]]:
     role = str(owner_user.get("role", "") or "").strip()
+    now_ref = get_notification_now()
     if role == "admin":
-        return [
-            (uname, udata)
-            for uname, udata in users.items()
-            if udata.get("role") == "employee" and (udata.get("sheet_url") or "").strip()
-        ]
+        rows = []
+        for uname, udata in users.items():
+            if udata.get("role") != "employee":
+                continue
+            if get_effective_user_sheet_url(uname, udata, reference_time=now_ref):
+                rows.append((uname, udata))
+        return rows
 
     if role == "lead":
         team = str(owner_user.get("team", "") or "").strip()
-        return [
-            (uname, udata)
-            for uname, udata in users.items()
-            if udata.get("role") == "employee"
-            and udata.get("team") == team
-            and (udata.get("sheet_url") or "").strip()
-        ]
+        rows = []
+        for uname, udata in users.items():
+            if udata.get("role") != "employee" or udata.get("team") != team:
+                continue
+            if get_effective_user_sheet_url(uname, udata, reference_time=now_ref):
+                rows.append((uname, udata))
+        return rows
 
     return []
 
@@ -1577,7 +1580,7 @@ def build_management_report_message(username: str, user: dict, now: datetime, us
     total_data = 0
 
     for employee_username, employee_user in scope_users:
-        sheet_url = (employee_user.get("sheet_url") or "").strip()
+        sheet_url = get_effective_user_sheet_url(employee_username, employee_user, reference_time=now)
         sheet_id = extract_sheet_id(sheet_url)
         if not sheet_id:
             failed_users.append(employee_user.get("display_name", employee_username))
@@ -1723,6 +1726,9 @@ def run_telegram_report_job(*, force: bool = False, dry_run: bool = False, usern
         for username, user in users.items():
             if not is_telegram_report_role(user):
                 continue
+            if not bool(user.get("telegram_report_enabled", True)):
+                results.append({"slot": pending_slot, "username": username, "status": "skipped", "reason": "report_disabled"})
+                continue
             if selected and username not in selected:
                 continue
 
@@ -1733,7 +1739,7 @@ def run_telegram_report_job(*, force: bool = False, dry_run: bool = False, usern
 
             role = str(user.get("role", "") or "").strip()
             if role == "employee":
-                sheet_url = (user.get("sheet_url") or "").strip()
+                sheet_url = get_effective_user_sheet_url(username, user, reference_time=slot_time)
                 if not sheet_url:
                     results.append({"slot": pending_slot, "username": username, "status": "skipped", "reason": "missing_sheet"})
                     continue
@@ -2154,6 +2160,39 @@ def get_user_monthly_sheets(username: str, fallback_sheet_url: str = "") -> list
     return result
 
 
+def get_user_monthly_sheet_entry(username: str, month_key: str) -> dict:
+    if not username or not re.match(r"^\d{4}-\d{2}$", month_key or ""):
+        return {}
+
+    user_file = MONTHLY_SHEETS_ROOT / month_key / f"{username}.json"
+    if not user_file.exists():
+        return {}
+
+    try:
+        with user_file.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+        entries = payload.get("entries", []) if isinstance(payload, dict) else []
+        if isinstance(entries, list) and entries:
+            latest = entries[-1]
+            return latest if isinstance(latest, dict) else {}
+    except Exception:
+        return {}
+
+    return {}
+
+
+def get_effective_user_sheet_url(username: str, user: Optional[dict] = None, reference_time: Optional[datetime] = None) -> str:
+    target_time = reference_time or get_notification_now()
+    target_month = normalize_month_key(target_time.year, target_time.month)
+    monthly_entry = get_user_monthly_sheet_entry(username, target_month)
+    monthly_url = str(monthly_entry.get("sheet_url") or "").strip()
+    if monthly_url:
+        return monthly_url
+
+    profile = user or get_user(username) or {}
+    return str(profile.get("sheet_url") or "").strip()
+
+
 def set_session_user(
     username: str,
     user: dict,
@@ -2169,7 +2208,8 @@ def set_session_user(
     session["account_role"] = actual_role
     session["team"] = user.get("team", "")
     session["display_name"] = user.get("display_name", username)
-    session["sheet_url"] = user.get("sheet_url", "")
+    effective_sheet_url = get_effective_user_sheet_url(username, user, reference_time=get_notification_now())
+    session["sheet_url"] = effective_sheet_url
     session["performance_sheet_url"] = user.get("performance_sheet_url", "")
     session["is_elevated"] = elevated
     session["last_activity"] = datetime.now().timestamp()
@@ -2178,7 +2218,7 @@ def set_session_user(
             "username": username,
             "display_name": user.get("display_name", username),
             "team": user.get("team", ""),
-            "sheet_url": user.get("sheet_url", ""),
+            "sheet_url": effective_sheet_url,
             "performance_sheet_url": user.get("performance_sheet_url", ""),
         }
 
@@ -2209,33 +2249,42 @@ def get_accessible_sheets_for_user(username: str) -> list:
     user = users.get(username, {})
     role = user.get("role", "employee")
     team = user.get("team", "")
+    now_ref = get_notification_now()
 
     if role == "admin":
-        return [
-            {
+        rows = []
+        for uname, udata in users.items():
+            if udata.get("role") != "employee":
+                continue
+            effective_url = get_effective_user_sheet_url(uname, udata, reference_time=now_ref)
+            if not effective_url:
+                continue
+            rows.append({
                 "name": udata.get("display_name", uname),
-                "url": udata["sheet_url"],
+                "url": effective_url,
                 "team": udata.get("team", ""),
                 "username": uname,
-            }
-            for uname, udata in users.items()
-            if udata.get("role") == "employee" and udata.get("sheet_url")
-        ]
+            })
+        return rows
 
     if role == "lead":
-        return [
-            {
+        rows = []
+        for uname, udata in users.items():
+            if udata.get("role") != "employee" or udata.get("team") != team:
+                continue
+            effective_url = get_effective_user_sheet_url(uname, udata, reference_time=now_ref)
+            if not effective_url:
+                continue
+            rows.append({
                 "name": udata.get("display_name", uname),
-                "url": udata["sheet_url"],
+                "url": effective_url,
                 "team": team,
                 "username": uname,
-            }
-            for uname, udata in users.items()
-            if udata.get("role") == "employee" and udata.get("team") == team and udata.get("sheet_url")
-        ]
+            })
+        return rows
 
     # employee
-    sheet_url = user.get("sheet_url", "")
+    sheet_url = get_effective_user_sheet_url(username, user, reference_time=now_ref)
     if sheet_url:
         return [{"name": user.get("display_name", username), "url": sheet_url, "team": team, "username": username}]
     return []
@@ -4785,6 +4834,7 @@ def register_employee():
         "role": "employee",
         "team": team,
         "display_name": display_name,
+        "telegram_report_enabled": True,
         "telegram_verified": False,
         "telegram_test_status": "pending",
     }
@@ -5600,6 +5650,7 @@ def api_admin_list_users():
             "telegram_username": telegram_username,
             "telegram_bot_username": telegram_bot_username,
             "telegram_connected": bool(telegram_chat_id),
+            "telegram_report_enabled": bool(udata.get("telegram_report_enabled", True)),
             "telegram_verified": bool(udata.get("telegram_verified", False)),
             "telegram_test_status": udata.get("telegram_test_status", ""),
         })
@@ -5634,6 +5685,7 @@ def api_admin_create_user():
         "password": password,
         "role": role,
         "display_name": display_name or username,
+        "telegram_report_enabled": True,
     }
     if team:
         users[username]["team"] = team
@@ -5788,24 +5840,40 @@ def save_sheet():
         with open(SHEET_URLS_PATH, "a", encoding="utf-8") as f:
             f.write(f"{sheet_name},{clean_url}\n")
 
+    users = load_users_config() if username else {}
+    profile = users.get(username, {}) if username else {}
+    pinned_performance_sheet_url = performance_sheet_url or str(profile.get("performance_sheet_url") or "").strip()
+    pinned_performance_sheet_name = performance_sheet_name
+    if pinned_performance_sheet_url and not pinned_performance_sheet_name:
+        guessed_perf_name, _, guessed_perf_url = get_sheet_name_and_month(pinned_performance_sheet_url)
+        pinned_performance_sheet_name = guessed_perf_name or ""
+        pinned_performance_sheet_url = guessed_perf_url or pinned_performance_sheet_url
+
     if username:
         save_monthly_sheet_record(
             username,
             clean_url,
             sheet_name,
             month_key,
-            performance_sheet_url=performance_sheet_url,
-            performance_sheet_name=performance_sheet_name,
+            performance_sheet_url=pinned_performance_sheet_url,
+            performance_sheet_name=pinned_performance_sheet_name,
         )
 
         if role == "employee":
-            users = load_users_config()
             if username in users:
-                users[username]["sheet_url"] = clean_url
-                users[username]["performance_sheet_url"] = performance_sheet_url
+                users[username]["sheet_url"] = get_effective_user_sheet_url(
+                    username,
+                    users[username],
+                    reference_time=get_notification_now(),
+                )
+                users[username]["performance_sheet_url"] = pinned_performance_sheet_url
                 save_users_config(users)
-            session["sheet_url"] = clean_url
-            session["performance_sheet_url"] = performance_sheet_url
+            session["sheet_url"] = get_effective_user_sheet_url(
+                username,
+                users.get(username, {}),
+                reference_time=get_notification_now(),
+            )
+            session["performance_sheet_url"] = pinned_performance_sheet_url
 
     msg = f'Đã lưu sheet "{sheet_name}" vào thư mục tháng {month_label(month_key)}.'
     return jsonify({
