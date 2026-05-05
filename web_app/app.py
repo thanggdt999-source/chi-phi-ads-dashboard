@@ -3525,6 +3525,8 @@ def run_ads_autofill_job(date_preset: str = "today") -> dict:
             total_written_rows += written_rows
             if sync_result.get("success", False):
                 success_count += 1
+                if written_rows > 0:
+                    _invalidate_sheet_cache(sheet_id)
             results.append(
                 {
                     "sheet_name": sheet_name,
@@ -5574,6 +5576,9 @@ def fetch_data():
                 "accounts_synced": 0,
                 "hint": f"Không thể tự đồng bộ Meta API: {str(e)}",
             }
+        # Invalidate cache after Meta sync so next fetch reads fresh data
+        if sync_meta_result.get("written_rows", 0) > 0:
+            _invalidate_sheet_cache(sheet_id)
 
     result = fetch_chi_phi_ads_data(sheet_id)
     result["sync_meta"] = sync_meta_result
