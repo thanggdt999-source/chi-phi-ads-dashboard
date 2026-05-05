@@ -2727,8 +2727,41 @@ def build_google_credentials() -> Credentials:
     return Credentials.from_service_account_file(str(SERVICE_ACCOUNT_PATH), scopes=scopes)
 
 
+# ── gspread client cache (avoids rebuilding auth every call) ──────────────
+_gspread_client_cache: dict = {"client": None, "expires_at": 0.0}
+_gspread_client_lock = threading.Lock()
+
 def get_gspread_client():
-    return gspread.authorize(build_google_credentials())
+    now = time.time()
+    with _gspread_client_lock:
+        if _gspread_client_cache["client"] is not None and now < _gspread_client_cache["expires_at"]:
+            return _gspread_client_cache["client"]
+        creds = build_google_credentials()
+        client = gspread.authorize(creds)
+        # Service-account tokens last 1 hour; refresh cache after 50 min
+        _gspread_client_cache["client"] = client
+        _gspread_client_cache["expires_at"] = now + 3000.0
+        return client
+
+# ── In-memory TTL cache for sheet data (per sheet_id, 90s TTL) ────────────
+_sheet_data_cache: dict = {}          # {sheet_id: {"data": ..., "ts": float}}
+_sheet_cache_lock = threading.Lock()
+_SHEET_CACHE_TTL = 90.0               # seconds
+
+def _get_sheet_cache(sheet_id: str):
+    with _sheet_cache_lock:
+        entry = _sheet_data_cache.get(sheet_id)
+        if entry and (time.time() - entry["ts"]) < _SHEET_CACHE_TTL:
+            return entry["data"]
+        return None
+
+def _set_sheet_cache(sheet_id: str, data: dict):
+    with _sheet_cache_lock:
+        _sheet_data_cache[sheet_id] = {"data": data, "ts": time.time()}
+
+def _invalidate_sheet_cache(sheet_id: str):
+    with _sheet_cache_lock:
+        _sheet_data_cache.pop(sheet_id, None)
 
 
 def update_google_sheet_values_direct(sheet_id: str, range_name: str, values: list[list[str]]) -> dict:
@@ -4722,8 +4755,12 @@ def build_product_lng_summary(spreadsheet) -> dict:
     desc = sorted(products, key=lambda x: float(x.get("lng", 0)), reverse=True)
     return {"items": desc}
 
-def fetch_chi_phi_ads_data(sheet_id):
+def fetch_chi_phi_ads_data(sheet_id, skip_cache=False):
     """Fetch merged data from Chi phí ads FB + Data FB tabs (fallback to legacy ads tab)."""
+    if not skip_cache:
+        cached = _get_sheet_cache(sheet_id)
+        if cached is not None:
+            return cached
     try:
         client = get_gspread_client()
         spreadsheet = client.open_by_key(sheet_id)
@@ -4755,7 +4792,7 @@ def fetch_chi_phi_ads_data(sheet_id):
         account_summary = build_account_spend_summary(rows)
         matrix_member_summary = extract_member_matrix_summary(spreadsheet)
 
-        return {
+        result = {
             "success": True,
             "data": rows,
             "headers": DISPLAY_COLUMNS,
@@ -4764,6 +4801,8 @@ def fetch_chi_phi_ads_data(sheet_id):
             "account_summary": account_summary,
             "matrix_member_summary": matrix_member_summary,
         }
+        _set_sheet_cache(sheet_id, result)
+        return result
     except Exception as e:
         raw_error = str(e)
         lower_error = raw_error.lower()
@@ -5565,15 +5604,26 @@ def fetch_all_data():
     if not sheets:
         return jsonify({"success": False, "error": "Không tìm thấy sheet nào cho tài khoản này."}), 404
 
+    import concurrent.futures
+
+    def _fetch_one(sheet):
+        sheet_id = extract_sheet_id(sheet["url"])
+        if not sheet_id:
+            return None, sheet, None
+        result = fetch_chi_phi_ads_data(sheet_id)
+        return sheet_id, sheet, result
+
     all_rows = []
     member_summaries = []
     errors = []
 
-    for sheet in sheets:
-        sheet_id = extract_sheet_id(sheet["url"])
-        if not sheet_id:
+    max_workers = min(8, len(sheets))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = list(executor.map(_fetch_one, sheets))
+
+    for _sid, sheet, result in futures:
+        if result is None:
             continue
-        result = fetch_chi_phi_ads_data(sheet_id)
         if result.get("success"):
             member_rows = result.get("data", [])
             all_rows.extend(member_rows)

@@ -418,8 +418,11 @@ function maybeAutoOpenSheetForAccess(data) {
 
         const perfInputUrl = (document.getElementById("performanceSheetUrl")?.value || "").trim();
         const perfUrl = perfInputUrl || sheetUrl;
-        await loadPerformanceSummary(perfUrl);
-        await loadAccountStatuses(sheetUrl);
+        // Run performance summary + account status in parallel (saves ~1-2s per load)
+        await Promise.all([
+            loadPerformanceSummary(perfUrl),
+            loadAccountStatuses(sheetUrl),
+        ]);
 
         if (shouldAutoSave) saveSheetUrl(sheetUrl);
     } catch (e) {
