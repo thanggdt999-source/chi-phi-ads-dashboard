@@ -134,9 +134,16 @@ OPENAI_MODEL = (os.getenv("OPENAI_MODEL", "gpt-4.1-mini") or "gpt-4.1-mini").str
 OPENAI_FALLBACK_MODEL = (os.getenv("OPENAI_FALLBACK_MODEL", "gpt-4.1") or "gpt-4.1").strip()
 OPENAI_TIMEOUT_SECONDS = max(5, min(60, int(os.getenv("OPENAI_TIMEOUT_SECONDS", "12"))))
 OPENAI_MAX_TOKENS = max(64, min(4000, int(os.getenv("OPENAI_MAX_TOKENS", str(AI_CHAT_MAX_TOKENS)))))
+AI_CHAT_PROVIDER = (os.getenv("AI_CHAT_PROVIDER", "pollinations") or "pollinations").strip().lower()
+AI_CHAT_REQUIRE_CONTEXT_FOR_ADS = (os.getenv("AI_CHAT_REQUIRE_CONTEXT_FOR_ADS", "1") or "1").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 AI_CHAT_POLLINATIONS_MODELS = [
     m.strip()
-    for m in (os.getenv("AI_CHAT_POLLINATIONS_MODELS", "openai,mistral,llama,claude") or "").split(",")
+    for m in (os.getenv("AI_CHAT_POLLINATIONS_MODELS", "openai,mistral,llama") or "").split(",")
     if m.strip()
 ]
 META_GRAPH_VERSION = os.getenv("META_GRAPH_VERSION", "v20.0").strip() or "v20.0"
@@ -1387,9 +1394,11 @@ def _build_ai_prompt(user_message: str, history: Optional[list] = None, data_con
         )
     else:
         system_text = (
-            "Ban la mot AI assistant hoi thoai tu nhien bang tieng Viet. "
-            "Tra loi than thien, ro rang, de hieu nhu mot chatbot AI thong thuong. "
-            "Tuyet doi khong chen goi y ve ads, KPI, ngan sach, campaign neu nguoi dung khong hoi ve cong viec."
+            "Ban la mot AI assistant hoi thoai tu nhien bang tieng Viet theo phong cach ChatGPT. "
+            "Tra loi than thien, ro rang, huu ich, co cau truc khi can. "
+            "Neu yeu cau mo hoac thieu thong tin, hoi lai 1 cau ngan de lam ro. "
+            "Khong tu y che so lieu, khong bịa thong tin. "
+            "Tuyet doi khong chen goi y ve ads/KPI/campaign khi nguoi dung khong hoi ve cong viec ads."
         )
 
     if has_data_context:
@@ -1405,9 +1414,9 @@ def _build_ai_prompt(user_message: str, history: Optional[list] = None, data_con
     else:
         prompt_lines = [
             "Ban la AI assistant hoi thoai tu nhien bang tieng Viet.",
-            "Tra loi than thien, de hieu nhu chatbot thong thuong.",
+            "Tra loi giong tro ly tong quat: hoi dap, giai thich, viet lai, dich, tom tat, lap ke hoach, code co ban.",
+            "Tra loi ngan gon vua du, neu nguoi dung yeu cau sau hon thi mo rong.",
             "Khong duoc chen noi dung cong viec/ads neu cau hoi khong lien quan cong viec.",
-            "Neu cau hoi doi thuong thi chi tra loi doi thuong.",
             "",
             "Huong dan he thong:",
             system_text,
@@ -1520,7 +1529,7 @@ def ask_pollinations_chat(user_message: str, history: Optional[list] = None, dat
 
 
 def ask_openai_chat(user_message: str, history: Optional[list] = None, data_context: str = "") -> tuple[bool, str]:
-    """Use OpenAI as primary provider, then fall back to Pollinations."""
+    """Route AI requests with configurable provider priority (default: free Pollinations first)."""
     if not AI_CHAT_ENABLED:
         return False, "Tính năng AI đang tắt trên hệ thống."
 
@@ -1529,6 +1538,12 @@ def ask_openai_chat(user_message: str, history: Optional[list] = None, data_cont
         return False, "Tin nhắn đang trống."
 
     prompt_text, has_data_context = _build_ai_prompt(safe_message, history, data_context)
+
+    # Free-fast mode by default: prefer Pollinations first, then OpenAI fallback when configured.
+    if AI_CHAT_PROVIDER in {"pollinations", "free", "free-first"}:
+        ok, reply = ask_pollinations_chat(safe_message, history, data_context)
+        if ok and reply:
+            return True, reply
 
     if OPENAI_API_KEY:
         openai_candidates = []
@@ -1560,6 +1575,7 @@ def ask_openai_chat(user_message: str, history: Optional[list] = None, data_cont
 
         app.logger.warning("OpenAI failed, fallback to Pollinations: %s", last_openai_error)
 
+    # OpenAI-first mode can still fall back to free models.
     return ask_pollinations_chat(safe_message, history, data_context)
 
 
@@ -6329,7 +6345,8 @@ def ai_chat_message():
             return jsonify({"success": False, "error": "Nội dung quá dài (tối đa 3000 ký tự)."}), 400
 
         data_context = ""
-        if should_use_ads_data_context(message, history):
+        needs_ads_context = should_use_ads_data_context(message, history)
+        if needs_ads_context:
             # A2: Use cached sheet context (TTL 5 min) to avoid hitting Google Sheets API per message
             cached_ctx = session.get("ai_sheet_context_cache")
             cached_at = session.get("ai_sheet_context_cached_at", 0)
@@ -6339,6 +6356,16 @@ def ai_chat_message():
                 data_context = build_ai_sheet_context()
                 session["ai_sheet_context_cache"] = data_context
                 session["ai_sheet_context_cached_at"] = time.time()
+
+        if needs_ads_context and AI_CHAT_REQUIRE_CONTEXT_FOR_ADS and not data_context.strip():
+            return jsonify({
+                "success": True,
+                "reply": (
+                    "Dạ đại ca, em chưa có đủ dữ liệu Ads realtime để trả lời chính xác câu này. "
+                    "Đại ca đăng nhập đúng tài khoản có sheet hoặc gửi câu hỏi tổng quát, em sẽ trả lời như ChatGPT bình thường."
+                ),
+            })
+
         ok, reply = ask_openai_chat(message, history, data_context=data_context)
         if not ok:
             return jsonify({"success": False, "error": reply}), 400
