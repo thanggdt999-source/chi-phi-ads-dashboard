@@ -113,6 +113,13 @@ TELEGRAM_SELF_SCHEDULER_ENABLED = (os.getenv("TELEGRAM_SELF_SCHEDULER_ENABLED", 
 }
 TELEGRAM_SELF_SCHEDULER_TICK_SECONDS = max(10, min(300, int(os.getenv("TELEGRAM_SELF_SCHEDULER_TICK_SECONDS", "25"))))
 TELEGRAM_REPORT_MAX_PRODUCTS = max(1, int(os.getenv("TELEGRAM_REPORT_MAX_PRODUCTS", "8")))
+DAILY_DATA_ALERT_THRESHOLD = max(1, int(os.getenv("DAILY_DATA_ALERT_THRESHOLD", "50")))
+DAILY_DATA_ALERT_ENABLED = (os.getenv("DAILY_DATA_ALERT_ENABLED", "1") or "1").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 SESSION_TIMEOUT_SECONDS = int(os.getenv("SESSION_TIMEOUT_SECONDS", "600"))  # 10 minutes
 AI_CHAT_ENABLED = (os.getenv("AI_CHAT_ENABLED", "1") or "1").strip().lower() in {"1", "true", "yes", "on"}
 AI_CHAT_MAX_TOKENS = max(128, min(1200, int(os.getenv("AI_CHAT_MAX_TOKENS", "500"))))
@@ -1162,6 +1169,25 @@ def build_ai_sheet_context() -> str:
         lines.append(
             f"- [{sheet_name}] hom nay: chi phi={total_spend:,} VND, data={total_data:,}, chi_phi_data={cpd:,} VND"
         )
+
+        member_daily = get_data_fb_daily_member_counts_by_sheet_id(sheet_id, today)
+        if member_daily:
+            low_members = sorted(
+                [(name, value) for name, value in member_daily.items() if value < DAILY_DATA_ALERT_THRESHOLD],
+                key=lambda item: item[1],
+            )
+            if low_members:
+                preview = ", ".join(f"{name}:{value:,}" for name, value in low_members[:6])
+                lines.append(
+                    f"  + Data FB theo nguoi (<{DAILY_DATA_ALERT_THRESHOLD:,}): {preview}"
+                )
+
+            owner_name, owner_data = find_member_daily_data_for_user(member_daily, username, user)
+            if owner_data >= 0:
+                lines.append(
+                    f"  + Data FB cua nguoi dang chat ({owner_name}): {owner_data:,}"
+                )
+
         for p in top_products:
             lines.append(
                 f"  + SP: {p['name']} | chi phi={p['spend']:,} VND | data={p['data']:,} | chi_phi_data={p['cost_per_data']:,}"
@@ -1952,6 +1978,9 @@ def run_telegram_report_job(*, force: bool = False, dry_run: bool = False, usern
     missing_sheet_warned = state.get("missing_sheet_warned", {})
     if not isinstance(missing_sheet_warned, dict):
         missing_sheet_warned = {}
+    daily_low_data_warned = state.get("daily_low_data_warned", {})
+    if not isinstance(daily_low_data_warned, dict):
+        daily_low_data_warned = {}
     state_changed = False
     last_slot = state.get("last_slot", "")
     pending_slots = build_pending_slots(now, last_slot, force=force)
@@ -2053,6 +2082,19 @@ def run_telegram_report_job(*, force: bool = False, dry_run: bool = False, usern
             if send_ok:
                 sent_count += 1
                 slot_sent_count += 1
+                if role == "employee" and not dry_run:
+                    warn_ok, warn_text, warn_reason = build_low_data_alert_message(username, user, slot_time)
+                    if warn_ok:
+                        warn_key = f"{username}:{slot_time.strftime('%Y-%m-%d')}"
+                        if daily_low_data_warned.get(warn_key) != "sent":
+                            send_telegram_message(chat_id, warn_text, bot_token=personal_bot_token)
+                            daily_low_data_warned[warn_key] = "sent"
+                            state_changed = True
+                    elif warn_reason.startswith("ok_"):
+                        warn_key = f"{username}:{slot_time.strftime('%Y-%m-%d')}"
+                        if warn_key in daily_low_data_warned:
+                            daily_low_data_warned.pop(warn_key, None)
+                            state_changed = True
                 # B4: Warn once if day ≥ 25 and next month's sheet not yet registered
                 if role == "employee" and not dry_run and slot_time.day >= 25:
                     next_month = slot_time.replace(day=1) + timedelta(days=32)
@@ -2079,6 +2121,7 @@ def run_telegram_report_job(*, force: bool = False, dry_run: bool = False, usern
 
     if not dry_run:
         state["missing_sheet_warned"] = missing_sheet_warned
+        state["daily_low_data_warned"] = daily_low_data_warned
     if sent_slots and not dry_run:
         state["last_slot"] = sent_slots[-1]
         state["last_run_at"] = now.strftime("%Y-%m-%d %H:%M:%S")
@@ -4614,6 +4657,148 @@ def extract_member_matrix_summary(spreadsheet) -> list:
 
     summaries.sort(key=lambda x: x.get("total_data", 0), reverse=True)
     return summaries
+
+
+def _normalize_member_name(value: str) -> str:
+    raw = unicodedata.normalize("NFKD", str(value or "")).lower()
+    raw = "".join(ch for ch in raw if unicodedata.category(ch) != "Mn")
+    raw = re.sub(r"^[\d\s]+[-_]?", "", raw).strip()
+    if "-" in raw:
+        parts = [p.strip() for p in raw.split("-") if p.strip()]
+        if len(parts) >= 2:
+            raw = parts[-1]
+    return re.sub(r"[^a-z0-9]", "", raw)
+
+
+def extract_data_fb_daily_member_counts(spreadsheet, target_day: date) -> dict:
+    ws = resolve_optional_worksheet(spreadsheet, ["Data FB"])
+    if ws is None:
+        return {}
+
+    try:
+        values = ws.get_all_values()
+    except Exception:
+        return {}
+
+    if len(values) < 3:
+        return {}
+
+    header_row = values[1]
+    target_row = None
+    for row in values[2:]:
+        if not row:
+            continue
+        parsed = None
+        for candidate in row[:4]:
+            parsed = _parse_date_flexible(str(candidate or ""))
+            if parsed is not None:
+                break
+        if parsed == target_day:
+            target_row = row
+            break
+
+    if not target_row:
+        return {}
+
+    member_counts = {}
+    upper = min(len(header_row), len(target_row))
+    for idx in range(1, upper):
+        member_name = str(header_row[idx] or "").strip()
+        if not member_name:
+            continue
+        if _normalize_member_name(member_name) in {"tennv", "tong"}:
+            continue
+        value = parse_number_like(str(target_row[idx] or ""))
+        if value is None:
+            continue
+        member_counts[member_name] = int(round(float(value)))
+    return member_counts
+
+
+def find_member_daily_data_for_user(member_counts: dict, username: str, user: dict) -> tuple[str, int]:
+    if not member_counts:
+        return "", -1
+
+    candidates = []
+    display_name = str(user.get("display_name") or "").strip()
+    if display_name:
+        candidates.append(display_name)
+    username_clean = str(username or "").strip()
+    if username_clean:
+        candidates.append(username_clean)
+        candidates.append(username_clean.replace("emp_", "").replace("_", " "))
+
+    candidate_keys = [key for key in (_normalize_member_name(item) for item in candidates) if key]
+    if not candidate_keys:
+        return "", -1
+
+    best_name = ""
+    best_data = -1
+    best_score = -1
+    for member_name, data_value in member_counts.items():
+        member_key = _normalize_member_name(member_name)
+        if not member_key:
+            continue
+
+        score = 0
+        for candidate_key in candidate_keys:
+            if candidate_key == member_key:
+                score = max(score, 3)
+            elif candidate_key in member_key or member_key in candidate_key:
+                score = max(score, 2)
+        if score > best_score:
+            best_score = score
+            best_name = member_name
+            best_data = int(data_value)
+
+    if best_score <= 0:
+        return "", -1
+    return best_name, best_data
+
+
+def get_data_fb_daily_member_counts_by_sheet_id(sheet_id: str, target_day: date) -> dict:
+    if not sheet_id:
+        return {}
+    try:
+        client = get_gspread_client()
+        spreadsheet = client.open_by_key(sheet_id)
+        return extract_data_fb_daily_member_counts(spreadsheet, target_day)
+    except Exception:
+        return {}
+
+
+def build_low_data_alert_message(username: str, user: dict, now: datetime) -> tuple[bool, str, str]:
+    if not DAILY_DATA_ALERT_ENABLED:
+        return False, "", "disabled"
+
+    sheet_url = get_effective_user_sheet_url(username, user, reference_time=now)
+    sheet_id = extract_sheet_id(sheet_url)
+    if not sheet_id:
+        return False, "", "invalid_sheet"
+
+    member_counts = get_data_fb_daily_member_counts_by_sheet_id(sheet_id, now.date())
+    if not member_counts:
+        return False, "", "missing_data_fb"
+
+    member_name, daily_data = find_member_daily_data_for_user(member_counts, username, user)
+    if daily_data < 0:
+        return False, "", "member_not_found"
+
+    if daily_data >= DAILY_DATA_ALERT_THRESHOLD:
+        return False, "", f"ok_{daily_data}"
+
+    display_name = html.escape(str(user.get("display_name") or username))
+    safe_member_name = html.escape(member_name)
+    message = (
+        "⚠️ <b>Cảnh báo Data FB theo ngày thấp</b>\n"
+        f"👤 {display_name}\n"
+        f"🧾 Cột theo người: <b>{safe_member_name}</b>\n"
+        f"📅 Ngày: <b>{now.strftime('%d/%m/%Y')}</b>\n"
+        f"📉 Data hiện tại: <b>{daily_data:,}</b>\n"
+        f"🎯 Ngưỡng tối thiểu: <b>{DAILY_DATA_ALERT_THRESHOLD:,}</b>\n\n"
+        "Dạ đại ca, em gửi cảnh báo để ưu tiên tối ưu trong ngày."
+    )
+    return True, message, "below_threshold"
 
 
 def build_lng_items_from_rows(rows: list) -> dict:
