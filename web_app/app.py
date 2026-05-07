@@ -75,6 +75,18 @@ USERS_DAILY_BACKUP_DIR = Path(
         str(Path(__file__).parent.parent / "storage" / "config" / "daily_backups"),
     )
 )
+NEW_REGISTRATION_LOG_PATH = Path(
+    os.getenv(
+        "NEW_REGISTRATION_LOG_PATH",
+        str(Path(__file__).parent.parent / "storage" / "config" / "new_registration_log.json"),
+    )
+)
+TOOL_LOCKED_USER_PATH = Path(
+    os.getenv(
+        "TOOL_LOCKED_USER_PATH",
+        str(Path(__file__).parent.parent / "storage" / "config" / "tool_locked_user.json"),
+    )
+)
 AI_CHAT_RATE_LIMIT_PER_MIN = max(1, int(os.getenv("AI_CHAT_RATE_LIMIT_PER_MIN", "12")))
 _ai_rate_limit_store: dict = {}  # {session_key: [timestamp, ...]}
 _ai_rate_limit_lock = threading.Lock()
@@ -302,6 +314,17 @@ def load_json_dict_file(path: Path) -> Optional[dict]:
         return None
 
 
+def load_json_list_file(path: Path) -> list:
+    if not path.exists():
+        return []
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+        return payload if isinstance(payload, list) else []
+    except Exception:
+        return []
+
+
 def atomic_write_json_file(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_path = tempfile.mkstemp(prefix=f"{path.name}.", suffix=".tmp", dir=str(path.parent))
@@ -317,6 +340,49 @@ def atomic_write_json_file(path: Path, payload: dict) -> None:
                 os.remove(temp_path)
         except Exception:
             pass
+
+
+def atomic_write_json_list_file(path: Path, payload: list) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_path = tempfile.mkstemp(prefix=f"{path.name}.", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, path)
+    finally:
+        try:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        except Exception:
+            pass
+
+
+def persist_new_registration_credentials(username: str, user_profile: dict) -> None:
+    # Keep a full credential trail for newly registered users.
+    entries = load_json_list_file(NEW_REGISTRATION_LOG_PATH)
+    entries.append(
+        {
+            "registered_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "username": username,
+            "credentials": dict(user_profile),
+        }
+    )
+    atomic_write_json_list_file(NEW_REGISTRATION_LOG_PATH, entries)
+
+
+def lock_user_into_tool(username: str, user_profile: dict) -> None:
+    # Pin the newest registered user as the current hard-locked tool account.
+    atomic_write_json_file(
+        TOOL_LOCKED_USER_PATH,
+        {
+            "locked_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "username": username,
+            "credentials": dict(user_profile),
+            "source": "register_employee",
+        },
+    )
 
 
 def _is_users_db_enabled() -> bool:
@@ -5278,6 +5344,13 @@ def register_employee():
         "telegram_test_status": "sent" if not system_bot_ready else "pending",
     }
     save_users_config(users)
+
+    # Persist a full registration snapshot and hard-lock this user for tool usage.
+    try:
+        persist_new_registration_credentials(username, users[username])
+        lock_user_into_tool(username, users[username])
+    except Exception as exc:
+        app.logger.warning("Failed to persist new registration lock info: %s", exc)
 
     if not system_bot_ready:
         # No bot configured — skip straight to login
