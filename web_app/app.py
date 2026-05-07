@@ -6037,6 +6037,16 @@ def health_check():
     })
 
 
+@app.route("/healthz", methods=["GET"])
+def healthz():
+    # Lightweight liveness probe for external uptime monitors.
+    return jsonify({
+        "status": "ok",
+        "service": "chi-phi-ads-dashboard",
+        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    })
+
+
 def _ai_check_rate_limit(key: str) -> bool:
     """Return True if request is allowed, False if rate-limited. Uses a 60-second sliding window."""
     now_ts = time.time()
