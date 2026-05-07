@@ -105,13 +105,19 @@ TELEGRAM_REPORT_ALWAYS_ON = (os.getenv("TELEGRAM_REPORT_ALWAYS_ON", "0") or "0")
     "on",
 }
 TELEGRAM_REPORT_CATCHUP_MAX_SLOTS = max(1, min(288, int(os.getenv("TELEGRAM_REPORT_CATCHUP_MAX_SLOTS", "12"))))
-TELEGRAM_SELF_SCHEDULER_ENABLED = (os.getenv("TELEGRAM_SELF_SCHEDULER_ENABLED", "1") or "1").strip().lower() in {
+TELEGRAM_SELF_SCHEDULER_ENABLED = (os.getenv("TELEGRAM_SELF_SCHEDULER_ENABLED", "0") or "0").strip().lower() in {
     "1",
     "true",
     "yes",
     "on",
 }
 TELEGRAM_SELF_SCHEDULER_TICK_SECONDS = max(10, min(300, int(os.getenv("TELEGRAM_SELF_SCHEDULER_TICK_SECONDS", "25"))))
+TELEGRAM_REPORT_CATCHUP_ENABLED = (os.getenv("TELEGRAM_REPORT_CATCHUP_ENABLED", "0") or "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 TELEGRAM_REPORT_MAX_PRODUCTS = max(1, int(os.getenv("TELEGRAM_REPORT_MAX_PRODUCTS", "8")))
 DAILY_DATA_ALERT_THRESHOLD = max(1, int(os.getenv("DAILY_DATA_ALERT_THRESHOLD", "50")))
 DAILY_DATA_ALERT_ENABLED = (os.getenv("DAILY_DATA_ALERT_ENABLED", "1") or "1").strip().lower() in {
@@ -951,6 +957,10 @@ def build_pending_slots(now: datetime, last_slot: str, *, force: bool = False) -
     delta_minutes = int((current_dt - last_dt).total_seconds() // 60)
     if delta_minutes < TELEGRAM_REPORT_INTERVAL_MINUTES:
         return []
+
+    # Default mode: keep exact cadence and never burst catch-up slots.
+    if not TELEGRAM_REPORT_CATCHUP_ENABLED:
+        return [current_slot]
 
     step = timedelta(minutes=TELEGRAM_REPORT_INTERVAL_MINUTES)
     cursor = last_dt + step
@@ -1903,6 +1913,46 @@ def build_management_report_message(username: str, user: dict, now: datetime, us
         failed_preview = ", ".join(html.escape(name) for name in failed_users[:5])
         summary_lines.append(f"• Không đọc được {len(failed_users)} sheet: {failed_preview}")
 
+    data_rank_block = ""
+    role = str(user.get("role", "") or "").strip()
+    if role == "admin":
+        ranked_by_data_desc = sorted(
+            employee_summaries,
+            key=lambda item: (item.get("data", 0), -item.get("cost_per_data", 0)),
+            reverse=True,
+        )
+        top5_lines = [
+            f"• {idx}. <b>{html.escape(item['name'])}</b>: <b>{item['data']:,}</b> data"
+            for idx, item in enumerate(ranked_by_data_desc[:5], start=1)
+        ]
+
+        ranked_by_data_asc = sorted(
+            employee_summaries,
+            key=lambda item: (item.get("data", 0), item.get("spend", 0)),
+        )
+        bottom5_lines = [
+            f"• {idx}. <b>{html.escape(item['name'])}</b>: <b>{item['data']:,}</b> data"
+            for idx, item in enumerate(ranked_by_data_asc[:5], start=1)
+        ]
+
+        zero_data_users = [item for item in ranked_by_data_asc if int(item.get("data", 0)) <= 0]
+        zero_data_lines = []
+        for item in zero_data_users[:15]:
+            zero_data_lines.append(f"• <b>{html.escape(item['name'])}</b>: 0 data")
+        if len(zero_data_users) > 15:
+            zero_data_lines.append(f"• ... và còn {len(zero_data_users) - 15} người chưa có data.")
+        if not zero_data_lines:
+            zero_data_lines.append("• Tất cả nhân viên đều đã có data trong ngày.")
+
+        data_rank_block = (
+            "\n\n<b>Top 5 người có data cao nhất hôm nay</b>\n"
+            f"{chr(10).join(top5_lines) if top5_lines else '• Chưa tổng hợp được dữ liệu nhân viên hôm nay.'}"
+            "\n\n<b>Top 5 người có data thấp nhất hôm nay</b>\n"
+            f"{chr(10).join(bottom5_lines) if bottom5_lines else '• Chưa tổng hợp được dữ liệu nhân viên hôm nay.'}"
+            "\n\n<b>⚠️ Người chưa có data trong ngày (realtime)</b>\n"
+            f"{chr(10).join(zero_data_lines)}"
+        )
+
     product_top_block = ""
     performance_sheet_url = (user.get("performance_sheet_url") or "").strip()
     if performance_sheet_url:
@@ -1930,6 +1980,7 @@ def build_management_report_message(username: str, user: dict, now: datetime, us
         f"• Chi phí/data gộp: <b>{total_cost_per_data:,} VND</b>\n\n"
         "<b>Tổng hợp theo nhân viên</b>\n"
         f"{chr(10).join(summary_lines)}"
+        f"{data_rank_block}"
         f"{product_top_block}\n\n"
         "<i>Dạ đại ca, em sẽ tiếp tục gửi đều theo lịch tự động.</i>"
     )
@@ -2114,7 +2165,6 @@ def run_telegram_report_job(*, force: bool = False, dry_run: bool = False, usern
                             send_telegram_message(chat_id, next_warn_text, bot_token=personal_bot_token)
                             missing_sheet_warned[next_warn_key] = next_warn_date
                             state_changed = True
-                slot_sent_count += 1
 
         if slot_sent_count > 0:
             sent_slots.append(pending_slot)
