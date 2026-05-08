@@ -3,6 +3,8 @@ name: Keepalive Ping
 on:
   schedule:
     - cron: '*/5 * * * *'
+    # Offset second schedule to reduce gaps when GitHub cron is delayed.
+    - cron: '2-59/5 * * * *'
   workflow_dispatch:
 
 concurrency:
@@ -15,26 +17,36 @@ jobs:
     timeout-minutes: 5
     env:
       BASE_URL: https://ads.hexistoree.click
+      FALLBACK_URL: https://chi-phi-ads-dashboard.onrender.com
     steps:
-      - name: Warm up login page
+      - name: Ping liveness endpoints
         run: |
-          curl --fail --show-error --silent \
-            --retry 3 \
-            --retry-all-errors \
-            --retry-delay 2 \
-            --connect-timeout 15 \
-            --max-time 90 \
-            --header 'User-Agent: keepalive-bot/1.0' \
-            "$BASE_URL/login" > /dev/null
+          set -euo pipefail
 
-      - name: Verify AI endpoint is reachable
+          ping_url () {
+            local base="$1"
+            local path="$2"
+            curl --fail --show-error --silent \
+              --retry 5 \
+              --retry-all-errors \
+              --retry-delay 2 \
+              --connect-timeout 20 \
+              --max-time 120 \
+              --header 'User-Agent: keepalive-bot/1.0' \
+              "${base}${path}" > /dev/null
+          }
+
+          ping_url "$BASE_URL" "/healthz"
+          ping_url "$BASE_URL" "/login"
+
+      - name: Ping fallback Render domain
         run: |
+          set -euo pipefail
           curl --fail --show-error --silent \
-            --retry 2 \
+            --retry 5 \
             --retry-all-errors \
             --retry-delay 2 \
-            --connect-timeout 15 \
-            --max-time 90 \
-            --header 'Content-Type: application/json' \
-            --data '{"message":"ping","history":[{"role":"user","content":"ping"}]}' \
-            "$BASE_URL/api/ai/chat" > /dev/null
+            --connect-timeout 20 \
+            --max-time 120 \
+            --header 'User-Agent: keepalive-bot/1.0' \
+            "$FALLBACK_URL/healthz" > /dev/null
