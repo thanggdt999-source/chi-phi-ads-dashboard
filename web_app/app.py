@@ -146,6 +146,13 @@ AI_CHAT_POLLINATIONS_MODELS = [
     for m in (os.getenv("AI_CHAT_POLLINATIONS_MODELS", "openai,mistral,llama") or "").split(",")
     if m.strip()
 ]
+USER_STORE_STRICT_PERSISTENCE = (os.getenv("USER_STORE_STRICT_PERSISTENCE", "1") or "1").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+RENDER_DISK_MOUNT_PATH = (os.getenv("RENDER_DISK_MOUNT_PATH") or "").strip()
 META_GRAPH_VERSION = os.getenv("META_GRAPH_VERSION", "v20.0").strip() or "v20.0"
 META_ACCESS_TOKEN_PATH = Path(
     os.getenv(
@@ -407,6 +414,59 @@ def lock_user_into_tool(username: str, user_profile: dict) -> None:
 
 def _is_users_db_enabled() -> bool:
     return bool(USERS_DATABASE_URL) and psycopg2 is not None
+
+
+def _path_is_within(child: Path, parent: Path) -> bool:
+    try:
+        child.resolve().relative_to(parent.resolve())
+        return True
+    except Exception:
+        return False
+
+
+def _has_persistent_users_file_store() -> bool:
+    candidates = []
+    if RENDER_DISK_MOUNT_PATH:
+        candidates.append(Path(RENDER_DISK_MOUNT_PATH))
+    # Common Render persistent disk mount path.
+    candidates.append(Path("/var/data"))
+
+    for base in candidates:
+        if _path_is_within(USERS_FILE_PATH, base):
+            return True
+    return False
+
+
+def get_user_store_status() -> tuple[bool, str]:
+    if _is_users_db_enabled():
+        if _ensure_users_db_table():
+            return True, "postgres"
+        return False, "db_unreachable"
+
+    if _has_persistent_users_file_store():
+        return True, "persistent_disk"
+
+    return False, "ephemeral_filesystem"
+
+
+def get_user_store_registration_error() -> str:
+    if not USER_STORE_STRICT_PERSISTENCE:
+        return ""
+
+    ok, mode = get_user_store_status()
+    if ok:
+        return ""
+
+    if mode == "db_unreachable":
+        return (
+            "Dang ky tam khoa de tranh mat tai khoan: he thong khong ket noi duoc Postgres. "
+            "Vui long bao admin kiem tra USERS_DATABASE_URL."
+        )
+
+    return (
+        "Dang ky tam khoa de tranh mat tai khoan sau khi deploy/restart. "
+        "Can cau hinh USERS_DATABASE_URL (Postgres) hoac Persistent Disk /var/data truoc khi mo dang ky lai."
+    )
 
 
 def _ensure_users_db_table() -> bool:
@@ -5413,7 +5473,18 @@ def login():
     error_message = "Sai tài khoản hoặc mật khẩu"
 
     if not user:
-        if not users_snapshot:
+        if USER_STORE_STRICT_PERSISTENCE:
+            store_ok, store_mode = get_user_store_status()
+            if not store_ok and store_mode in {"db_unreachable", "ephemeral_filesystem"}:
+                error_message = (
+                    "He thong dang gap loi luu tru tai khoan nen co the khong tim thay user da dang ky. "
+                    "Vui long lien he admin cau hinh Postgres/Persistent Disk."
+                )
+            elif not users_snapshot:
+                error_message = "Hệ thống tài khoản đang tạm lỗi dữ liệu. Tài khoản không bị xóa, vui lòng liên hệ admin để khôi phục file users."
+            else:
+                error_message = "Tài khoản chưa tồn tại trong hệ thống"
+        elif not users_snapshot:
             error_message = "Hệ thống tài khoản đang tạm lỗi dữ liệu. Tài khoản không bị xóa, vui lòng liên hệ admin để khôi phục file users."
         else:
             error_message = "Tài khoản chưa tồn tại trong hệ thống"
@@ -5566,6 +5637,16 @@ def register_employee():
         return render_template(
             "register.html",
             error="Vui lòng chọn team hợp lệ.",
+            board_name=LOGIN_BOARD_NAME,
+            team_codes=TEAM_CODES,
+            form_values=form_values,
+        )
+
+    persistence_error = get_user_store_registration_error()
+    if persistence_error:
+        return render_template(
+            "register.html",
+            error=persistence_error,
             board_name=LOGIN_BOARD_NAME,
             team_codes=TEAM_CODES,
             form_values=form_values,
@@ -6280,11 +6361,17 @@ def health_check():
         get_gspread_client()
     except Exception:
         gsheets_ok = False
+    store_ok, store_mode = get_user_store_status()
     return jsonify({
         "status": "ok",
         "uptime_seconds": uptime_seconds,
         "google_sheets": "ok" if gsheets_ok else "error",
         "ai_enabled": AI_CHAT_ENABLED,
+        "user_store": {
+            "ok": store_ok,
+            "mode": store_mode,
+            "strict": USER_STORE_STRICT_PERSISTENCE,
+        },
     })
 
 
@@ -6443,7 +6530,7 @@ def run_internal_ads_autofill():
 # ─────────────────── ADMIN USER MANAGEMENT ───────────────────
 
 def save_users_config(config: dict) -> None:
-    """Persist user config to the JSON file (used by admin UI)."""
+    """Persist user config to durable storage and local backup files."""
     # Always merge env-var baseline so those accounts survive alongside file-registered ones.
     env_baseline: dict = {}
     config_json = os.getenv("USERS_CONFIG", "").strip()
@@ -6454,10 +6541,23 @@ def save_users_config(config: dict) -> None:
                 env_baseline = parsed
         except Exception:
             pass
+
+    store_ok, store_mode = get_user_store_status()
+    if USER_STORE_STRICT_PERSISTENCE and not store_ok:
+        app.logger.error(
+            "User store is not durable (%s). Configure USERS_DATABASE_URL or Persistent Disk at /var/data.",
+            store_mode,
+        )
+
     merged = dict(env_baseline)
     merged.update(config)  # config (file) wins on conflicts
     merged[BUILTIN_ADMIN_USERNAME] = ensure_builtin_admin_profile(merged.get(BUILTIN_ADMIN_USERNAME, {}))
-    _save_users_to_db(merged)
+
+    if _is_users_db_enabled():
+        db_saved = _save_users_to_db(merged)
+        if USER_STORE_STRICT_PERSISTENCE and not db_saved:
+            app.logger.error("Failed writing users to Postgres. Check USERS_DATABASE_URL connectivity.")
+
     # Keep local files as a portable backup for non-DB environments.
     atomic_write_json_file(USERS_FILE_PATH, merged)
     atomic_write_json_file(USERS_FILE_BACKUP_PATH, merged)
@@ -6466,6 +6566,11 @@ def save_users_config(config: dict) -> None:
         atomic_write_json_file(LEGACY_USERS_FILE_PATH, merged)
     except Exception:
         pass
+
+    if USER_STORE_STRICT_PERSISTENCE and store_mode == "ephemeral_filesystem":
+        app.logger.error(
+            "Users are being saved to ephemeral filesystem only. Configure USERS_DATABASE_URL or persistent disk mount."
+        )
 
 
 def admin_page_required(view_func):

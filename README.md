@@ -6,6 +6,24 @@ Phan mem nho de:
 - Ghi chi phi ads theo khung gio co dinh.
 - Co the lay chi phi tu Meta API neu da cau hinh token.
 
+## Khac phuc loi "tai khoan da dang ky nhung bao chua ton tai"
+
+Nguyen nhan goc:
+- Neu app chi luu user vao file local tren Render Free, du lieu co the mat sau deploy/restart.
+- Khi do login/quen mat khau se bao "tai khoan chua ton tai" du da dang ky truoc do.
+
+Phuong an triet de (uu tien theo thu tu):
+1. Cau hinh `USERS_DATABASE_URL` tro toi Postgres (khuyen nghi nhat).
+2. Hoac gan Persistent Disk tren Render, mount vao `/var/data`, roi dat:
+   - `USERS_FILE_PATH=/var/data/storage/config/users.json`
+   - `USERS_FILE_BACKUP_PATH=/var/data/storage/config/users.backup.json`
+   - `LEGACY_USERS_FILE_PATH=/var/data/storage/users.json`
+3. Giu `USER_STORE_STRICT_PERSISTENCE=1` de chan dang ky ao (dang ky thanh cong nhung khong luu ben vung).
+
+Kiem tra nhanh:
+- Goi `/health` va xem truong `user_store`.
+- `user_store.ok=true` moi nen mo dang ky user moi.
+
 ## 1) Cai dat
 
 ```bash
